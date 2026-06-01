@@ -5,8 +5,8 @@
 # 字段名对应 SynthDef 参数（amp dB；atk/rel/decay 秒；revSend 0..1）。
 # buf/loop/out/revBus 由 voices 运行时补，不在此写。合成音不套 [defaults]。
 mode = "ambient"
-name = "京都岚山 · Ambient"
-description = "C 调五声音阶；从内到外 drone → pad → 竹林 → 天气 → 马林巴 → 旋律 → 事件"
+name = "Kyoto Arashiyama · Ambient"
+description = "C pentatonic · inner to outer: drone → pad → bamboo → weather → marimba → melody → events"
 
 [music]
 key = "C"

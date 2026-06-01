@@ -26,16 +26,17 @@ class SynthBridge:
         ring_configs: dict[int, RingConfig],
         tonality: Tonality,
         *,
+        harmony_group: int | None = None,
         chord_pad_synth: str = "jam_chord_pad",
         chord_pad_gain: float = 1.0,
     ):
         self.osc = osc
         self.group = group
+        self.harmony_group = harmony_group if harmony_group is not None else group
         self.ring_configs = ring_configs
         self.tonality = tonality
         self.chord_pad_synth = chord_pad_synth
         self.chord_pad_gain = chord_pad_gain
-        self._pad_nodes: list[int] = []
 
     def set_tonality(self, tonality: Tonality) -> None:
         self.tonality = tonality
@@ -79,28 +80,24 @@ class SynthBridge:
 
     # ── 和声 pad ──
     def handle_chord(self, ev: ChordEvent) -> None:
-        if ev.release_first:
-            self._release_pad()
+        # web releaseAll + 新和弦：旧 pad 靠包络 release 淡出，不逐个 free_node
         freqs = self.tonality.freqs(ev.degrees)
         for f in freqs:
-            node = self.osc.new_synth(
+            self.osc.new_synth(
                 self.chord_pad_synth,
                 {
                     "freq": float(f),
                     "amp": float(self.chord_pad_gain),
                     "hold": float(ev.hold),
-                    "gate": 1,
                     "out": config.HARMONY_BUS,
                 },
-                target=self.group,
+                target=self.harmony_group,
                 add_action=ADD_TO_HEAD,
             )
-            self._pad_nodes.append(node)
 
     def _release_pad(self) -> None:
-        for node in self._pad_nodes:
-            self.osc.free_node(node)
-        self._pad_nodes.clear()
+        # pad 包络结束会 doneAction:2 自毁；勿对历史 node id 发 /n_free（会报 not found）
+        self.osc.deep_free_group(self.harmony_group)
 
     def handle(self, ev) -> None:
         if isinstance(ev, NoteEvent):

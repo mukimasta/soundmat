@@ -12,7 +12,7 @@ import threading
 import time
 
 from .. import config
-from ..core.osc import ADD_TO_TAIL
+from ..core.osc import ADD_TO_HEAD, ADD_TO_TAIL
 from ..core.services import SharedServices
 from .bridge import MasterFX, SynthBridge
 from .config_loader import JamConfig, load_jam_config
@@ -27,7 +27,8 @@ MASTER_SYNTH = "jam_master"
 # 默认总线增益（JAM_DESIGN §3/§6：和声 0.4、鼓 0.48、旋律总线 0.48，不随石头数变化）
 MELODY_BUS_GAIN = 0.48
 HARMONY_BUS_GAIN = 0.4
-DRUM_BUS_GAIN = 0.48
+# web drumGain=0.48；SC 鼓 SynthDef peak 偏低，总线略抬以对齐听感
+DRUM_BUS_GAIN = 0.62
 
 
 class JamApp:
@@ -59,6 +60,7 @@ class JamApp:
 
         # 桥层（start 时建，需 group）
         self.group: int | None = None
+        self.harmony_group: int | None = None
         self.master_node: int | None = None
         self.bridge: SynthBridge | None = None
         self.master_fx: MasterFX | None = None
@@ -77,6 +79,7 @@ class JamApp:
             return
         sc = self.services.sc
         self.group = sc.new_group()
+        self.harmony_group = sc.new_group(target=self.group, add_action=ADD_TO_HEAD)
         # master synth 挂在 group 尾部，读三条总线
         self.master_node = self.services.osc.new_synth(
             MASTER_SYNTH,
@@ -90,7 +93,10 @@ class JamApp:
             },
             target=self.group, add_action=ADD_TO_TAIL,
         )
-        self.bridge = SynthBridge(self.services.osc, self.group, self.cfg.rings, self.tonality)
+        self.bridge = SynthBridge(
+            self.services.osc, self.group, self.cfg.rings, self.tonality,
+            harmony_group=self.harmony_group,
+        )
         self.master_fx = MasterFX(self.services.osc, self.master_node,
                                   self.cfg.lofi_mapping or None, self.cfg.master_volume)
 
@@ -112,6 +118,7 @@ class JamApp:
         if self.group is not None:
             self.services.sc.free_group(self.group)
             self.group = None
+            self.harmony_group = None
             self.master_node = None
             self.bridge = None
             self.master_fx = None
@@ -244,6 +251,7 @@ class JamApp:
             "control_count": self._last_control_count,
             "lofi": round(self._last_control_value),
             "occupied": sorted(self.sensor_state.occupied),
+            "master_volume": self.cfg.master_volume,
         }
 
     def set_param(self, key: str, value) -> None:

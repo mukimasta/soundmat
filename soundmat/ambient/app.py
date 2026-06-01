@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import math
 import threading
 import time
 
@@ -24,11 +25,21 @@ from .voices import VoicePool
 LOOP_HZ = 20.0
 
 
+def _volume_to_db(volume: float) -> float:
+    """Web 滑块 0..1 → ambient \\master 的 amp（dB）。"""
+    v = max(0.0, min(1.0, float(volume)))
+    if v <= 1e-6:
+        return -60.0
+    return max(-60.0, 20.0 * math.log10(v))
+
+
 class AmbientApp:
     def __init__(self, manifest: dict, services: SharedServices):
         self.services = services
         self.manifest = manifest
         self.name = manifest.get("name", "Ambient")
+        music = manifest.get("music", {})
+        self.master_volume = float(music.get("master_volume", 1.0))
         self.tracker = Tracker()
         self.state_model = StateModel()
         self.mapper = KyotoMapper(manifest)
@@ -49,7 +60,12 @@ class AmbientApp:
         # 持久 FX 链：reverb → master，ADD_TO_TAIL（排在源之后）
         osc = self.services.osc
         self._reverb_node = osc.new_synth("reverb", {}, target=self.group, add_action=ADD_TO_TAIL)
-        self._master_node = osc.new_synth("master", {}, target=self.group, add_action=ADD_TO_TAIL)
+        self._master_node = osc.new_synth(
+            "master",
+            {"amp": _volume_to_db(self.master_volume)},
+            target=self.group,
+            add_action=ADD_TO_TAIL,
+        )
         self.voices = VoicePool(osc, self.group, buffers)
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, daemon=True, name="ambient-loop")
@@ -93,7 +109,13 @@ class AmbientApp:
             "mode": "ambient",
             "name": self.name,
             "occupied": len(self.state_model.state.occupied),
+            "master_volume": self.master_volume,
         }
 
     def set_param(self, key: str, value) -> None:
-        pass
+        if key == "master_volume":
+            self.master_volume = max(0.0, min(1.0, float(value)))
+            if self._master_node is not None:
+                self.services.osc.set_node(
+                    self._master_node, amp=_volume_to_db(self.master_volume)
+                )

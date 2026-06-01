@@ -79,7 +79,7 @@ class EventEngine:
         return row[eighth_in_bar]
 
     def _sustain_for(self, cfg: RingConfig, sec_per_quarter: float | None) -> float:
-        """旋律环：固定 note_sec gate。bass 环：四分音符 + tail（web bassTailSec，bpm 驱动）。"""
+        """旋律环：固定 note_sec。bass：1×四分 + tail（web 单音 playTriggerBurst remaining=1）。"""
         if cfg.role == "bass" and sec_per_quarter is not None:
             return sec_per_quarter + cfg.tail_sec
         return cfg.note_sec

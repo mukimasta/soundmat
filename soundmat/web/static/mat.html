@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>SoundMat · Mat</title>
+<link rel="stylesheet" href="/static/soundmat.css" />
+<style>
+  body { user-select: none; -webkit-tap-highlight-color: transparent; }
+  .cell { cursor: crosshair; }
+  .page--mat.is-mock-wide {
+    width: min(960px, calc(100% - 32px));
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  body:has(.page--mat.is-mock-wide) .site-header {
+    width: min(960px, calc(100% - 32px));
+  }
+  .mat-layout {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+  }
+  .mat-layout.is-mock {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 20px;
+    align-items: start;
+    width: 100%;
+    max-width: 920px;
+    margin: 0 auto;
+  }
+  .mat-pane {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .mat-layout:not(.is-mock) .mat-pane--pad { display: none; }
+  .mat-layout:not(.is-mock) .mat-pane--heat {
+    width: min(92vw, 560px);
+  }
+  .mat-layout.is-mock .mat-pane--pad .mat-frame,
+  .mat-layout.is-mock .mat-pane--heat .heat-canvas-wrap {
+    width: 100%;
+    max-width: 440px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .mat-layout.is-mock .mat-pane--pad .mat-frame {
+    margin-top: 0;
+  }
+  .heat-head {
+    margin-bottom: 8px;
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    color: var(--fg-dim);
+  }
+  .heat-canvas-wrap {
+    padding: 12px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+  }
+  .heat-canvas-wrap canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 6px;
+  }
+</style>
+</head>
+<body>
+  <header class="site-header">
+    <a href="/" class="brand">SoundMat</a>
+    <nav class="site-nav">
+      <a href="/">Control</a>
+      <a href="/mat" class="is-active">Mat</a>
+      <a href="/debug">Debug</a>
+    </nav>
+  </header>
+
+  <main class="page page--pad page--mat" id="matPage">
+    <div class="pad-toolbar mat-mock-only" id="padToolbar" hidden>
+      <span class="label-xs">Virtual Pad</span>
+      <button id="reset" type="button" class="btn-ghost">Reset</button>
+    </div>
+
+    <div class="pad-warn" id="warn"></div>
+
+    <div class="pad-hud mat-mock-only" id="padHud" hidden>
+      <span id="st">—</span>
+      <span class="pad-hud-center">Chord <b id="chord">·</b></span>
+      <span class="pad-hud-right">
+        Lo-Fi <span class="lofi-track"><i id="lofiBar"></i></span><b id="lofi">0</b>
+      </span>
+    </div>
+
+    <div class="mat-layout" id="matLayout">
+      <div class="mat-pane mat-pane--pad mat-mock-only" id="padPane" hidden>
+        <div class="mat-frame">
+          <svg id="svg" viewBox="0 0 480 480">
+            <defs>
+              <filter id="led-glow" x="-100%" y="-100%" width="300%" height="300%">
+                <feGaussianBlur stdDeviation="1.6" result="blur"/>
+                <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+              <filter id="stone-glow" x="-80%" y="-80%" width="260%" height="260%">
+                <feGaussianBlur stdDeviation="4" result="blur"/>
+                <feMerge><feMergeNode in="blur"/><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+            <circle cx="240" cy="240" r="218" fill="#0c0c14" stroke="#1e1e2a" stroke-width="1"/>
+            <g id="guides" pointer-events="none"></g>
+            <g id="cells"></g>
+            <g id="stones" pointer-events="none"></g>
+            <g id="labels" pointer-events="none"></g>
+            <g id="leds" pointer-events="none"></g>
+            <circle cx="240" cy="240" r="2.5" fill="#c0b8a0" opacity="0.25" pointer-events="none"/>
+          </svg>
+        </div>
+        <p class="pad-hint">Tap a cell to place / remove a stone · R0 R1 to play</p>
+      </div>
+
+      <div class="mat-pane mat-pane--heat">
+        <div class="heat-head">
+          <span class="label-xs">Sensor</span>
+        </div>
+        <div class="heat-canvas-wrap">
+          <canvas id="cv" width="480" height="480"></canvas>
+        </div>
+        <p class="pad-hint" id="heatHint">Pressure heatmap · ring 0 innermost</p>
+      </div>
+    </div>
+  </main>
+
+<script>
+const CX=240, CY=240, MAX_R=186, RINGS=8, SECTORS=32, RING_W=MAX_R/RINGS;
+const LED_COUNT=108, LED_R=208, SA=2*Math.PI/SECTORS;
+const HEAT_CX=240, HEAT_CY=240, HEAT_RMAX=220, ADC=4095;
+const RING_RGB={0:[100,108,128],1:[148,112,88],2:[88,72,210],3:[32,188,148],
+  4:[48,152,255],5:[200,72,168],6:[218,158,48],7:[255,108,32]};
+const RING_GLOW=["#505460","#585048","#585470","#4a6860","#5a7888","#6a6670","#786858","#806040"];
+const CONTROL=new Set([0,1]);
+const SVGNS="http://www.w3.org/2000/svg";
+
+let isMock = false;
+const placed=new Set();
+const key=(r,s)=>`${r}:${s}`;
+const rgb=c=>`rgb(${c[0]},${c[1]},${c[2]})`;
+const pol=(r,a)=>[CX+Math.cos(a)*r, CY+Math.sin(a)*r];
+
+function sectorPath(ring,s){
+  const geo=7-ring, outer=MAX_R-geo*RING_W, inner=Math.max(0,outer-RING_W);
+  const a0=(s-0.5)*SA-Math.PI/2, a1=(s+0.5)*SA-Math.PI/2;
+  const [x0i,y0i]=pol(inner,a0),[x1i,y1i]=pol(inner,a1),[x1o,y1o]=pol(outer,a1),[x0o,y0o]=pol(outer,a0);
+  return `M ${x0i} ${y0i} A ${inner} ${inner} 0 0 1 ${x1i} ${y1i} L ${x1o} ${y1o} A ${outer} ${outer} 0 0 0 ${x0o} ${y0o} Z`;
+}
+function cellCenter(ring,s){
+  const geo=7-ring, outer=MAX_R-geo*RING_W, inner=Math.max(0,outer-RING_W);
+  return pol((inner+outer)/2, s*SA-Math.PI/2);
+}
+
+// ── Heatmap ──
+const cv=document.getElementById("cv"), hctx=cv.getContext("2d");
+
+function drawHeat(matrix){
+  hctx.clearRect(0,0,480,480);
+  hctx.fillStyle="#0c0c14";
+  hctx.fillRect(0,0,480,480);
+  if(!matrix) return;
+  const ringW=HEAT_RMAX/RINGS;
+  for(let r=0;r<RINGS;r++){
+    const inner=r*ringW, outer=(r+1)*ringW;
+    for(let s=0;s<SECTORS;s++){
+      const raw=matrix[r][s];
+      const v=raw<0?0:raw;
+      const a0=(s/SECTORS)*2*Math.PI-Math.PI/2-Math.PI/SECTORS;
+      const a1=a0+2*Math.PI/SECTORS;
+      hctx.beginPath();
+      hctx.arc(HEAT_CX,HEAT_CY,outer,a0,a1);
+      hctx.arc(HEAT_CX,HEAT_CY,inner,a1,a0,true);
+      hctx.closePath();
+      const lum=Math.round((v/ADC)*255);
+      hctx.fillStyle=`rgb(${lum},${Math.round(lum*0.55)},${Math.round(30+lum*0.35)})`;
+      hctx.fill();
+      hctx.strokeStyle="rgba(26,26,36,0.8)"; hctx.lineWidth=0.5; hctx.stroke();
+      if(raw>0){
+        const midA=(a0+a1)/2, midRad=(inner+outer)/2;
+        const tx=HEAT_CX+Math.cos(midA)*midRad, ty=HEAT_CY+Math.sin(midA)*midRad;
+        const fs=(outer-inner)>24?9:7;
+        hctx.font=`${fs}px ui-monospace, Menlo, monospace`;
+        hctx.textAlign="center";
+        hctx.textBaseline="middle";
+        hctx.fillStyle=raw>1500?"#f0ebe0":"rgba(221,214,200,0.92)";
+        hctx.fillText(String(raw), tx, ty);
+      }
+    }
+  }
+  hctx.beginPath();
+  hctx.arc(HEAT_CX,HEAT_CY,HEAT_RMAX+2,0,Math.PI*2);
+  hctx.strokeStyle="rgba(192,184,160,0.12)"; hctx.stroke();
+}
+
+function connectSensor(){
+  const proto=location.protocol==="https:"?"wss":"ws";
+  const ws=new WebSocket(`${proto}://${location.host}/api/sensor_stream`);
+  ws.onmessage=e=>{
+    const d=JSON.parse(e.data);
+    drawHeat(d.matrix);
+  };
+  ws.onclose=()=>setTimeout(connectSensor,1000);
+}
+
+// ── Pad (mock only) ──
+const pathByKey={}, stoneByKey={};
+let ledDots=[];
+
+function initPad(){
+  const cellsG=document.getElementById("cells");
+  const stonesG=document.getElementById("stones");
+  for(let r=0;r<RINGS;r++) for(let s=0;s<SECTORS;s++){
+    const p=document.createElementNS(SVGNS,"path");
+    p.setAttribute("d",sectorPath(r,s));
+    p.setAttribute("class","cell");
+    p.addEventListener("click",()=>toggle(r,s));
+    cellsG.appendChild(p); pathByKey[key(r,s)]=p;
+
+    const [cx,cy]=cellCenter(r,s);
+    const g=document.createElementNS(SVGNS,"g");
+    g.setAttribute("visibility","hidden");
+    g.setAttribute("filter","url(#stone-glow)");
+    for (const [rad, fill, op] of [[CONTROL.has(r)?12:9,RING_GLOW[r],0.35],[CONTROL.has(r)?5.5:4.5,rgb(RING_RGB[r]),0.9],[1.8,"#fff",0.55]]) {
+      const c=document.createElementNS(SVGNS,"circle");
+      c.setAttribute("cx",cx); c.setAttribute("cy",cy); c.setAttribute("r",String(rad));
+      c.setAttribute("fill",fill); c.setAttribute("fill-opacity",String(op));
+      g.appendChild(c);
+    }
+    stonesG.appendChild(g); stoneByKey[key(r,s)]=g;
+    paint(r,s,false);
+  }
+
+  const guides=document.getElementById("guides");
+  [0,8,16,24].forEach(s=>{
+    const a=s*SA-Math.PI/2; const [x,y]=pol(MAX_R,a);
+    const l=document.createElementNS(SVGNS,"line");
+    l.setAttribute("x1",CX); l.setAttribute("y1",CY); l.setAttribute("x2",x); l.setAttribute("y2",y);
+    l.setAttribute("stroke","#c0b8a0"); l.setAttribute("stroke-opacity","0.12"); l.setAttribute("stroke-width","0.5");
+    guides.appendChild(l);
+  });
+
+  const labelsG=document.getElementById("labels");
+  for(let r=0;r<RINGS;r++){
+    const geo=7-r, midR=MAX_R-(geo+0.5)*RING_W;
+    const [lx,ly]=pol(midR,-Math.PI/2);
+    const t=document.createElementNS(SVGNS,"text");
+    t.setAttribute("x",lx); t.setAttribute("y",ly);
+    t.setAttribute("fill",rgb(RING_RGB[r])); t.setAttribute("font-size","9");
+    t.setAttribute("font-family","Georgia, serif"); t.setAttribute("text-anchor","middle");
+    t.setAttribute("opacity", CONTROL.has(r)?"0.42":"0.34");
+    t.textContent="R"+r;
+    labelsG.appendChild(t);
+  }
+
+  const ledsG=document.getElementById("leds");
+  ledDots=[];
+  for(let i=0;i<LED_COUNT;i++){
+    const a=i*2*Math.PI/LED_COUNT-Math.PI/2; const [x,y]=pol(LED_R,a);
+    const track=document.createElementNS(SVGNS,"circle");
+    track.setAttribute("cx",x); track.setAttribute("cy",y); track.setAttribute("r","3.2");
+    track.setAttribute("fill","#14141c");
+    ledsG.appendChild(track);
+    const d=document.createElementNS(SVGNS,"circle");
+    d.setAttribute("cx",x); d.setAttribute("cy",y); d.setAttribute("r","2.4");
+    d.setAttribute("fill","#1a1a22");
+    ledsG.appendChild(d); ledDots.push(d);
+  }
+
+  document.getElementById("reset").onclick=()=>{
+    placed.clear();
+    for(const k in pathByKey){ const [r,s]=k.split(":").map(Number); paint(+r,+s,false); }
+    postCells();
+  };
+}
+
+function paint(r,s,on){
+  const p=pathByKey[key(r,s)], c=RING_RGB[r], st=stoneByKey[key(r,s)];
+  if(on){
+    p.setAttribute("fill",rgb(c)); p.setAttribute("fill-opacity","0.22");
+    p.setAttribute("stroke",rgb(c)); p.setAttribute("stroke-opacity","0.45"); p.setAttribute("stroke-width","0.5");
+    st.setAttribute("visibility","visible");
+  } else {
+    p.setAttribute("fill",rgb(c));
+    p.setAttribute("fill-opacity", CONTROL.has(r)?"0.04":"0.05");
+    p.setAttribute("stroke",rgb(c)); p.setAttribute("stroke-opacity","0.14"); p.setAttribute("stroke-width","0.35");
+    st.setAttribute("visibility","hidden");
+  }
+}
+
+function toggle(r,s){
+  const k=key(r,s);
+  if(placed.has(k)) placed.delete(k); else placed.add(k);
+  paint(r,s,placed.has(k));
+  postCells();
+}
+
+function warn(m){ document.getElementById("warn").textContent=m; }
+
+async function postCells(){
+  const cells=[...placed].map(k=>k.split(":").map(Number));
+  try{
+    const res=await fetch("/api/mock/cells",{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify({cells})});
+    if(res.status===400){ const j=await res.json(); warn(j.error||"Not in mock mode"); }
+    else warn("");
+  }catch(e){ warn("Inject failed: "+e); }
+}
+
+function connectMockView(){
+  const proto=location.protocol==="https:"?"wss":"ws";
+  const ws=new WebSocket(`${proto}://${location.host}/api/mock/view`);
+  ws.onmessage=e=>{
+    const d=JSON.parse(e.data);
+    if(d.leds) for(let i=0;i<LED_COUNT && i<d.leds.length;i++){
+      const c=d.leds[i], lum=(c[0]+c[1]+c[2])/3;
+      ledDots[i].setAttribute("fill",rgb(c));
+      ledDots[i].setAttribute("opacity", lum>8?"1":"0.35");
+      ledDots[i].setAttribute("filter", lum>40?"url(#led-glow)":"");
+    }
+    const a=d.status&&d.status.app||{};
+    const stEl=document.getElementById("st");
+    if(a.mode==="jam"){
+      const playing=a.playing;
+      stEl.innerHTML=`<span class="state-badge${playing?" is-playing":""}">${playing?"playing":(a.form_ended?"ended":"idle")}</span> `+
+        `<span class="muted">${a.musical_time||0}/${a.form_duration||0}s</span>`;
+    } else {
+      stEl.textContent=d.status&&d.status.mode||"—";
+    }
+    document.getElementById("chord").textContent=a.chord||"·";
+    const lofi=a.lofi||0;
+    document.getElementById("lofi").textContent=lofi;
+    document.getElementById("lofiBar").style.width=(lofi/1000*100)+"%";
+  };
+  ws.onclose=()=>setTimeout(connectMockView,1000);
+}
+
+async function boot(){
+  const st=await (await fetch("/api/status")).json();
+  isMock=!!st.mock;
+  const layout=document.getElementById("matLayout");
+  const page=document.getElementById("matPage");
+  layout.classList.toggle("is-mock", isMock);
+  page.classList.toggle("is-mock-wide", isMock);
+  document.querySelectorAll(".mat-mock-only").forEach(el=>{ el.hidden=!isMock; });
+  document.getElementById("heatHint").textContent=isMock
+    ? "Live sensor · synced with virtual pad"
+    : "Pressure heatmap · ring 0 innermost";
+
+  connectSensor();
+  if(isMock){
+    initPad();
+    connectMockView();
+    window.addEventListener("pagehide", ()=>{
+      navigator.sendBeacon("/api/mock/cells",
+        new Blob([JSON.stringify({cells:[]})],{type:"application/json"}));
+    });
+  }
+}
+
+boot();
+</script>
+</body>
+</html>

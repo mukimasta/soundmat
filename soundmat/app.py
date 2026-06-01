@@ -24,12 +24,26 @@ else:  # pragma: no cover
 
 def load_manifest(path: str | Path) -> dict:
     """读 manifest TOML → dict。附带绝对路径与所在目录，供模式 config_loader 解析引用。"""
-    path = Path(path)
+    path = Path(path).resolve()
     with open(path, "rb") as f:
         data = tomllib.load(f)
     data.setdefault("_path", str(path))
     data.setdefault("_dir", str(path.parent))
     return data
+
+
+def manifest_path_key(path: str | Path) -> str:
+    """Canonical manifest path for API + Web UI matching."""
+    return str(Path(path).resolve())
+
+
+def manifest_rel_key(path: str | Path | None) -> str | None:
+    if path is None:
+        return None
+    try:
+        return str(Path(path).resolve().relative_to(config.MANIFEST_DIR))
+    except ValueError:
+        return None
 
 
 class ModeManager:
@@ -66,7 +80,7 @@ class ModeManager:
             app.start()
             self.current_app = app
             self.current_manifest = manifest
-            self.current_path = str(manifest_path)
+            self.current_path = manifest_path_key(manifest_path)
             return self.status()
 
     def stop_current(self) -> None:
@@ -88,6 +102,7 @@ class ModeManager:
         with self._lock:
             base = {
                 "manifest": self.current_path,
+                "manifest_rel": manifest_rel_key(self.current_path),
                 "mode": (self.current_manifest or {}).get("mode"),
                 "name": (self.current_manifest or {}).get("name"),
             }
@@ -112,7 +127,7 @@ def list_manifests() -> list[dict]:
             continue
         rel = path.relative_to(config.MANIFEST_DIR)
         out.append({
-            "path": str(path),
+            "path": manifest_path_key(path),
             "rel": str(rel),
             "mode": data.get("mode"),
             "name": data.get("name", str(rel)),

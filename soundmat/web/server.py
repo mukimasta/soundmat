@@ -28,9 +28,13 @@ def build_app(manager):
     def index():
         return FileResponse(STATIC_DIR / "index.html")
 
+    @app.get("/mat")
+    def mat_page():
+        return FileResponse(STATIC_DIR / "mat.html")
+
     @app.get("/heatmap")
     def heatmap():
-        return FileResponse(STATIC_DIR / "heatmap.html")
+        return FileResponse(STATIC_DIR / "mat.html")
 
     @app.get("/debug")
     def debug():
@@ -38,12 +42,14 @@ def build_app(manager):
 
     @app.get("/pad")
     def pad():
-        return FileResponse(STATIC_DIR / "pad.html")
+        return FileResponse(STATIC_DIR / "mat.html")
 
     # ── HTTP API ──
     @app.get("/api/status")
     def status():
-        return manager.status()
+        st = manager.status()
+        st["mock"] = isinstance(manager.services.sensor, MockSensorReader)
+        return st
 
     @app.get("/api/manifests")
     def manifests():

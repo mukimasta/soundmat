@@ -1,7 +1,7 @@
 # Lo-Fi Loop · Progression 1（设计文档默认曲目）
 mode = "jam"
 name = "Lo-Fi Loop · Progression 1"
-description = "京都夜雨，2m9 → 513 → 1maj9 → 69"
+description = "Kyoto night rain · 2m9 → 513 → 1maj9 → 69"
 
 [music]
 bpm = 120

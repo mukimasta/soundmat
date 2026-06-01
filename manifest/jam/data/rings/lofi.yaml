@@ -5,9 +5,9 @@
 R0: {role: control, param: lofi_amount, range: [0, 1000]}
 R1: {role: control, param: lofi_amount, range: [0, 1000]}
 # bass 实际 gate = 四分音符时长 + tail_sec（与 web bassTailSec 一致；note_sec 仅作 bpm 缺失回退）
-R2: {role: bass,   instrument: jam_sub_bass,   note_sec: 0.25, tail_sec: 0.1,  gain: 2.2}
-R3: {role: bass,   instrument: jam_pluck_bass, note_sec: 0.5,  tail_sec: 0.15, gain: 2.35}
+R2: {role: bass,   instrument: jam_sub_bass,   note_sec: 0.25, tail_sec: 0.1,  gain: 2.9}
+R3: {role: bass,   instrument: jam_pluck_bass, note_sec: 0.5,  tail_sec: 0.15, gain: 3.1}
 R4: {role: melody, instrument: jam_pad_pluck,  note_sec: 1.28, gain: 2.75}
 R5: {role: melody, instrument: jam_rhodes,     note_sec: 0.74, gain: 3.45, params: {far: 1}}
 R6: {role: melody, instrument: jam_rhodes,     note_sec: 0.82, gain: 3.45, params: {far: 0}}
-R7: {role: melody, instrument: jam_marimba,    note_sec: 2.0,  gain: 2.75}
+R7: {role: melody, instrument: jam_marimba,    note_sec: 2.012, gain: 2.75}

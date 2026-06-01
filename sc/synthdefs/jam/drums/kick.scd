@@ -7,6 +7,6 @@
         var f = 48 * (1 + (fenv * 6));                        // octaves 扫频
         var env = EnvGen.kr(Env.perc(0.001, 0.22, 1, -4), doneAction: 2);
         var sig = SinOsc.ar(f) * env * amp;
-        Out.ar(out, Pan2.ar(sig, pan));
+        Out.ar(out, [sig, sig]);
     })
 );

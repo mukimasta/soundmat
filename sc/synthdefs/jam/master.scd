@@ -11,14 +11,13 @@
         var dr = In.ar(drumBus, 2) * drumGain;
         var sig = mel + harm + dr;
         var co = cutoff.clip(60, 18000);
-        var k, lagged;
+        var lagged;
 
         lagged = Lag.kr(co, 0.2);
         sig = RLPF.ar(sig, lagged, 1.389);
         sig = RLPF.ar(sig, lagged, 1.389);
 
-        k = (2 * drive) / (1 - drive).max(0.001);
-        sig = (1 + k) * sig / (1 + (k * sig.abs));
+        sig = (sig * (drive < 0.0001)) + (~jamToneDistort.value(sig, drive) * (drive > 0.0001));
 
         Out.ar(out, sig * amp);
     })

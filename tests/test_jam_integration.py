@@ -36,6 +36,9 @@ class FakeOSC:
     def free_node(self, node_id):
         pass
 
+    def deep_free_group(self, group_id):
+        pass
+
 
 class FakeSC:
     def __init__(self, osc):

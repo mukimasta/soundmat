@@ -1,109 +1,257 @@
 <!doctype html>
-<html lang="zh">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>SoundMat Control</title>
-<style>
-  :root { --bg:#08080e; --fg:#c0b8a0; --line:#c0b8a055; }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 Georgia,serif;
-         display:flex; flex-direction:column; align-items:center; padding:24px; }
-  h1 { font-weight:300; letter-spacing:6px; text-transform:uppercase; font-size:20px; opacity:.8; }
-  .card { width:min(520px,100%); border:1px solid var(--line); border-radius:12px;
-          padding:18px 20px; margin:10px 0; }
-  .row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:8px 0; }
-  label { opacity:.8; }
-  button, input[type=number] { background:rgba(192,184,160,.06); border:1px solid var(--line);
-          color:var(--fg); font:inherit; padding:8px 16px; border-radius:999px; cursor:pointer; }
-  button:hover { background:rgba(192,184,160,.14); }
-  button.active { background:rgba(192,184,160,.18); border-color:#c0b8a0; }
-  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:8px; }
-  .on { background:#5fd08a; } .off { background:#888; }
-  .list label { display:block; padding:6px 0; cursor:pointer; }
-  a { color:var(--fg); }
-  input[type=range] { width:200px; accent-color:var(--fg); }
-  .muted { opacity:.5; font-size:12px; }
-</style>
+<title>SoundMat</title>
+<link rel="stylesheet" href="/static/soundmat.css" />
 </head>
 <body>
-  <h1>SoundMat</h1>
+  <header class="site-header">
+    <a href="/" class="brand">SoundMat</a>
+    <nav class="site-nav">
+      <a href="/" class="is-active">Control</a>
+      <a href="/mat">Mat</a>
+      <a href="/debug">Debug</a>
+    </nav>
+  </header>
 
-  <div class="card">
-    <div class="row"><span><span id="dot" class="dot off"></span><b id="statusText">…</b></span>
-      <span class="muted" id="chord"></span></div>
-    <div class="muted" id="detail"></div>
-  </div>
+  <main class="page">
+    <section class="card status-hero">
+      <div class="status-row">
+        <div class="status-main">
+          <span id="dot" class="dot off"></span>
+          <h1 class="status-name" id="statusText">…</h1>
+        </div>
+        <div class="status-chord" id="chordBlock" hidden>
+          <div class="status-chord-value" id="chord"></div>
+          <div class="status-chord-meta" id="chordMeta"></div>
+        </div>
+      </div>
+      <p class="status-sub" id="statusSub"></p>
+      <div class="status-detail" id="detail"></div>
+      <div class="progress-track jam-only" id="progressWrap" hidden>
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+    </section>
 
-  <div class="card">
-    <div class="muted">Switch Mode</div>
-    <div class="list" id="manifests"></div>
-    <div class="row"><button id="apply">Apply</button></div>
-  </div>
+    <section class="card">
+      <h2 class="card-title">Presets</h2>
+      <div class="mode-grid" id="modeGrid"></div>
+      <div class="mode-switch-msg" id="switchMsg"></div>
+    </section>
 
-  <div class="card">
-    <div class="row"><label>Transport</label>
-      <span><button id="start">Start</button> <button id="stop">Stop</button></span></div>
-    <div class="row"><label>BPM <span class="muted">(jam)</span></label>
-      <span><input id="bpm" type="number" min="40" max="220" step="1" value="120" />
-      <button id="setBpm">Set</button></span></div>
-    <div class="row"><label>Volume</label>
-      <input id="vol" type="range" min="0" max="1" step="0.01" value="1" /></div>
-  </div>
+    <section class="card">
+      <h2 class="card-title">Mix</h2>
+      <div class="mix-row">
+        <label for="vol">Volume</label>
+        <input id="vol" type="range" min="0" max="1" step="0.01" value="0" />
+        <span class="mix-value" id="volLabel">—</span>
+      </div>
+      <div class="jam-only" id="bpmBlock" hidden>
+        <div class="row" style="margin-top:4px">
+          <label>BPM</label>
+        </div>
+        <div class="bpm-pills" id="bpmPills"></div>
+      </div>
+    </section>
 
-  <div class="card row">
-    <a href="/pad">Virtual Pad</a><a href="/heatmap">Heatmap</a><a href="/debug">Debug</a>
-  </div>
+    <details class="dev-details">
+      <summary>Developer</summary>
+      <div class="dev-body">
+        <p class="dev-hint">
+          Restart / Stop reloads or halts the entire mode thread. This is <strong>not</strong> Jam transport
+          (use R0/R1 stones on the Mat page to start playback).
+        </p>
+        <div class="row">
+          <span class="muted">Mode lifecycle</span>
+          <span>
+            <button id="start" type="button">Restart</button>
+            <button id="stop" type="button" class="btn-ghost">Stop</button>
+          </span>
+        </div>
+      </div>
+    </details>
+  </main>
 
 <script>
 const $ = s => document.querySelector(s);
-let manifests = [], selected = null, currentPath = null;
+const BPM_PRESETS = [80, 100, 120, 140, 160];
+let manifests = [], currentPath = null, currentRel = null, switching = false, volDragging = false;
+
+function normPath(p) {
+  return p ? String(p).replace(/\\/g, "/") : "";
+}
+
+function manifestIsActive(m) {
+  if (currentPath == null && currentRel == null) return false;
+  if (currentPath != null && m.path === currentPath) return true;
+  const cur = normPath(currentPath);
+  const mp = normPath(m.path);
+  if (cur && mp && cur === mp) return true;
+  if (currentRel != null && m.rel === currentRel) return true;
+  const rel = normPath(m.rel);
+  return !!(cur && rel && (cur.endsWith("/" + rel) || cur.endsWith(rel)));
+}
 
 async function getJSON(u){ return (await fetch(u)).json(); }
 async function postJSON(u, body){
-  return (await fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(body)})).json();
+  const res = await fetch(u, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
 }
 
-function renderManifests(){
-  const box = $("#manifests"); box.innerHTML = "";
-  for(const m of manifests){
-    const id = "m_"+m.rel.replace(/\W/g,"_");
-    const lab = document.createElement("label");
-    const checked = (selected ?? currentPath) === m.path ? "checked" : "";
-    lab.innerHTML = `<input type="radio" name="man" value="${m.path}" ${checked}/> `+
-      `${m.name} <span class="muted">(${m.mode})</span>`;
-    lab.querySelector("input").onchange = e => selected = e.target.value;
-    box.appendChild(lab);
+function setSwitchMsg(text, isError = false){
+  const el = $("#switchMsg");
+  el.textContent = text;
+  el.className = "mode-switch-msg" + (isError ? " is-error" : "");
+}
+
+function renderModeGrid(){
+  const grid = $("#modeGrid");
+  grid.innerHTML = "";
+  for (const m of manifests) {
+    const active = manifestIsActive(m);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "mode-card mode-card--" + m.mode + (active ? " is-active" : "");
+    btn.disabled = switching;
+    btn.innerHTML =
+      `<div class="mode-card-head">` +
+        `<span class="mode-card-name">${m.name}</span>` +
+        `<span class="mode-badge">${m.mode}</span>` +
+      `</div>` +
+      `<p class="mode-card-desc">${m.description || m.rel}</p>` +
+      (active ? `<span class="mode-card-mark">Active</span>` : "");
+    if (!active) {
+      btn.onclick = () => switchMode(m.path);
+    }
+    grid.appendChild(btn);
   }
+}
+
+async function switchMode(path){
+  if (switching || path === currentPath) return;
+  switching = true;
+  setSwitchMsg("Switching…");
+  renderModeGrid();
+  try {
+    await postJSON("/api/mode", { manifest: path });
+    setSwitchMsg("");
+    await refresh();
+  } catch (e) {
+    setSwitchMsg(String(e.message || e), true);
+  } finally {
+    switching = false;
+    renderModeGrid();
+  }
+}
+
+function renderBpmPills(activeBpm){
+  const box = $("#bpmPills");
+  box.innerHTML = "";
+  for (const b of BPM_PRESETS) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "bpm-pill" + (b === activeBpm ? " is-active" : "");
+    btn.textContent = String(b);
+    btn.onclick = async () => {
+      await postJSON("/api/params", { key: "bpm", value: b });
+      refresh();
+    };
+    box.appendChild(btn);
+  }
+}
+
+function syncVolume(v){
+  if (v == null || volDragging) return;
+  const vol = $("#vol");
+  vol.value = v;
+  $("#volLabel").textContent = Math.round(v * 100) + "%";
 }
 
 async function refresh(){
   const st = await getJSON("/api/status");
-  currentPath = st.manifest;
+  currentPath = st.manifest ?? null;
+  currentRel = st.manifest_rel ?? null;
   const app = st.app || {};
-  const playing = app.playing;
-  $("#dot").className = "dot " + (st.mode ? "on":"off");
-  $("#statusText").textContent = st.name ? `${st.name} (${st.mode})` : "no mode";
-  $("#chord").textContent = app.chord ? `${app.chord} · bar ${app.bar_global ?? ""}` : "";
-  $("#detail").textContent = app.mode === "jam"
-    ? `${playing?"playing":(app.form_ended?"form ended":"idle")} · ${app.musical_time||0}/${app.form_duration||0}s · bpm ${app.bpm}`
-    : "";
-  if(app.bpm) $("#bpm").value = app.bpm;
+  const isJam = st.mode === "jam" || app.mode === "jam";
+
+  $("#dot").className = "dot " + (st.mode ? "on" : "off");
+  $("#statusText").textContent = st.name || "no mode";
+
+  const cur = manifests.find(m => manifestIsActive(m));
+  $("#statusSub").textContent = cur?.description || "";
+
+  const chordEl = $("#chordBlock");
+  if (isJam && app.chord) {
+    chordEl.hidden = false;
+    $("#chord").textContent = app.chord;
+    $("#chordMeta").textContent = app.bar_global != null ? `bar ${app.bar_global}` : "";
+  } else {
+    chordEl.hidden = true;
+  }
+
+  $("#bpmBlock").hidden = !isJam;
+  document.querySelectorAll(".jam-only").forEach(el => {
+    if (el.id !== "bpmBlock") el.hidden = !isJam;
+  });
+
+  const progWrap = $("#progressWrap"), progFill = $("#progressFill");
+  if (isJam && app.form_duration > 0) {
+    progWrap.hidden = false;
+    const pct = Math.min(100, (app.musical_time || 0) / app.form_duration * 100);
+    progFill.style.width = pct + "%";
+    const state = app.playing ? "playing" : (app.form_ended ? "form ended" : "idle");
+    $("#detail").textContent =
+      `${state} · ${(app.musical_time || 0).toFixed(1)} / ${app.form_duration}s` +
+      (app.bpm ? ` · ${app.bpm} bpm` : "") +
+      (app.lofi != null ? ` · Lo-Fi ${app.lofi}` : "");
+    if (app.bpm) renderBpmPills(app.bpm);
+  } else if (st.mode === "ambient") {
+    progWrap.hidden = true;
+    $("#detail").textContent = app.occupied != null
+      ? `${app.occupied} stone${app.occupied !== 1 ? "s" : ""} on mat`
+      : "";
+  } else {
+    progWrap.hidden = true;
+    $("#detail").textContent = "";
+  }
+
+  syncVolume(app.master_volume);
+  renderModeGrid();
 }
 
-$("#apply").onclick = async () => {
-  const path = selected || currentPath;
-  if(path){ await postJSON("/api/mode",{manifest:path}); refresh(); }
+const volEl = $("#vol");
+volEl.addEventListener("pointerdown", () => { volDragging = true; });
+volEl.addEventListener("pointerup", () => { volDragging = false; });
+volEl.addEventListener("pointercancel", () => { volDragging = false; });
+volEl.addEventListener("input", () => {
+  $("#volLabel").textContent = Math.round(+volEl.value * 100) + "%";
+});
+volEl.addEventListener("change", async () => {
+  volDragging = false;
+  await postJSON("/api/params", { key: "master_volume", value: +volEl.value });
+  refresh();
+});
+
+$("#start").onclick = async () => {
+  await postJSON("/api/transport", { action: "start" });
+  refresh();
 };
-$("#start").onclick = async () => { await postJSON("/api/transport",{action:"start"}); refresh(); };
-$("#stop").onclick  = async () => { await postJSON("/api/transport",{action:"stop"}); refresh(); };
-$("#setBpm").onclick= async () => { await postJSON("/api/params",{key:"bpm",value:+$("#bpm").value}); refresh(); };
-$("#vol").oninput   = async () => { await postJSON("/api/params",{key:"master_volume",value:+$("#vol").value}); };
+$("#stop").onclick = async () => {
+  await postJSON("/api/transport", { action: "stop" });
+  refresh();
+};
 
 (async () => {
   manifests = await getJSON("/api/manifests");
-  await refresh(); renderManifests();
+  await refresh();
   setInterval(refresh, 1000);
 })();
 </script>
