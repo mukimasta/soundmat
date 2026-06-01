@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SoundMat · Debug</title>
+<style>
+  body { margin:0; background:#08080e; color:#c0b8a0; font:13px ui-monospace,monospace; padding:16px; }
+  a { color:#c0b8a0; } pre { white-space:pre-wrap; }
+</style>
+</head>
+<body>
+  <div><a href="/">← Control</a> · 事件/状态流</div>
+  <pre id="out">connecting…</pre>
+<script>
+const out = document.getElementById("out");
+const proto = location.protocol === "https:" ? "wss" : "ws";
+const ws = new WebSocket(`${proto}://${location.host}/api/event_stream`);
+ws.onmessage = e => { out.textContent = JSON.stringify(JSON.parse(e.data), null, 2); };
+ws.onclose = () => { out.textContent += "\n[closed]"; };
+</script>
+</body>
+</html>

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>SoundMat · Virtual Pad</title>
+<style>
+  :root { --bg:#08080e; --fg:#c0b8a0; --line:#c0b8a055; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:13px Georgia,serif;
+         display:flex; flex-direction:column; align-items:center; padding:10px; user-select:none; }
+  a { color:var(--fg); } .top { width:100%; max-width:520px; display:flex; justify-content:space-between; }
+  #warn { color:#e08a8a; min-height:16px; margin:4px 0; text-align:center; }
+  .status { display:flex; gap:14px; flex-wrap:wrap; justify-content:center; margin:6px 0; opacity:.85; }
+  .status b { color:#fff; font-weight:400; }
+  .bar { width:140px; height:6px; border:1px solid var(--line); border-radius:3px; overflow:hidden; vertical-align:middle; display:inline-block; }
+  .bar > i { display:block; height:100%; background:var(--fg); width:0; }
+  svg { width:min(92vw, 520px); height:min(92vw,520px); touch-action:none; }
+  button { background:rgba(192,184,160,.06); border:1px solid var(--line); color:var(--fg);
+           font:inherit; padding:6px 14px; border-radius:999px; cursor:pointer; }
+  .muted { opacity:.5; }
+  .cell { cursor:pointer; }
+</style>
+</head>
+<body>
+  <div class="top">
+    <a href="/">← Control</a>
+    <span class="muted">Virtual Pad · 点格子放/拿石头</span>
+    <button id="reset">Reset</button>
+  </div>
+  <div id="warn"></div>
+  <div class="status">
+    <span id="st">—</span>
+    <span>和弦 <b id="chord">·</b></span>
+    <span>Lo-Fi <span class="bar"><i id="lofiBar"></i></span> <b id="lofi">0</b></span>
+  </div>
+  <svg id="svg" viewBox="0 0 480 480">
+    <circle cx="240" cy="240" r="218" fill="#0c0c14" stroke="#1a1a24"/>
+    <g id="leds"></g>
+    <g id="cells"></g>
+    <g id="guides"></g>
+  </svg>
+
+<script>
+const CX=240, CY=240, MAX_R=186, RINGS=8, SECTORS=32, RING_W=MAX_R/RINGS;
+const LED_COUNT=108, LED_R=208, SA=2*Math.PI/SECTORS;
+const RING_RGB={0:[100,108,128],1:[148,112,88],2:[88,72,210],3:[32,188,148],
+  4:[48,152,255],5:[200,72,168],6:[218,158,48],7:[255,108,32]};
+const CONTROL=new Set([0,1]);
+
+const pol=(r,a)=>[CX+Math.cos(a)*r, CY+Math.sin(a)*r];
+function sectorPath(ring,s){
+  const geo=7-ring, outer=MAX_R-geo*RING_W, inner=Math.max(0,outer-RING_W);
+  const a0=(s-0.5)*SA-Math.PI/2, a1=(s+0.5)*SA-Math.PI/2;
+  const [x0i,y0i]=pol(inner,a0),[x1i,y1i]=pol(inner,a1),[x1o,y1o]=pol(outer,a1),[x0o,y0o]=pol(outer,a0);
+  return `M ${x0i} ${y0i} A ${inner} ${inner} 0 0 1 ${x1i} ${y1i} L ${x1o} ${y1o} A ${outer} ${outer} 0 0 0 ${x0o} ${y0o} Z`;
+}
+const rgb=c=>`rgb(${c[0]},${c[1]},${c[2]})`;
+const SVGNS="http://www.w3.org/2000/svg";
+const placed=new Set();              // "ring:sector"
+const key=(r,s)=>`${r}:${s}`;
+
+// ── 建格子 ──
+const cellsG=document.getElementById("cells"), pathByKey={};
+for(let r=0;r<RINGS;r++) for(let s=0;s<SECTORS;s++){
+  const p=document.createElementNS(SVGNS,"path");
+  p.setAttribute("d",sectorPath(r,s));
+  p.setAttribute("class","cell");
+  p.dataset.r=r; p.dataset.s=s;
+  paint(p,r,s,false);
+  p.addEventListener("click",()=>toggle(r,s));
+  cellsG.appendChild(p); pathByKey[key(r,s)]=p;
+}
+function paint(p,r,s,on){
+  const c=RING_RGB[r];
+  if(on){ p.setAttribute("fill",rgb(c)); p.setAttribute("fill-opacity","0.85");
+          p.setAttribute("stroke","#fff"); p.setAttribute("stroke-opacity","0.5"); p.setAttribute("stroke-width","0.6"); }
+  else  { p.setAttribute("fill",rgb(c)); p.setAttribute("fill-opacity", CONTROL.has(r)?"0.05":"0.06");
+          p.setAttribute("stroke",rgb(c)); p.setAttribute("stroke-opacity","0.18"); p.setAttribute("stroke-width","0.4"); }
+}
+
+// ── 方位/环 0 引导线 ──
+const guides=document.getElementById("guides");
+[0,8,16,24].forEach(s=>{
+  const a=s*SA-Math.PI/2; const [x,y]=pol(MAX_R,a);
+  const l=document.createElementNS(SVGNS,"line");
+  l.setAttribute("x1",CX); l.setAttribute("y1",CY); l.setAttribute("x2",x); l.setAttribute("y2",y);
+  l.setAttribute("stroke","#c0b8a0"); l.setAttribute("stroke-opacity","0.25"); l.setAttribute("stroke-width","0.5");
+  guides.appendChild(l);
+});
+
+// ── LED 圈 ──
+const ledsG=document.getElementById("leds"), ledDots=[];
+for(let i=0;i<LED_COUNT;i++){
+  const a=i*2*Math.PI/LED_COUNT-Math.PI/2; const [x,y]=pol(LED_R,a);
+  const d=document.createElementNS(SVGNS,"circle");
+  d.setAttribute("cx",x); d.setAttribute("cy",y); d.setAttribute("r","2.6");
+  d.setAttribute("fill","#222");
+  ledsG.appendChild(d); ledDots.push(d);
+}
+
+// ── 交互 ──
+function toggle(r,s){
+  const k=key(r,s);
+  if(placed.has(k)) placed.delete(k); else placed.add(k);
+  paint(pathByKey[k],r,s,placed.has(k));
+  postCells();
+}
+async function postCells(){
+  const cells=[...placed].map(k=>k.split(":").map(Number));
+  try{
+    const res=await fetch("/api/mock/cells",{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify({cells})});
+    if(res.status===400){ const j=await res.json(); warn(j.error||"非 mock 模式"); }
+    else warn("");
+  }catch(e){ warn("注入失败："+e); }
+}
+function warn(m){ document.getElementById("warn").textContent=m; }
+document.getElementById("reset").onclick=()=>{
+  placed.clear();
+  for(const k in pathByKey){ const [r,s]=k.split(":").map(Number); paint(pathByKey[k],r,s,false); }
+  postCells();
+};
+
+// ── 视图流（LED + 状态）──
+function connect(){
+  const proto=location.protocol==="https:"?"wss":"ws";
+  const ws=new WebSocket(`${proto}://${location.host}/api/mock/view`);
+  ws.onmessage=e=>{
+    const d=JSON.parse(e.data);
+    if(d.leds) for(let i=0;i<LED_COUNT && i<d.leds.length;i++) ledDots[i].setAttribute("fill",rgb(d.leds[i]));
+    const a=d.status&&d.status.app||{};
+    document.getElementById("st").innerHTML = a.mode==="jam"
+      ? (a.playing?"<b>playing</b>":(a.form_ended?"form ended":"idle"))+` · ${a.musical_time||0}/${a.form_duration||0}s`
+      : (d.status&&d.status.mode||"—");
+    document.getElementById("chord").textContent=a.chord||"·";
+    const lofi=a.lofi||0;
+    document.getElementById("lofi").textContent=lofi;
+    document.getElementById("lofiBar").style.width=(lofi/1000*100)+"%";
+  };
+  ws.onclose=()=>setTimeout(connect,1000);
+}
+connect();
+
+// ── 退出时清除石头 ──
+window.addEventListener("pagehide", () => {
+  const blob = new Blob([JSON.stringify({cells:[]})], {type:"application/json"});
+  navigator.sendBeacon("/api/mock/cells", blob);
+});
+</script>
+</body>
+</html>

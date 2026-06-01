@@ -1,0 +1,88 @@
+现在准备正式实现soundmat 的软件系统
+
+先介绍项目文档：
+
+/Users/mukii/Projects/SoundMat/docs/
+
+内有
+
+[[SoundMat (1)  Idea]]
+[[SoundMat (2)  Philosophy 产品设计哲学]]
+[[SoundMat (3)  外观设计]]
+[[SoundMat (4)  结构设计]]
+
+[[SoundMat (?)  传感器原理及设计]]
+[[SoundMat (?)  电子系统设计]]
+[[SoundMat (?)  固件设计]]
+[[SoundMat (?)  ]]
+
+[[SoundMat (?)  交互与声音化设计 Interaction and Sonification]]
+
+
+[[SoundMat (?)  结构制造]]
+[[SoundMat (?)  传感器制造]]
+[[SoundMat (?)  电子系统制造]]
+[[SoundMat 软件设计与开发]]
+
+[[SoundMat 尾声与总结]]
+
+[[SoundMat 时间线]]
+
+
+
+你首先先读
+idea，philosophy，外观设计，结构设计，传感器原理及设计，固件设计
+了解项目
+
+我没提到的文档不建议读入上下文。
+
+然后我们准备实现软件部分
+
+先读SoundMat (?)  交互与声音化设计 Interaction and Sonification
+了解软件设计目标
+
+这是本次任务的最核心文档，所有内容，特别是理念和框架，第一优先参考这个文档
+
+然后读SoundMat 软件设计与开发
+
+SoundMat 软件设计与开发 是本次任务的次级核心的文档，如果没有和交互与声音化设计 Interaction and Sonification文档冲突的地方，优先参考这个文档
+
+
+接着，有两个仓库，可以先了解一下，有必要的情况下参考
+
+
+ambient sonifcation:
+
+/Users/mukii/Projects/SoundMat/sonification
+这个仓库是原有的ambient模式软件实现，在本次任务中，ambient的具体功能和实现细节可以参考这个，框架还是要按SoundMat 软件设计与开发里的
+并且本次任务，jam mode 比ambient mode 重要，所以这个可以放在后面实现，先完成jam mode的
+
+并且有些素材还没收集完，所以现在这还是半成品状态，不用帮我继续，主要你是做迁移整合。
+
+
+
+Web Demo:
+
+然后是/Users/mukii/Projects/SoundMat/web_version/soundmat
+
+这里是demo实现，由于是不严谨的实现，框架设计有缺陷，请务必不要参考这里的框架，并且有些是探索的功能，可能已经废除，在正式实现中无需实现（例如随机连发）
+
+但是，这里有很多Jam mode的实现细节是设计文档没有提到的，如果jam mode设计文档中没有提到的，可以在这个仓库参考实现细节
+
+也有个细节文档 /Users/mukii/Projects/SoundMat/web_version/soundmat/src/soundmat/jam/JAM_DESIGN.md
+
+但是不要参考里面的ambient实现细节，那个是早期版本！
+
+
+但是，如果有冲突的情况下，请务必按照优先级顺序参考
+
+1. SoundMat (?)  交互与声音化设计 Interaction and Sonification
+2. SoundMat 软件设计与开发
+3. Web Demo仓库（jam 模式细节）
+4. ambient sonifcation仓库（ambient模式）
+
+
+
+
+
+

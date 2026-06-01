@@ -1,0 +1,18 @@
+# Lo-Fi Loop · Progression 1（设计文档默认曲目）
+mode = "jam"
+name = "Lo-Fi Loop · Progression 1"
+description = "京都夜雨，2m9 → 513 → 1maj9 → 69"
+
+[music]
+bpm = 120
+key = "C"
+scale = "major"
+master_volume = 1.0
+scheme = 2          # 交互文档「方案 3」语义：一圈 2 小节、每和弦 2 小节、16 分网格量化到 8 八分
+
+[refs]
+progression = "1"        # → data/progressions/1.yaml
+melody_pack = "1"        # → data/melodies/1/
+drums = "lofi_loop"      # → data/drums/lofi_loop.yaml
+rings = "lofi"           # → data/rings/lofi.yaml
+lofi_mapping = "default" # → data/lofi_mapping.yaml

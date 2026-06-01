@@ -1,0 +1,156 @@
+# 《京都岚山》样本清单 + 编排表（Ring 0–7）
+#
+# mode: sustained 持续 / trigger 放下触发 / generator 间歇随机触发源
+# 采样角色给 samples/tiers；合成角色给 synthdef（+freq 等）。
+# 字段名对应 SynthDef 参数（amp dB；atk/rel/decay 秒；revSend 0..1）。
+# buf/loop/out/revBus 由 voices 运行时补，不在此写。合成音不套 [defaults]。
+mode = "ambient"
+name = "京都岚山 · Ambient"
+description = "C 调五声音阶；从内到外 drone → pad → 竹林 → 天气 → 马林巴 → 旋律 → 事件"
+
+[music]
+key = "C"
+scale = "pentatonic"
+master_volume = 1.0
+
+[defaults]
+amp = -12
+atk = 0.5
+rel = 1.5
+revSend = 0.25
+
+# ── 样本库 ──────────────────────────────────────────────────────────────────
+[samples.bell]
+file = "ring01/big-bell/622797__ilmari_freesound__2022-01-01-lingjiushan-bell-okm-ii-004.wav"
+amp  = -6
+[samples.boom_33637]
+file = "ring01/deep-boom/33637__herbertboland__cinematicboomnorm.wav"
+amp  = -4
+[samples.boom_379352]
+file = "ring01/deep-boom/379352__hard3eat__atomic-bomb.wav"
+amp  = -4
+[samples.pad_robots]
+file = "ring2/mid-pad/530217__sondredrakensson__do-robots-get-bored.wav"
+amp  = -14
+[samples.wind_small]
+file = "ring3/wind/335891__yoyodaman234__bamboo-creaking-in-wind.wav"
+[samples.wind_big]
+file = "ring3/wind/670270__caleblopez__bamboo-creaking-in-wind.wav"
+[samples.stream]
+file = "ring3/stream/253133__klankbeeld__rocky-stream-nt4invh2a-141015_0441.wav"
+amp  = -16
+[samples.walk_grass]
+file = "ring3/walk/85603__jankoehl__walk-grass.wav"
+[samples.walk_leaves]
+file = "ring3/walk/421791__markbolden__walking-through-leaves.wav"
+[samples.rain_window]
+file = "ring4/rain/346642__inspectorj__rain-on-windows-interior-a.wav"
+amp  = -14
+[samples.rain_car]
+file = "ring4/rain/432344__blackstorm88__rain-in-the-car-with-zoom-h4n-pro.wav"
+amp  = -10
+[samples.thunder]
+file = "ring4/thunder/446753__bluedelta__heavy-thunder-strike-no-rain-quadro.wav"
+amp  = -3
+[samples.piece_piano]
+file = "ring6/pieces/325647__shadydave__expressions-of-the-mind-piano-loop.wav"
+amp  = -10
+[samples.incident_bell]
+file = "ring7/incidents/131348__nahmandub__bell-at-daitokuji-templekyoto.wav"
+amp  = -8
+
+# ── Ring0 低音 ───────────────────────────────────────────────────────────────
+[rings.0.drone]             # 持续：合成管风琴 drone + 呼吸感
+mode     = "sustained"
+synthdef = "diapasonHold"
+freq     = 130.81           # C3
+amp      = -10
+atk      = 4.0
+rel      = 6.0
+[rings.0.bell]              # 触发：大梵钟
+mode      = "trigger"
+samples   = ["bell"]
+tune      = true
+semitones = -1.24           # 实测基频 140.5Hz(C#3) → C3
+winSize   = 0.2
+[rings.0.boom]              # 触发：重鼓
+mode    = "trigger"
+samples = ["boom_33637", "boom_379352"]
+
+# ── Ring1 低音 ───────────────────────────────────────────────────────────────
+[rings.1.drone]
+mode     = "sustained"
+synthdef = "diapasonHold"
+freq     = 130.81
+amp      = -10
+atk      = 4.0
+rel      = 6.0
+[rings.1.bell]
+mode      = "trigger"
+samples   = ["bell"]
+tune      = true
+semitones = -1.24
+winSize   = 0.2
+[rings.1.boom]
+mode    = "trigger"
+samples = ["boom_33637", "boom_379352"]
+
+# ── Ring2 中低频 ─────────────────────────────────────────────────────────────
+[rings.2.pad]               # 持续：和声片段
+mode    = "sustained"
+samples = ["pad_robots"]
+atk     = 3.0
+rel     = 4.0
+
+# ── Ring3 竹林 ───────────────────────────────────────────────────────────────
+[rings.3.wind]              # 持续：竹林风，随数量变大
+mode  = "sustained"
+tiers = [
+    { count = 1, sample = "wind_small", amp = -15 },
+    { count = 2, sample = "wind_big",   amp = -11 },
+]
+[rings.3.stream]            # 持续：溪流
+mode    = "sustained"
+samples = ["stream"]
+[rings.3.step]              # 触发：走路声
+mode    = "trigger"
+samples = ["walk_grass", "walk_leaves"]
+
+# ── Ring4 天气 ───────────────────────────────────────────────────────────────
+[rings.4.rain]              # 持续：雨，随数量从小雨到大雨
+mode  = "sustained"
+tiers = [
+    { count = 1, sample = "rain_window", amp = -16 },
+    { count = 2, sample = "rain_car",    amp = -11 },
+]
+[rings.4.thunder]           # 触发：雷
+mode    = "trigger"
+samples = ["thunder"]
+
+# ── Ring5 马林巴 ─────────────────────────────────────────────────────────────
+[rings.5.marimba]           # 持续：随机马林巴（间歇，长衰减）
+mode     = "generator"
+synthdef = "marimbaNote"
+interval = [5.0, 15.0]
+decay    = 10.0
+amp      = -22
+[rings.5.hit]               # 触发：单击马林巴（音高按 slice）
+mode     = "trigger"
+synthdef = "marimbaNote"
+decay    = 12.0
+amp      = -18
+
+# ── Ring6 旋律片段 ───────────────────────────────────────────────────────────
+[rings.6.melody]
+mode    = "sustained"
+samples = ["piece_piano"]
+atk     = 2.0
+
+# ── Ring7 事件 ───────────────────────────────────────────────────────────────
+[rings.7.event]             # 触发：庙宇铃声
+mode    = "trigger"
+samples = ["incident_bell"]
+[rings.7.random]            # 持续：随机间歇铃声
+mode     = "generator"
+samples  = ["incident_bell"]
+interval = [8.0, 15.0]

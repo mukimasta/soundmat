@@ -1,0 +1,34 @@
+[project]
+name = "soundmat"
+version = "0.1.0"
+description = "SoundMat 上位机：传感器 → 实时生成音乐（Jam / Ambient 模式）→ SuperCollider"
+requires-python = ">=3.11"
+dependencies = [
+    "supercollider>=0.0.6", # Python -> scsynth (OSC, python-osc 后端)
+    "pyserial>=3.5",        # 读 ESP32 USB 串口 / 回发 LED
+    "numpy>=1.26",          # 传感矩阵处理、离线回放
+    "fastapi>=0.110",       # Web 控制台
+    "uvicorn>=0.29",        # ASGI server
+    "wsproto>=1.2",         # uvicorn 的 WebSocket 后端（热力图/事件流/虚拟垫面实时推送）；
+                            # 比 websockets 库 API 稳定，不随版本变动炸 uvicorn 适配
+    "tomli>=2.0; python_version < '3.11'",
+    "pyyaml>=6.0",          # 加载 jam manifest 数据文件
+]
+
+[project.scripts]
+soundmat = "soundmat.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["soundmat"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]

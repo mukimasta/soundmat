@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SoundMat Control</title>
+<style>
+  :root { --bg:#08080e; --fg:#c0b8a0; --line:#c0b8a055; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 Georgia,serif;
+         display:flex; flex-direction:column; align-items:center; padding:24px; }
+  h1 { font-weight:300; letter-spacing:6px; text-transform:uppercase; font-size:20px; opacity:.8; }
+  .card { width:min(520px,100%); border:1px solid var(--line); border-radius:12px;
+          padding:18px 20px; margin:10px 0; }
+  .row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:8px 0; }
+  label { opacity:.8; }
+  button, input[type=number] { background:rgba(192,184,160,.06); border:1px solid var(--line);
+          color:var(--fg); font:inherit; padding:8px 16px; border-radius:999px; cursor:pointer; }
+  button:hover { background:rgba(192,184,160,.14); }
+  button.active { background:rgba(192,184,160,.18); border-color:#c0b8a0; }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:8px; }
+  .on { background:#5fd08a; } .off { background:#888; }
+  .list label { display:block; padding:6px 0; cursor:pointer; }
+  a { color:var(--fg); }
+  input[type=range] { width:200px; accent-color:var(--fg); }
+  .muted { opacity:.5; font-size:12px; }
+</style>
+</head>
+<body>
+  <h1>SoundMat</h1>
+
+  <div class="card">
+    <div class="row"><span><span id="dot" class="dot off"></span><b id="statusText">…</b></span>
+      <span class="muted" id="chord"></span></div>
+    <div class="muted" id="detail"></div>
+  </div>
+
+  <div class="card">
+    <div class="muted">Switch Mode</div>
+    <div class="list" id="manifests"></div>
+    <div class="row"><button id="apply">Apply</button></div>
+  </div>
+
+  <div class="card">
+    <div class="row"><label>Transport</label>
+      <span><button id="start">Start</button> <button id="stop">Stop</button></span></div>
+    <div class="row"><label>BPM <span class="muted">(jam)</span></label>
+      <span><input id="bpm" type="number" min="40" max="220" step="1" value="120" />
+      <button id="setBpm">Set</button></span></div>
+    <div class="row"><label>Volume</label>
+      <input id="vol" type="range" min="0" max="1" step="0.01" value="1" /></div>
+  </div>
+
+  <div class="card row">
+    <a href="/pad">Virtual Pad</a><a href="/heatmap">Heatmap</a><a href="/debug">Debug</a>
+  </div>
+
+<script>
+const $ = s => document.querySelector(s);
+let manifests = [], selected = null, currentPath = null;
+
+async function getJSON(u){ return (await fetch(u)).json(); }
+async function postJSON(u, body){
+  return (await fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(body)})).json();
+}
+
+function renderManifests(){
+  const box = $("#manifests"); box.innerHTML = "";
+  for(const m of manifests){
+    const id = "m_"+m.rel.replace(/\W/g,"_");
+    const lab = document.createElement("label");
+    const checked = (selected ?? currentPath) === m.path ? "checked" : "";
+    lab.innerHTML = `<input type="radio" name="man" value="${m.path}" ${checked}/> `+
+      `${m.name} <span class="muted">(${m.mode})</span>`;
+    lab.querySelector("input").onchange = e => selected = e.target.value;
+    box.appendChild(lab);
+  }
+}
+
+async function refresh(){
+  const st = await getJSON("/api/status");
+  currentPath = st.manifest;
+  const app = st.app || {};
+  const playing = app.playing;
+  $("#dot").className = "dot " + (st.mode ? "on":"off");
+  $("#statusText").textContent = st.name ? `${st.name} (${st.mode})` : "no mode";
+  $("#chord").textContent = app.chord ? `${app.chord} · bar ${app.bar_global ?? ""}` : "";
+  $("#detail").textContent = app.mode === "jam"
+    ? `${playing?"playing":(app.form_ended?"form ended":"idle")} · ${app.musical_time||0}/${app.form_duration||0}s · bpm ${app.bpm}`
+    : "";
+  if(app.bpm) $("#bpm").value = app.bpm;
+}
+
+$("#apply").onclick = async () => {
+  const path = selected || currentPath;
+  if(path){ await postJSON("/api/mode",{manifest:path}); refresh(); }
+};
+$("#start").onclick = async () => { await postJSON("/api/transport",{action:"start"}); refresh(); };
+$("#stop").onclick  = async () => { await postJSON("/api/transport",{action:"stop"}); refresh(); };
+$("#setBpm").onclick= async () => { await postJSON("/api/params",{key:"bpm",value:+$("#bpm").value}); refresh(); };
+$("#vol").oninput   = async () => { await postJSON("/api/params",{key:"master_volume",value:+$("#vol").value}); };
+
+(async () => {
+  manifests = await getJSON("/api/manifests");
+  await refresh(); renderManifests();
+  setInterval(refresh, 1000);
+})();
+</script>
+</body>
+</html>
