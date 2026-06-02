@@ -95,6 +95,38 @@ class ModeManager:
 
     def set_param(self, key: str, value: Any) -> None:
         with self._lock:
+            if key == "sector_offset":
+                config.SECTOR_OFFSET = int(value) % config.NUM_SLICES
+                return
+            if key == "led_offset":
+                config.LED_OFFSET = int(value) % config.NUM_LEDS
+                return
+            if key == "sensor_threshold":
+                config.SENSOR_THRESHOLD = max(0.0, float(value))
+                self._sync_sensor_calibration()
+                return
+            if key == "control_min":
+                config.CONTROL_MIN = max(0.0, float(value))
+                if config.CONTROL_MIN >= config.CONTROL_MAX:
+                    config.CONTROL_MAX = config.CONTROL_MIN + 1.0
+                self._sync_sensor_calibration()
+                return
+            if key == "control_max":
+                config.CONTROL_MAX = max(1.0, float(value))
+                if config.CONTROL_MAX <= config.CONTROL_MIN:
+                    config.CONTROL_MIN = max(0.0, config.CONTROL_MAX - 1.0)
+                self._sync_sensor_calibration()
+                return
+            if key == "control_sum_min":
+                config.CONTROL_SUM_MIN = max(0.0, float(value))
+                self._sync_sensor_calibration()
+                return
+            if key == "wire_slice_mirror":
+                config.WIRE_SLICE_MIRROR = bool(value)
+                return
+            if key == "jam_loop_place_preview_vel":
+                config.JAM_LOOP_PLACE_PREVIEW_VEL = max(0.0, min(1.0, float(value)))
+                return
             if self.current_app is not None:
                 self.current_app.set_param(key, value)
 
@@ -105,10 +137,34 @@ class ModeManager:
                 "manifest_rel": manifest_rel_key(self.current_path),
                 "mode": (self.current_manifest or {}).get("mode"),
                 "name": (self.current_manifest or {}).get("name"),
+                "sector_offset": config.SECTOR_OFFSET,
+                "led_offset": config.LED_OFFSET,
+                "sensor_threshold": config.SENSOR_THRESHOLD,
+                "control_min": config.CONTROL_MIN,
+                "control_max": config.CONTROL_MAX,
+                "control_sum_min": config.CONTROL_SUM_MIN,
+                "wire_slice_mirror": config.WIRE_SLICE_MIRROR,
+                "jam_loop_place_preview_vel": config.JAM_LOOP_PLACE_PREVIEW_VEL,
+                "serial_port": self.services.serial_port,
+                "serial_ready": self.services.serial_ready,
             }
             if self.current_app is not None:
                 base["app"] = self.current_app.status()
             return base
+
+    def _sync_sensor_calibration(self) -> None:
+        app = self.current_app
+        if app is None:
+            return
+        state = getattr(app, "sensor_state", None)
+        if state is not None:
+            state.threshold = config.SENSOR_THRESHOLD
+            state.control_min = config.CONTROL_MIN
+            state.control_max = config.CONTROL_MAX
+            state.control_sum_min = config.CONTROL_SUM_MIN
+        tracker = getattr(app, "tracker", None)
+        if tracker is not None:
+            tracker.threshold = config.SENSOR_THRESHOLD
 
     def shutdown(self) -> None:
         self.stop_current()

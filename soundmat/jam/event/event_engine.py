@@ -61,6 +61,10 @@ class EventEngine:
     def reset(self) -> None:
         self._last_triggered.clear()
 
+    def mark_triggered(self, ring: int, slc: int, now: float) -> None:
+        """记录已触发，避免与扫线命中重复（100ms 冷却）。"""
+        self._last_triggered[(ring, slc)] = now
+
     def set_timing(self, timing: Timing) -> None:
         self.timing = timing
 
@@ -150,8 +154,8 @@ class EventEngine:
 
     # ── 空闲预览（control 0 时放石，单音）──
     def preview(self, ring: int, slc: int, loop_rotation: int, tonality: Tonality,
-                sec_per_quarter: float | None = None) -> NoteEvent | None:
+                sec_per_quarter: float | None = None, *, velocity: float = 1.0) -> NoteEvent | None:
         cfg = self.ring_configs.get(ring)
         if cfg is None or not cfg.is_trigger:
             return None
-        return self._note_for(ring, slc, loop_rotation, tonality, 1.0, sec_per_quarter)
+        return self._note_for(ring, slc, loop_rotation, tonality, velocity, sec_per_quarter)

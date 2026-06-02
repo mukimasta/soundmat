@@ -580,6 +580,18 @@ input[type="range"] {
   min-width: 0;
 }
 
+.mix-row input[type="checkbox"] {
+  margin-left: auto;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.mix-row--wide label {
+  width: auto;
+  flex: 1;
+}
+
 .mix-value {
   flex-shrink: 0;
   width: 42px;

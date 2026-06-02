@@ -175,20 +175,19 @@ class KyotoMapper:
 
     def _triggers(self, events: Events) -> list:
         out = []
-        for ring, slc in events.placed:
-            n = config.slices_at(ring)
+        for ring, sector in events.placed:
             for role, cfg in self.rings.get(str(ring), {}).items():
                 if cfg.get("mode") != "trigger":
                     continue
                 if cfg.get("synthdef"):
                     params = _params(cfg)
-                    params["freq"] = _slice_freq(slc, n)
-                    params["pan"] = _pan(slc, n)
+                    params["freq"] = _slice_freq(sector, config.NUM_SLICES)
+                    params["pan"] = _pan(sector, config.NUM_SLICES)
                     out.append(TriggerSpec(synthdef=cfg["synthdef"], params=params))
                 else:
                     sample = random.choice(cfg["samples"])
                     params = _params(self.defaults, self.samples.get(sample), cfg)
-                    params["pan"] = _pan(slc, n)
+                    params["pan"] = _pan(sector, config.NUM_SLICES)
                     out.append(TriggerSpec(
                         sample=sample, params=params, tune=cfg.get("tune", False)))
         return out

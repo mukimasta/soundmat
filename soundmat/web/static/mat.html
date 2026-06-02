@@ -69,6 +69,20 @@
     height: auto;
     border-radius: 6px;
   }
+  .mat-map.card {
+    width: 100%;
+    max-width: min(920px, 100%);
+    margin: 0 auto;
+  }
+  .mat-map .mix-row label {
+    width: 88px;
+    font-size: 13px;
+  }
+  .mat-map input[type="number"] {
+    user-select: text;
+    width: 72px;
+    margin-left: auto;
+  }
 </style>
 </head>
 <body>
@@ -133,6 +147,34 @@
         <p class="pad-hint" id="heatHint">Pressure heatmap · ring 0 innermost</p>
       </div>
     </div>
+
+    <section class="card mat-map" id="mapPanel">
+      <h2 class="card-title">Calibration</h2>
+      <div class="mix-row">
+        <label for="sectorOffset">Sector offset</label>
+        <input id="sectorOffset" type="number" min="0" max="31" step="1" value="4" />
+      </div>
+      <div class="mix-row">
+        <label for="ledOffset">LED offset</label>
+        <input id="ledOffset" type="number" min="0" max="107" step="1" value="101" />
+      </div>
+      <div class="mix-row">
+        <label for="sensorThreshold">Threshold</label>
+        <input id="sensorThreshold" type="number" min="0" max="4095" step="1" value="500" />
+      </div>
+      <div class="mix-row">
+        <label for="controlSumMin">Control sum min</label>
+        <input id="controlSumMin" type="number" min="0" max="131040" step="1" value="250" />
+      </div>
+      <div class="mix-row">
+        <label for="controlMin">Lo-Fi sum min</label>
+        <input id="controlMin" type="number" min="0" max="131040" step="1" value="1000" />
+      </div>
+      <div class="mix-row">
+        <label for="controlMax">Lo-Fi sum max</label>
+        <input id="controlMax" type="number" min="1" max="131040" step="1" value="8000" />
+      </div>
+    </section>
   </main>
 
 <script>
@@ -345,9 +387,98 @@ function connectMockView(){
   ws.onclose=()=>setTimeout(connectMockView,1000);
 }
 
+async function postParam(key, value){
+  const res=await fetch("/api/params",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({key,value}),
+  });
+  const data=await res.json();
+  if(!res.ok) throw new Error(data.error||res.statusText);
+  return data;
+}
+
+function syncMapControls(st){
+  const so=document.getElementById("sectorOffset");
+  const lo=document.getElementById("ledOffset");
+  const th=document.getElementById("sensorThreshold");
+  const csmin=document.getElementById("controlSumMin");
+  const cmin=document.getElementById("controlMin");
+  const cmax=document.getElementById("controlMax");
+  if(st.sector_offset!=null) so.value=String(st.sector_offset);
+  if(st.led_offset!=null) lo.value=String(st.led_offset);
+  if(st.sensor_threshold!=null) th.value=String(st.sensor_threshold);
+  if(st.control_sum_min!=null) csmin.value=String(st.control_sum_min);
+  if(st.control_min!=null) cmin.value=String(st.control_min);
+  if(st.control_max!=null) cmax.value=String(st.control_max);
+}
+
+function initMapControls(initial){
+  syncMapControls(initial);
+  const so=document.getElementById("sectorOffset");
+  const lo=document.getElementById("ledOffset");
+  const th=document.getElementById("sensorThreshold");
+  const csmin=document.getElementById("controlSumMin");
+  const cmin=document.getElementById("controlMin");
+  const cmax=document.getElementById("controlMax");
+  so.addEventListener("change", async ()=>{
+    const v=Math.max(0, Math.min(31, +so.value|0));
+    so.value=String(v);
+    try{
+      await postParam("sector_offset", v);
+      warn("");
+    }catch(e){ warn(String(e.message||e)); }
+  });
+  lo.addEventListener("change", async ()=>{
+    const v=Math.max(0, Math.min(107, +lo.value|0));
+    lo.value=String(v);
+    try{
+      await postParam("led_offset", v);
+      warn("");
+    }catch(e){ warn(String(e.message||e)); }
+  });
+  th.addEventListener("change", async ()=>{
+    const v=Math.max(0, Math.min(4095, +th.value|0));
+    th.value=String(v);
+    try{
+      await postParam("sensor_threshold", v);
+      warn("");
+    }catch(e){ warn(String(e.message||e)); }
+  });
+  csmin.addEventListener("change", async ()=>{
+    const v=Math.max(0, Math.min(131040, +csmin.value|0));
+    csmin.value=String(v);
+    try{
+      await postParam("control_sum_min", v);
+      warn("");
+    }catch(e){ warn(String(e.message||e)); }
+  });
+  cmin.addEventListener("change", async ()=>{
+    const v=Math.max(0, Math.min(131040, +cmin.value|0));
+    cmin.value=String(v);
+    try{
+      await postParam("control_min", v);
+      const st=await (await fetch("/api/status")).json();
+      syncMapControls(st);
+      warn("");
+    }catch(e){ warn(String(e.message||e)); }
+  });
+  cmax.addEventListener("change", async ()=>{
+    const v=Math.max(1, Math.min(131040, +cmax.value|0));
+    cmax.value=String(v);
+    try{
+      await postParam("control_max", v);
+      const st=await (await fetch("/api/status")).json();
+      syncMapControls(st);
+      warn("");
+    }catch(e){ warn(String(e.message||e)); }
+  });
+}
+
 async function boot(){
   const st=await (await fetch("/api/status")).json();
   isMock=!!st.mock;
+  initMapControls(st);
   const layout=document.getElementById("matLayout");
   const page=document.getElementById("matPage");
   layout.classList.toggle("is-mock", isMock);

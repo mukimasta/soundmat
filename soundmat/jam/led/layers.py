@@ -42,7 +42,8 @@ SCAN_ATTACK = 0.01
 SCAN_HOLD = 0.05
 
 PREVIEW_DURATION = 1.0
-CARDINAL_BREATH_MIN = 0.5
+IDLE_BREATH_MAX = 20       # 空闲/开始时呼吸灯峰值亮度（0–255）
+CARDINAL_BREATH_MIN = 0.75  # 四象限卡位呼吸下限（opacity 75%–100%）
 
 
 def ring_led_rgb(ring: int) -> tuple[int, int, int]:
@@ -50,6 +51,7 @@ def ring_led_rgb(ring: int) -> tuple[int, int, int]:
 
 
 def led_index_for_sector(sector: int) -> int:
+    """逻辑 sector → 逻辑 LED index（offset=0；物理旋转见 ``apply_led_offset``）。"""
     n = ((sector % SECTOR_COUNT) + SECTOR_COUNT) % SECTOR_COUNT
     return round(n / SECTOR_COUNT * LED_COUNT) % LED_COUNT
 
@@ -59,9 +61,9 @@ def normalize_angle(a: float) -> float:
 
 
 def led_index_for_angle(angle: float) -> int:
+    """扫描角 → 逻辑 LED index（offset=0）。"""
     normalized = normalize_angle(angle + math.pi / 2)
-    idx = round(normalized / LED_ANGLE) % LED_COUNT
-    return idx
+    return round(normalized / LED_ANGLE) % LED_COUNT
 
 
 def led_indices_for_sector_span(sector: int, span: int = 2) -> list[int]:

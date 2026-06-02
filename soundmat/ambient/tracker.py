@@ -1,13 +1,10 @@
-"""Tracker：传感矩阵 → 物体聚类坐标（哪些 (ring,slice) 有石头）。
-
-硬件只能分辨「哪个区域有物」，分不清个数/精确位置；tracker 在此约束下产出稳定 occupied
-集合 + 每环计数。这里做最简阈值化（可后续加聚类/防抖）。极性/阈值见 config 标定。
-"""
+"""Tracker：传感矩阵 → 逻辑坐标 (ring, sector) 上有石头的集合。"""
 from __future__ import annotations
 
 import numpy as np
 
 from .. import config
+from ..core.sensor.map import wire_to_logical_adc
 
 
 class Tracker:
@@ -16,16 +13,16 @@ class Tracker:
         self.invert = config.SENSOR_INVERT if invert is None else invert
 
     def occupied(self, matrix: np.ndarray) -> set[tuple[int, int]]:
-        m = matrix.astype(np.float32)
+        logical = wire_to_logical_adc(matrix)
+        m = logical.astype(np.float32)
         m[m < 0] = 0.0
         if self.invert:
             inv = np.clip(config.ADC_MAX - m, 0, config.ADC_MAX)
-            inv[matrix < 0] = 0.0
+            inv[logical < 0] = 0.0
             m = inv
         out: set[tuple[int, int]] = set()
         for ring in range(config.NUM_RINGS):
-            n = config.slices_at(ring)
-            for slc in range(n):
-                if m[ring, slc] >= self.threshold:
-                    out.add((ring, slc))
+            for sector in range(config.NUM_SLICES):
+                if m[ring, sector] >= self.threshold:
+                    out.add((ring, sector))
         return out

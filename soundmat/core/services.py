@@ -18,3 +18,5 @@ class SharedServices:
     sensor: SensorReader    # 订阅 / 拉取传感数据
     leds: LEDWriter         # 提供 LED buffer
     osc: OSCClient          # 发 OSC 给 scsynth（s_new / n_set / n_free）
+    serial_port: str | None = None
+    serial_ready: bool = False

@@ -69,8 +69,8 @@ def test_jam_full_loop_offline():
         # master synth 应已 spawn
         assert any(name == "jam_master" for name, _ in osc.synths)
 
-        # 放一颗旋律石（R7 sector0）+ 控制石（R0）开拍
-        sensor.inject([(7, 0), (0, 5)])
+        # 放一颗旋律石（R7 wire slice 0）+ 控制石（R0 wire slice 0）；L sector 见 SECTOR_OFFSET
+        sensor.inject([(7, 0), (0, 0)])
         # 让主循环跑一会，扫描线推进多圈，应触发和声/鼓/旋律
         time.sleep(1.0)
 

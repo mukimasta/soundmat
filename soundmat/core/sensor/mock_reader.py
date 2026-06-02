@@ -17,7 +17,8 @@ from .reader import SensorReader
 
 # 放下石头时该格的“按下”ADC 值。固件值越大压力越大（设计文档：压力越大电阻越低，
 # Vout 随分压改变）；这里用一个明显高于空闲基线的值表示有物体。
-DEFAULT_PRESSURE = 3000
+# 须高于 SENSOR_THRESHOLD；真实/mock 共用「高值=有压力」约定
+DEFAULT_PRESSURE = 600
 IDLE_VALUE = 0
 
 
@@ -26,7 +27,7 @@ def empty_matrix() -> np.ndarray:
 
 
 def matrix_from_cells(cells: Iterable[tuple[int, int]], pressure: int = DEFAULT_PRESSURE) -> np.ndarray:
-    """由 (ring, slice) 集合生成压力矩阵。内 2 环把奇数 slice 镜像到相邻偶数（物理 16 区）。"""
+    """由 (ring, slice) wire 集合生成压力矩阵（Mock 虚拟垫点击的是 S 坐标）。"""
     m = empty_matrix()
     for ring, slc in cells:
         if not (0 <= ring < config.NUM_RINGS and 0 <= slc < config.NUM_SLICES):

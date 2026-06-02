@@ -2,8 +2,8 @@
 
 状态机（JAM_DESIGN §7）：
 - 播完（form_ended & !playing）：仅四象限卡位呼吸，其余灭。
-- 空闲（!playing & !form_ended）：全环白呼吸 0–50%，卡位红呼吸 50–100%。
-- 播放中：无环境白场；白色扫描尾迹 + 石头淡标记 + 卡位呼吸；命中闪、预览短效叠加。
+- 空闲（!playing & !form_ended）：非卡位白呼吸 0–20；四象限卡位红呼吸 75–100%。
+- 播放中：无环境白场；扫描尾迹 + 石头标记 + 卡位红呼吸 75–100%。
 
 合成顺序：模式基底 → 叠预览 → 叠命中（与基底取更亮）。
 """
@@ -12,6 +12,7 @@ from __future__ import annotations
 from .layers import (
     CARDINAL_BREATH_MIN,
     CARDINAL_LED_INDICES,
+    IDLE_BREATH_MAX,
     LED_COUNT,
     PREVIEW_DURATION,
     RED_FULL,
@@ -59,20 +60,22 @@ class JamLedRenderer:
         self._previews = [p for p in self._previews if now - p["start"] < PREVIEW_DURATION + 0.1]
 
     # ── 各模式基底 ──
-    def _idle_transport_led(self, i: int, t: float):
+    def _cardinal_breath_led(self, i: int, t: float):
         breath = breath_phase(t)
-        is_cardinal = i in CARDINAL_LED_INDICES
-        opacity = (CARDINAL_BREATH_MIN + (1 - CARDINAL_BREATH_MIN) * breath
-                   if is_cardinal else 0.5 * breath)
+        opacity = CARDINAL_BREATH_MIN + (1 - CARDINAL_BREATH_MIN) * breath
         if i == 0:
             return rgba(RED_FULL, opacity)
-        if is_cardinal:
-            return rgba(RED_MUTED, opacity)
-        return rgba(WHITE, opacity)
+        return rgba(RED_MUTED, opacity)
+
+    def _idle_transport_led(self, i: int, t: float):
+        if i in CARDINAL_LED_INDICES:
+            return self._cardinal_breath_led(i, t)
+        op = breath_phase(t) * (IDLE_BREATH_MAX / 255.0)
+        return rgba(WHITE, op)
 
     def _form_ended_led(self, i: int, t: float):
         if i in CARDINAL_LED_INDICES:
-            return self._idle_transport_led(i, t)
+            return self._cardinal_breath_led(i, t)
         return rgba(WHITE, 0.0)
 
     def _playing_led(self, i: int, t: float, sweep_angle: float, markers):
@@ -87,7 +90,7 @@ class JamLedRenderer:
             if wrap_led_distance(i, led_index_for_sector(slc)) <= 1:
                 state = blend_over(state, rgba(ring_led_rgb(ring), 0.22), 0.55)
         if i in CARDINAL_LED_INDICES:
-            state = self._idle_transport_led(i, t)
+            state = self._cardinal_breath_led(i, t)
         return state
 
     # ── 短效查询 ──

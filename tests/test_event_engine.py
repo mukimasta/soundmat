@@ -6,7 +6,7 @@ from soundmat.app import load_manifest
 from soundmat.jam.config_loader import load_jam_config
 from soundmat.jam.event import EventEngine
 from soundmat.jam.scheduler import ScanLine, SongPositionTracker
-from soundmat.jam.scheduler.timing import SWEEP_START_ANGLE
+from soundmat.jam.scheduler.timing import SWEEP_START_ANGLE, sector_center_angle
 from soundmat.jam.theory import Tonality
 
 
@@ -52,6 +52,16 @@ def test_retrigger_cooldown():
     assert len(n1) == 1 and len(n2) == 0
 
 
+def test_mark_triggered_blocks_sweep():
+    cfg, song, engine, tonality = _build()
+    prev, curr = SWEEP_START_ANGLE - 0.01, SWEEP_START_ANGLE + 0.01
+    engine.mark_triggered(7, 0, 1.0)
+    notes = engine.emit_sweep(
+        prev, curr, False, occupied={(7, 0)}, now=1.05, loop_rotation=0, tonality=tonality,
+    )
+    assert notes == []
+
+
 def test_sqrt_velocity_grouping():
     cfg, song, engine, tonality = _build()
     prev, curr = SWEEP_START_ANGLE - 0.01, SWEEP_START_ANGLE + 0.01
@@ -80,7 +90,8 @@ def test_wrap_frame_sector0_uses_next_chord():
 def test_wrap_frame_sector16_stays_on_outgoing_chord():
     """回绕帧 sector16（第二小节起点）仍属 outgoing rotation 0 → 2m9。"""
     cfg, song, engine, tonality = _build()
-    prev, curr = SWEEP_START_ANGLE - 0.01, SWEEP_START_ANGLE + 0.01
+    center = sector_center_angle(16)
+    prev, curr = center - 0.01, center + 0.01
     notes = engine.emit_sweep(
         prev, curr, did_wrap=True,
         occupied={(4, 16)}, now=1.0, loop_rotation=0, tonality=tonality,

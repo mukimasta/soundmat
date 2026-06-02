@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import numpy as np
+from collections.abc import Callable
 
 from ... import config
 from .frame import FrameError, parse_sensor_frame, values_to_matrix
@@ -13,28 +14,54 @@ from .reader import SensorReader
 
 
 class SerialSensorReader(SensorReader):
-    def __init__(self, port: str | None = None, baud: int | None = None, *, verify: bool = True):
+    def __init__(
+        self,
+        port: str | None = None,
+        baud: int | None = None,
+        *,
+        verify: bool = True,
+        on_serial_lost: Callable[[], None] | None = None,
+    ):
         super().__init__()
         self.port = port or config.SERIAL_PORT
         self.baud = baud or config.SERIAL_BAUD
         self.verify = verify
+        self._on_serial_lost = on_serial_lost
+        self._serial_lost = False
         self._serial = None  # 复用给 LEDWriter 时可外部注入
 
     def attach_serial(self, serial_obj) -> None:
         """复用已打开的 pyserial 句柄（与 LEDWriter 共用一条串口）。"""
         self._serial = serial_obj
 
-    def _open(self):
-        import serial  # 延迟导入，离线/无 pyserial 时不影响 mock 路径
+    def _notify_serial_lost(self, err: Exception) -> None:
+        if self._serial_lost:
+            return
+        self._serial_lost = True
+        self._serial = None
+        print(f"[sensor] 串口不可用: {err}")
+        if self._on_serial_lost is not None:
+            try:
+                self._on_serial_lost()
+            except Exception:
+                pass
 
-        return serial.Serial(self.port, self.baud, timeout=1.0)
+    def _open(self):
+        from ..esp32_serial import open_esp32_serial, pick_serial_port
+
+        port = pick_serial_port(self.port)
+        return open_esp32_serial(port, self.baud)
 
     def _run(self) -> None:
         ser = self._serial or self._open()
         buf = b""
         bad = 0
         while not self._stop.is_set():
-            chunk = ser.read(512)
+            try:
+                chunk = ser.read(512)
+            except OSError as e:
+                self._notify_serial_lost(e)
+                return
             if not chunk:
                 continue
             buf += chunk
@@ -52,4 +79,5 @@ class SerialSensorReader(SensorReader):
                 except FrameError:
                     bad += 1
                     continue
-                self._emit(values_to_matrix(values.astype(np.int16)))
+                matrix = values_to_matrix(values.astype(np.int16))
+                self._emit(matrix)

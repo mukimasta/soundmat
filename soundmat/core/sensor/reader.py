@@ -16,13 +16,14 @@ from typing import Callable
 import numpy as np
 
 from ... import config
+from .normalize import normalize_wire_matrix
 
 
 @dataclass(frozen=True)
 class SensorFrame:
     """一帧传感快照。matrix[ring][slice] = 原始 ADC 值（-1 无效）。"""
 
-    matrix: np.ndarray            # shape (NUM_RINGS, NUM_SLICES), int16
+    matrix: np.ndarray            # shape (NUM_RINGS, NUM_SLICES), int16；已做 slice 镜像（若启用）
     timestamp: float              # time.monotonic() 接收时刻
     seq: int = 0                  # 帧序号（自增）
 
@@ -80,6 +81,7 @@ class SensorReader:
 
     # ── 子类用 ──
     def _emit(self, matrix: np.ndarray) -> None:
+        matrix = normalize_wire_matrix(matrix)
         frame = SensorFrame(matrix=matrix, timestamp=time.monotonic(), seq=self._seq)
         self._seq += 1
         with self._lock:

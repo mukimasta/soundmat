@@ -1,7 +1,7 @@
 """全局常量集中地。无逻辑。
 
-与固件 / 传感器设计文档对齐：8 环 × 32 扇区（内 2 环物理上 16 区，但固件仍发 32 值，
-合并交给 Pi），108 颗 LED。串口 921600 ASCII 文本帧。
+与固件 / 传感器设计文档对齐：8 环 × 32 wire slice（S 帧）；逻辑层统一 32 sector（L），
+S→L 见 ``core.sensor.map``。108 颗 LED。串口 921600 ASCII 文本帧。
 """
 from pathlib import Path
 
@@ -24,16 +24,20 @@ SENSOR_VALUES = NUM_RINGS * NUM_SLICES  # 256，S 帧负载长度
 
 
 def slices_at(ring: int) -> int:
-    """该环物理有效扇区数（内 2 环 16，其余 32）。"""
-    return INNER_SLICES if ring < INNER_RINGS else NUM_SLICES
+    """该环 wire 层 slice 数（恒 32）。逻辑 sector 数亦恒 32，见 ``wire_to_logical_adc``。"""
+    return NUM_SLICES
 
 
-# ── LED ─────────────────────────────────────────────────────────────────
+# ── S → L / LED 对齐（设计文档 §13，部署可调）────────────────────────────
+SECTOR_OFFSET = 4   # 逻辑 sector 相对 pre-offset 格顺时针偏几个 sector
+LED_OFFSET = 101    # 物理灯带旋转（见 core.led.offset.apply_led_offset）
+WIRE_SLICE_MIRROR = True  # True：wire slice 列镜像，对齐实物顺时针 ↔ 软件 CW sector
+
 NUM_LEDS = 108
 LED_AT_12_OCLOCK = 0  # LED #0 在 12 点，索引顺时针递增
 
 # ── 串口（ESP32 <-> Pi） ────────────────────────────────────────────────
-SERIAL_PORT = "/dev/ttyUSB0"
+SERIAL_PORT = "auto"  # auto | /dev/cu.* (Mac) | /dev/ttyUSB* (Pi) | 显式路径
 SERIAL_BAUD = 921600
 SERIAL_FRAME_SENSOR = "S"  # ESP32 -> Pi 传感数据帧头
 SERIAL_FRAME_LED = "L"     # Pi -> ESP32 LED 控制帧头
@@ -41,9 +45,17 @@ SERIAL_FRAME_DEBUG = "#"   # 双向调试帧头（无校验，接收方丢弃）
 ADC_MAX = 4095             # 12-bit ADC
 
 # 传感标定（部署时按真实传感器调；mock 用「高值=有压力」约定，real 硬件可能相反，见传感器原理文档）
-SENSOR_THRESHOLD = 800.0   # 判定「有石头」的压力阈值
+SENSOR_THRESHOLD = 500.0   # 判定「有石头」的压力阈值（Mat 页可调）
 SENSOR_INVERT = False      # True：压力越大 ADC 越低，需 (ADC_MAX - raw)
-CONTROL_FULL_SCALE = 12000.0  # R0/R1 压力之和达此值 → Lo-Fi 控制值 1000（封顶）
+CONTROL_MIN = 1000.0         # R0/R1 压力之和 ≤ min → Lo-Fi 0（Mat 页可调）
+CONTROL_MAX = 8000.0       # R0/R1 压力之和 ≥ max → Lo-Fi 1000（Mat 页可调）
+CONTROL_SUM_MIN = 250.0    # R0/R1 压力之和 ≥ 此值 → 控制石 active（开/停播，Mat 可调）
+CONTROL_RELEASE_HOLD_SEC = 0.1  # 控制石消失后延时 reset，滤 ADC 闪断
+SERIAL_LOST_EXIT_SEC = 3.0      # 串口断开后多少秒退出进程
+
+# ── Jam 行为 ────────────────────────────────────────────────────────────
+JAM_IDLE_PLACE_PREVIEW_VEL = 0.5   # 开始/空闲放石 preview 音量 0–1
+JAM_LOOP_PLACE_PREVIEW_VEL = 0.0   # loop 中放石立刻 preview 音量 0–1；0=关
 
 # ── SuperCollider / scsynth ─────────────────────────────────────────────
 # macOS 开发机 / 树莓派部署可用环境变量 SOUNDMAT_SCSYNTH / SOUNDMAT_SCLANG 覆盖
@@ -59,7 +71,8 @@ SCLANG_PATH = os.environ.get(
 )
 SC_HOST = "127.0.0.1"
 SC_PORT = 57110
-SAMPLE_RATE = 48000
+# Jam 合成与 Ambient 包络均用秒/Hz；Ambient wav 经 PlayBuf+BufRateScale 自动适配 server 采样率
+SAMPLE_RATE = int(os.environ.get("SOUNDMAT_SAMPLE_RATE", "44100"))
 
 # 音频总线布局（scsynth -o 2 -i 0 时，硬件占 0-1，私有总线从 2 起，每条 stereo 占 2 通道）
 OUT_BUS = 0          # 硬件立体声输出

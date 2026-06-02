@@ -24,8 +24,8 @@ from .theory import Tempo, Tonality
 LOOP_HZ = 200.0
 MASTER_SYNTH = "jam_master"
 
-# 默认总线增益（JAM_DESIGN §3/§6：和声 0.4、鼓 0.48、旋律总线 0.48，不随石头数变化）
-MELODY_BUS_GAIN = 0.48
+# 默认总线增益（JAM_DESIGN §3/§6：和声 0.4、鼓 0.62 不变；旋律+bass 总线略抬）
+MELODY_BUS_GAIN = 0.9
 HARMONY_BUS_GAIN = 0.4
 # web drumGain=0.48；SC 鼓 SynthDef peak 偏低，总线略抬以对齐听感
 DRUM_BUS_GAIN = 0.62
@@ -69,6 +69,7 @@ class JamApp:
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._last_control_active = False
+        self._control_inactive_since: float | None = None
         self._last_control_value = 0.0
         self._last_control_count = 0
         self._lock = threading.Lock()
@@ -88,7 +89,8 @@ class JamApp:
                 "drumBus": config.DRUM_BUS,
                 "melodyGain": MELODY_BUS_GAIN, "harmonyGain": HARMONY_BUS_GAIN,
                 "drumGain": DRUM_BUS_GAIN,
-                "cutoff": 14000.0, "drive": 0.0, "amp": self.cfg.master_volume,
+                "cutoff": 14000.0, "drive": 0.0, "lofiGain": 1.0,
+                "amp": self.cfg.master_volume,
                 "out": config.OUT_BUS,
             },
             target=self.group, add_action=ADD_TO_TAIL,
@@ -104,6 +106,8 @@ class JamApp:
         self.scanline.reset()
         self.event_engine.reset()
         self.sensor_state.reset()
+        self._control_inactive_since = None
+        self._last_control_active = False
 
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, daemon=True, name="jam-loop")
@@ -145,6 +149,22 @@ class JamApp:
                 print(f"[jam] tick error: {e}")
             time.sleep(max(0.0, period - (time.monotonic() - now)))
 
+    def _effective_control_active(self, raw_active: bool, now: float) -> bool:
+        """控制石 raw 消失后 hold CONTROL_RELEASE_HOLD_SEC 再判 inactive。"""
+        hold = config.CONTROL_RELEASE_HOLD_SEC
+        if raw_active:
+            self._control_inactive_since = None
+            return True
+        if self._control_inactive_since is None:
+            if self._last_control_active:
+                self._control_inactive_since = now
+                return True
+            return False
+        if (now - self._control_inactive_since) < hold:
+            return True
+        self._control_inactive_since = None
+        return False
+
     def _tick(self, now: float, dt: float) -> None:
         assert self.bridge is not None and self.master_fx is not None
         frame = self.services.sensor.latest()
@@ -158,7 +178,9 @@ class JamApp:
         # 全局 Lo-Fi：连续实时，不受扫描线影响
         self.master_fx.set_lofi(delta.control_value)
 
-        if not delta.control_active:
+        control_active = self._effective_control_active(delta.control_active, now)
+
+        if not control_active:
             # 0 颗控制石：静止 + 全局 reset（仅在 active→inactive 边沿）
             if self._last_control_active or self.transport.musical_time > 0 or self.transport.form_ended:
                 self.transport.reset()
@@ -166,8 +188,8 @@ class JamApp:
                 self.event_engine.reset()
                 self.bridge._release_pad()
             self._last_control_active = False
-            # 空闲：放石预览
-            self._handle_preview(delta, now)
+            # 空闲：放石 preview
+            self._handle_placed_preview(delta, now, 0)
             self._render_led(now, delta)
             return
 
@@ -193,6 +215,10 @@ class JamApp:
 
         prev_a, curr_a, did_wrap = self.scanline.update(curr_t, self.cfg.bpm)
         loop_rot = self.scanline.loop_rotation
+
+        if config.JAM_LOOP_PLACE_PREVIEW_VEL > 0:
+            self._handle_placed_preview(delta, now, loop_rot)
+
         notes = self.event_engine.emit_sweep(
             prev_a, curr_a, did_wrap, delta.occupied, now, loop_rot, self.tonality,
             sec_per_quarter=self.tempo.sec_per_quarter,
@@ -205,14 +231,22 @@ class JamApp:
 
         self._render_led(now, delta)
 
-    def _handle_preview(self, delta, now: float) -> None:
+    def _handle_placed_preview(self, delta, now: float, loop_rotation: int) -> None:
         assert self.bridge is not None
+        playing = self.transport.playing
+        preview_vel = config.JAM_LOOP_PLACE_PREVIEW_VEL if playing else config.JAM_IDLE_PLACE_PREVIEW_VEL
         for ring, slc in delta.placed:
-            note = self.event_engine.preview(ring, slc, 0, self.tonality,
-                                             sec_per_quarter=self.tempo.sec_per_quarter)
-            if note is not None:
-                self.bridge.handle_note(note)
-                self.led.on_preview(slc, ring, now)
+            note = self.event_engine.preview(
+                ring, slc, loop_rotation, self.tonality,
+                sec_per_quarter=self.tempo.sec_per_quarter,
+                velocity=preview_vel,
+            )
+            if note is None:
+                continue
+            self.bridge.handle_note(note)
+            self.led.on_preview(slc, ring, now)
+            if playing:
+                self.event_engine.mark_triggered(ring, slc, now)
 
     def _trigger_stones(self, delta):
         return [(r, s) for (r, s) in delta.occupied

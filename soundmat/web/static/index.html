@@ -54,6 +54,11 @@
         </div>
         <div class="bpm-pills" id="bpmPills"></div>
       </div>
+      <div class="mix-row jam-only" id="placePreviewBlock" hidden>
+        <label for="loopPlacePreview" title="Loop 播放中放 melody/bass 石立刻响一声；0=关">Place preview</label>
+        <input id="loopPlacePreview" type="range" min="0" max="1" step="0.01" value="0" />
+        <span class="mix-value" id="loopPlacePreviewLabel">—</span>
+      </div>
     </section>
 
     <details class="dev-details">
@@ -224,6 +229,13 @@ async function refresh(){
   }
 
   syncVolume(app.master_volume);
+  const loopPlacePreview = $("#loopPlacePreview");
+  const loopPlacePreviewLabel = $("#loopPlacePreviewLabel");
+  if (loopPlacePreview && st.jam_loop_place_preview_vel != null) {
+    const v = +st.jam_loop_place_preview_vel;
+    loopPlacePreview.value = String(v);
+    loopPlacePreviewLabel.textContent = v <= 0 ? "Off" : Math.round(v * 100) + "%";
+  }
   renderModeGrid();
 }
 
@@ -248,6 +260,21 @@ $("#stop").onclick = async () => {
   await postJSON("/api/transport", { action: "stop" });
   refresh();
 };
+
+const loopPlacePreviewEl = $("#loopPlacePreview");
+if (loopPlacePreviewEl) {
+  loopPlacePreviewEl.addEventListener("input", () => {
+    const v = +loopPlacePreviewEl.value;
+    $("#loopPlacePreviewLabel").textContent = v <= 0 ? "Off" : Math.round(v * 100) + "%";
+  });
+  loopPlacePreviewEl.addEventListener("change", async () => {
+    await postJSON("/api/params", {
+      key: "jam_loop_place_preview_vel",
+      value: +loopPlacePreviewEl.value,
+    });
+    refresh();
+  });
+}
 
 (async () => {
   manifests = await getJSON("/api/manifests");

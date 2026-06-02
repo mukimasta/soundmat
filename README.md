@@ -42,4 +42,6 @@ uv run soundmat manifest/jam/lofi_1.toml # 指定 manifest
 
 无硬件离线开发：用 `core/sensor/mock_reader.py` 回放录制数据，见 `scripts/replay_test.py`。
 
+**部署 / 上机：** 见 [SETUP.md](SETUP.md)。
+
 详见 `docs/SoundMat 软件设计与开发.md` 与 `docs/...交互与声音化设计.md`。
