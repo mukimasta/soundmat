@@ -87,7 +87,11 @@ REVERB_BUS = 8       # 混响 aux 送（ambient 用）
 JAM_REVERB_BUS = 10  # Jam marimba 共享 reverb send（per-voice → 总线，省 N 倍 reverb 开销）
 FIRST_PRIVATE_BUS = 12
 
-# scsynth 内部 block size（与 JACK period 对齐可减少调度切换；Pi 部署 SOUNDMAT_BLOCK_SIZE=4096 配 jackd -p4096）
+# scsynth 内部 block size（kr UGen 步长 = 该值 / SAMPLE_RATE）。
+# 默认 64 ≈ 1.45 ms，鼓 attack / 包络保留瞬态精度。**不要**为了"对齐 JACK period"
+# 调大：scsynth 自己会在 callback 内跑 period/block 个 tick，省下的循环开销远小于
+# DSP 总量；而 -z 4096（≈93 ms）会让所有 EnvGen.kr / Lag.kr 阶梯化，鼓含糊、
+# 包络尾巴出现可听阶梯。CPU 紧张应优先靠 JAM_MAX_MELODIC_VOICES / 共享 reverb。
 SC_BLOCK_SIZE = int(os.environ.get("SOUNDMAT_BLOCK_SIZE", "64"))
 
 # ── Web 控制台 ──────────────────────────────────────────────────────────

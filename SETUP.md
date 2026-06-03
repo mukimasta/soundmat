@@ -46,7 +46,7 @@ uv run python scripts/compile_synths.py
 | `SOUNDMAT_SCSYNTH` | 运行时启动的 scsynth | `/Applications/SuperCollider.app/Contents/Resources/scsynth` | `/usr/bin/scsynth` |
 | `SOUNDMAT_SCLANG` | 编译 SynthDef 的 sclang | `/Applications/.../MacOS/sclang` | `/usr/bin/sclang` |
 | `SOUNDMAT_SAMPLE_RATE` | scsynth `-S` 采样率 | `44100` | `44100` 或 DAC 支持的值 |
-| `SOUNDMAT_BLOCK_SIZE` | scsynth `-z` 内部 block size；与 JACK period 对齐可减少调度切换 | `64`（默认） | `4096`（配 `jackd -p4096`） |
+| `SOUNDMAT_BLOCK_SIZE` | scsynth `-z` 内部 block size，决定 kr UGen 步长（鼓 attack/包络精度）。**保持 64**，不要为"对齐 JACK period"调大 | `64` | `64` |
 
 串口**不用**环境变量：CLI `--port auto`（默认）或显式路径即可。Linux `auto` 会排除板载 `ttyS*` / `ttyAMA*`（仅 USB 口）。
 
@@ -122,19 +122,29 @@ sclang sc/compile.scd
 ```bash
 export SOUNDMAT_SCSYNTH=/usr/bin/scsynth
 export SOUNDMAT_SCLANG=/usr/bin/sclang
-# 配合 jackd -p4096：scsynth 内部 block size 与 JACK period 对齐，减少调度切换
-export SOUNDMAT_BLOCK_SIZE=4096
+# SOUNDMAT_BLOCK_SIZE 保持默认 64，不需要 export
 ```
 
 ### 音频引擎（jackd）
 
-Pi 上推荐用 JACK 跑 scsynth，period 大一些避免 XRun（爆音）：
+Pi 上推荐用 JACK 跑 scsynth。`-p`（JACK period）控制延迟与 XRun 容忍度，`-z`
+（scsynth block，环境变量 `SOUNDMAT_BLOCK_SIZE`）控制 kr UGen 步长——**两者解耦**，
+不要绑等：
 
 ```bash
-jackd -P75 -t2000 -dalsa -dhw:Audio -r44100 -p4096 -n2
+jackd -P75 -t2000 -dalsa -dhw:Audio -r44100 -p2048 -n2
+# SOUNDMAT_BLOCK_SIZE 保持默认 64
 ```
 
-经验：`-p4096` + `SOUNDMAT_BLOCK_SIZE=4096` 较稳；现场密集触发时若仍 XRun，先降本机 Web 浏览器 / `/mat` 页占用，再考虑限制同时发声数。
+`-p` 调参经验（@44.1 kHz）：
+
+- `-p 1024`（23 ms 延迟）：装置感最好；50 颗石可能 XRun
+- **`-p 2048`（46 ms）：推荐起步**，调度余量大、装置距离 1–2 m 听不出延迟
+- `-p 4096`（93 ms）：仅在 2048 持续 XRun 时再加，敲石头到出声会有明显迟滞
+
+`-z` 不要调大：`-z 4096` 会让 `EnvGen.kr` 步长 ≈93 ms，鼓 attack 阶梯化。CPU 紧张
+请优先：(1) 降低 `JAM_MAX_MELODIC_VOICES`（Web Calibration `Max voices`，Pi 推荐 12）；
+(2) 关闭 Pi 本机 Chromium / `/mat` 页；(3) 把 `-p` 加大到 4096。
 
 ### 硬件连接
 

@@ -22,6 +22,11 @@ from .scheduler import ScanLine, SongPositionTracker, Transport
 from .theory import Tempo, Tonality
 
 LOOP_HZ = 60.0
+# LED 物理刷新 30Hz 已经远超人眼分辨；jam-loop 跑 60Hz 的 Python 渲染浪费一半 CPU
+# （profile：_render_led 占 _tick ~65%）。on_scan_hit / on_preview 仍每帧注入，只
+# 节流贵的 108-LED 合成 + serial 写。
+LED_HZ = 30.0
+LED_PERIOD = 1.0 / LED_HZ
 MASTER_SYNTH = "jam_master"
 REVERB_BUS_SYNTH = "jam_reverb_bus"
 
@@ -74,6 +79,7 @@ class JamApp:
         self._control_inactive_since: float | None = None
         self._last_control_value = 0.0
         self._last_control_count = 0
+        self._last_led_render = 0.0
         self._lock = threading.Lock()
 
     # ── 生命周期 ──
@@ -126,6 +132,7 @@ class JamApp:
         self._control_inactive_since = None
         self._last_control_active = False
 
+        self._last_led_render = 0.0
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, daemon=True, name="jam-loop")
         self._thread.start()
@@ -271,6 +278,11 @@ class JamApp:
                 if (c := self.cfg.rings.get(r)) is not None and c.is_trigger]
 
     def _render_led(self, now: float, delta=None) -> None:
+        # 节流到 LED_HZ（30）。短效注入（on_scan_hit / on_preview）仍每帧执行，
+        # 仅跳过 108-LED 合成 + 串口写；下次开闸时一次性反映最新状态。
+        if now - self._last_led_render < LED_PERIOD:
+            return
+        self._last_led_render = now
         stones = self._trigger_stones(delta) if (delta is not None and self.transport.playing) else []
         control_count = delta.control_count if delta is not None else 0
         buf = self.led.render(
