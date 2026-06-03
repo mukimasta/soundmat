@@ -127,6 +127,9 @@ class ModeManager:
             if key == "jam_loop_place_preview_vel":
                 config.JAM_LOOP_PLACE_PREVIEW_VEL = max(0.0, min(1.0, float(value)))
                 return
+            if key == "jam_max_melodic_voices":
+                config.JAM_MAX_MELODIC_VOICES = max(0, int(value))
+                return
             if self.current_app is not None:
                 self.current_app.set_param(key, value)
 
@@ -145,6 +148,7 @@ class ModeManager:
                 "control_sum_min": config.CONTROL_SUM_MIN,
                 "wire_slice_mirror": config.WIRE_SLICE_MIRROR,
                 "jam_loop_place_preview_vel": config.JAM_LOOP_PLACE_PREVIEW_VEL,
+                "jam_max_melodic_voices": config.JAM_MAX_MELODIC_VOICES,
                 "serial_port": self.services.serial_port,
                 "serial_ready": self.services.serial_ready,
             }

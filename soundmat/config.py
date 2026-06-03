@@ -56,6 +56,10 @@ SERIAL_LOST_EXIT_SEC = 3.0      # 串口断开后多少秒退出进程
 # ── Jam 行为 ────────────────────────────────────────────────────────────
 JAM_IDLE_PLACE_PREVIEW_VEL = 0.5   # 开始/空闲放石 preview 音量 0–1
 JAM_LOOP_PLACE_PREVIEW_VEL = 0.0   # loop 中放石立刻 preview 音量 0–1；0=关
+# 复音上限：同时 alive 的 melody/bass synth 数量（不含和声 pad/鼓/master）。
+# 超过则 free 最老 voice（FIFO stealing），避免密集扫描区 N 路马林巴叠满 scsynth。
+# 0 = 不限制；Pi 上推荐 8–12，Mac 可设更大或 0。
+JAM_MAX_MELODIC_VOICES = 12
 
 # ── SuperCollider / scsynth ─────────────────────────────────────────────
 # macOS 开发机 / 树莓派部署可用环境变量 SOUNDMAT_SCSYNTH / SOUNDMAT_SCLANG 覆盖

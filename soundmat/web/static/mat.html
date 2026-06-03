@@ -189,6 +189,10 @@
         <label for="controlMax">Lo-Fi sum max</label>
         <input id="controlMax" type="number" min="1" max="131040" step="1" value="8000" />
       </div>
+      <div class="mix-row">
+        <label for="maxVoices" title="同时 alive 的 melody/bass 复音上限；超过则替换最老。0=不限制">Max voices</label>
+        <input id="maxVoices" type="number" min="0" max="64" step="1" value="12" />
+      </div>
     </section>
   </main>
 
@@ -493,12 +497,14 @@ function syncMapControls(st){
   const csmin=document.getElementById("controlSumMin");
   const cmin=document.getElementById("controlMin");
   const cmax=document.getElementById("controlMax");
+  const mv=document.getElementById("maxVoices");
   if(st.sector_offset!=null) so.value=String(st.sector_offset);
   if(st.led_offset!=null) lo.value=String(st.led_offset);
   if(st.sensor_threshold!=null) th.value=String(st.sensor_threshold);
   if(st.control_sum_min!=null) csmin.value=String(st.control_sum_min);
   if(st.control_min!=null) cmin.value=String(st.control_min);
   if(st.control_max!=null) cmax.value=String(st.control_max);
+  if(mv && st.jam_max_melodic_voices!=null) mv.value=String(st.jam_max_melodic_voices);
 }
 
 function initMapControls(initial){
@@ -509,6 +515,7 @@ function initMapControls(initial){
   const csmin=document.getElementById("controlSumMin");
   const cmin=document.getElementById("controlMin");
   const cmax=document.getElementById("controlMax");
+  const mv=document.getElementById("maxVoices");
   so.addEventListener("change", async ()=>{
     const v=Math.max(0, Math.min(31, +so.value|0));
     so.value=String(v);
@@ -561,6 +568,16 @@ function initMapControls(initial){
       warn("");
     }catch(e){ warn(String(e.message||e)); }
   });
+  if(mv){
+    mv.addEventListener("change", async ()=>{
+      const v=Math.max(0, Math.min(64, +mv.value|0));
+      mv.value=String(v);
+      try{
+        await postParam("jam_max_melodic_voices", v);
+        warn("");
+      }catch(e){ warn(String(e.message||e)); }
+    });
+  }
 }
 
 async function boot(){
