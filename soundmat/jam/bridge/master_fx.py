@@ -1,16 +1,16 @@
 """MasterFX：Lo-Fi 强度（R0/R1）→ master FX synth 调参（设计文档 §6.2 / JAM_DESIGN §3）。
 
 输入 0–1000（来自 R0/R1 压力）。按 lofi_mapping 分段线性映射 cutoff / drive；
-在 Python 侧指数平滑（~200 Hz 主循环），SC 端用同一 cutoff 做全湿低通，避免
+在 Python 侧指数平滑（~60 Hz Jam 主循环），SC 端用同一 cutoff 做全湿低通，避免
 Lag.kr 与干/湿 mix 不同步导致 Lo-Fi 0/1000 听感错乱。
 """
 from __future__ import annotations
 
 from ...core.osc import OSCClient
 
-# 主循环 ~200 Hz；略快释放 Lo-Fi，加 Lo-Fi 稍慢，听感跟手且无阶跃
-_SMOOTH_ALPHA_UP = 0.14
-_SMOOTH_ALPHA_DOWN = 0.32
+# 主循环 ~60 Hz；α 按原 200 Hz 曲线换算，保持相近秒级跟手
+_SMOOTH_ALPHA_UP = 0.38
+_SMOOTH_ALPHA_DOWN = 0.68
 _CUTOFF_SEND_EPS = 8.0
 _DRIVE_SEND_EPS = 0.00005
 _GAIN_SEND_EPS = 0.008

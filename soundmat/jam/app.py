@@ -1,6 +1,6 @@
 """JamApp：Jam 模式主类。组装五层，跑高频主循环。
 
-主循环（设计文档 §9，~200Hz）：
+主循环（设计文档 §9，60Hz；Pi 部署降载，Mac 可再调高）：
   frame = sensor.latest(); delta = sensor_state.update(frame)
   依 R0/R1 控制值驱动开始/停止 + 全局 Lo-Fi（连续实时，不受扫描线影响）
   播放时：transport.advance → 伴奏（和声+鼓，按 16 分 tick）+ 扫描（命中石头触发旋律/bass）
@@ -21,7 +21,7 @@ from .led.renderer import JamLedRenderer
 from .scheduler import ScanLine, SongPositionTracker, Transport
 from .theory import Tempo, Tonality
 
-LOOP_HZ = 200.0
+LOOP_HZ = 60.0
 MASTER_SYNTH = "jam_master"
 
 # 默认总线增益（JAM_DESIGN §3/§6：和声 0.4、鼓 0.62 不变；旋律+bass 总线略抬）
