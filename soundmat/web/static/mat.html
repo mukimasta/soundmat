@@ -52,10 +52,24 @@
     margin-top: 0;
   }
   .heat-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
     margin-bottom: 8px;
     font-size: 13px;
     letter-spacing: 0.1em;
     color: var(--fg-dim);
+  }
+  .heat-head .btn-ghost {
+    flex-shrink: 0;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+  }
+  #matPage.is-pi-mode #piModeBtn.is-active {
+    color: var(--accent, #c0b8a0);
+    border-color: rgba(192, 184, 160, 0.35);
   }
   .heat-canvas-wrap {
     padding: 12px;
@@ -140,6 +154,7 @@
       <div class="mat-pane mat-pane--heat">
         <div class="heat-head">
           <span class="label-xs">Sensor</span>
+          <button id="piModeBtn" type="button" class="btn-ghost" title="降低热力图与 LED 刷新，适合树莓派浏览器">Pi mode</button>
         </div>
         <div class="heat-canvas-wrap">
           <canvas id="cv" width="480" height="480"></canvas>
@@ -186,6 +201,15 @@ const RING_RGB={0:[100,108,128],1:[148,112,88],2:[88,72,210],3:[32,188,148],
 const RING_GLOW=["#505460","#585048","#585470","#4a6860","#5a7888","#6a6670","#786858","#806040"];
 const CONTROL=new Set([0,1]);
 const SVGNS="http://www.w3.org/2000/svg";
+
+const PI_MODE_KEY = "soundmat-pi-mode";
+const PI_HEAT_INTERVAL_MS = 100; // 10 fps
+const PI_LED_DRAW_EVERY = 2;    // 40 Hz stream → ~20 fps LED DOM
+
+let piModeEnabled = localStorage.getItem(PI_MODE_KEY) === "1";
+let latestHeatMatrix = null;
+let heatDrawTimer = null;
+let mockViewLedTick = 0;
 
 let isMock = false;
 const placed=new Set();
@@ -245,12 +269,63 @@ function drawHeat(matrix){
   hctx.strokeStyle="rgba(192,184,160,0.12)"; hctx.stroke();
 }
 
+function stopHeatDrawTimer(){
+  if(heatDrawTimer != null){
+    clearInterval(heatDrawTimer);
+    heatDrawTimer = null;
+  }
+}
+
+function startHeatDrawTimer(){
+  stopHeatDrawTimer();
+  if(!piModeEnabled) return;
+  heatDrawTimer = setInterval(()=>{
+    if(latestHeatMatrix !== null) drawHeat(latestHeatMatrix);
+  }, PI_HEAT_INTERVAL_MS);
+}
+
+function onSensorMatrix(matrix){
+  latestHeatMatrix = matrix;
+  if(!piModeEnabled) drawHeat(matrix);
+}
+
+function applyPiMode(){
+  const page = document.getElementById("matPage");
+  const btn = document.getElementById("piModeBtn");
+  page.classList.toggle("is-pi-mode", piModeEnabled);
+  btn.classList.toggle("is-active", piModeEnabled);
+  btn.textContent = piModeEnabled ? "Pi mode: on" : "Pi mode: off";
+  localStorage.setItem(PI_MODE_KEY, piModeEnabled ? "1" : "0");
+  startHeatDrawTimer();
+  if(piModeEnabled && latestHeatMatrix !== null) drawHeat(latestHeatMatrix);
+  updateHeatHint();
+}
+
+function updateHeatHint(){
+  const hint = document.getElementById("heatHint");
+  const base = isMock
+    ? "Live sensor · synced with virtual pad"
+    : "Pressure heatmap · ring 0 innermost";
+  hint.textContent = piModeEnabled
+    ? `${base} · Pi: heat 10 fps, LED lite`
+    : base;
+}
+
+function initPiMode(){
+  const btn = document.getElementById("piModeBtn");
+  btn.addEventListener("click", ()=>{
+    piModeEnabled = !piModeEnabled;
+    applyPiMode();
+  });
+  applyPiMode();
+}
+
 function connectSensor(){
   const proto=location.protocol==="https:"?"wss":"ws";
   const ws=new WebSocket(`${proto}://${location.host}/api/sensor_stream`);
   ws.onmessage=e=>{
     const d=JSON.parse(e.data);
-    drawHeat(d.matrix);
+    onSensorMatrix(d.matrix);
   };
   ws.onclose=()=>setTimeout(connectSensor,1000);
 }
@@ -359,30 +434,43 @@ async function postCells(){
   }catch(e){ warn("Inject failed: "+e); }
 }
 
+function updateMockLeds(leds){
+  const noGlow = piModeEnabled;
+  for(let i=0;i<LED_COUNT && i<leds.length;i++){
+    const c=leds[i], lum=(c[0]+c[1]+c[2])/3;
+    ledDots[i].setAttribute("fill",rgb(c));
+    ledDots[i].setAttribute("opacity", lum>8?"1":"0.35");
+    if(noGlow) ledDots[i].removeAttribute("filter");
+    else ledDots[i].setAttribute("filter", lum>40?"url(#led-glow)":"");
+  }
+}
+
+function updateMockHud(d){
+  const a=d.status&&d.status.app||{};
+  const stEl=document.getElementById("st");
+  if(a.mode==="jam"){
+    const playing=a.playing;
+    stEl.innerHTML=`<span class="state-badge${playing?" is-playing":""}">${playing?"playing":(a.form_ended?"ended":"idle")}</span> `+
+      `<span class="muted">${a.musical_time||0}/${a.form_duration||0}s</span>`;
+  } else {
+    stEl.textContent=d.status&&d.status.mode||"—";
+  }
+  document.getElementById("chord").textContent=a.chord||"·";
+  const lofi=a.lofi||0;
+  document.getElementById("lofi").textContent=lofi;
+  document.getElementById("lofiBar").style.width=(lofi/1000*100)+"%";
+}
+
 function connectMockView(){
   const proto=location.protocol==="https:"?"wss":"ws";
   const ws=new WebSocket(`${proto}://${location.host}/api/mock/view`);
+  mockViewLedTick = 0;
   ws.onmessage=e=>{
     const d=JSON.parse(e.data);
-    if(d.leds) for(let i=0;i<LED_COUNT && i<d.leds.length;i++){
-      const c=d.leds[i], lum=(c[0]+c[1]+c[2])/3;
-      ledDots[i].setAttribute("fill",rgb(c));
-      ledDots[i].setAttribute("opacity", lum>8?"1":"0.35");
-      ledDots[i].setAttribute("filter", lum>40?"url(#led-glow)":"");
-    }
-    const a=d.status&&d.status.app||{};
-    const stEl=document.getElementById("st");
-    if(a.mode==="jam"){
-      const playing=a.playing;
-      stEl.innerHTML=`<span class="state-badge${playing?" is-playing":""}">${playing?"playing":(a.form_ended?"ended":"idle")}</span> `+
-        `<span class="muted">${a.musical_time||0}/${a.form_duration||0}s</span>`;
-    } else {
-      stEl.textContent=d.status&&d.status.mode||"—";
-    }
-    document.getElementById("chord").textContent=a.chord||"·";
-    const lofi=a.lofi||0;
-    document.getElementById("lofi").textContent=lofi;
-    document.getElementById("lofiBar").style.width=(lofi/1000*100)+"%";
+    mockViewLedTick++;
+    const drawLeds = d.leds && (!piModeEnabled || mockViewLedTick % PI_LED_DRAW_EVERY === 0);
+    if(drawLeds) updateMockLeds(d.leds);
+    updateMockHud(d);
   };
   ws.onclose=()=>setTimeout(connectMockView,1000);
 }
@@ -484,9 +572,8 @@ async function boot(){
   layout.classList.toggle("is-mock", isMock);
   page.classList.toggle("is-mock-wide", isMock);
   document.querySelectorAll(".mat-mock-only").forEach(el=>{ el.hidden=!isMock; });
-  document.getElementById("heatHint").textContent=isMock
-    ? "Live sensor · synced with virtual pad"
-    : "Pressure heatmap · ring 0 innermost";
+  initPiMode();
+  updateHeatHint();
 
   connectSensor();
   if(isMock){
