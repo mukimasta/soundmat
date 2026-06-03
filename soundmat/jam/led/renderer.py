@@ -36,7 +36,6 @@ from .layers import (
     rgba,
     ring_led_rgb,
     scan_hit_mix,
-    wrap_led_distance,
 )
 
 
@@ -78,7 +77,8 @@ class JamLedRenderer:
             return self._cardinal_breath_led(i, t)
         return rgba(WHITE, 0.0)
 
-    def _playing_led(self, i: int, t: float, sweep_angle: float, markers):
+    def _playing_led(self, i: int, t: float, sweep_angle: float, marker_rings):
+        """marker_rings: 本灯需叠加颜色的 ring 序列（已由倒排索引预过滤）。"""
         state = rgba(WHITE, 0.0)
         sweep_led = led_index_for_angle(sweep_angle)
         behind = led_distance_behind(i, sweep_led)
@@ -86,12 +86,25 @@ class JamLedRenderer:
             op = SWEEP_OPACITY_BY_DIST[behind] if behind < len(SWEEP_OPACITY_BY_DIST) else 0.0
             if op > 0:
                 state = rgba(WHITE, op)
-        for ring, slc in markers:
-            if wrap_led_distance(i, led_index_for_sector(slc)) <= 1:
-                state = blend_over(state, rgba(ring_led_rgb(ring), 0.22), 0.55)
+        for ring in marker_rings:
+            state = blend_over(state, rgba(ring_led_rgb(ring), 0.22), 0.55)
         if i in CARDINAL_LED_INDICES:
             state = self._cardinal_breath_led(i, t)
         return state
+
+    @staticmethod
+    def _build_marker_index(markers) -> dict[int, list[int]]:
+        """markers: [(ring, slc), ...] → {led_idx: [ring, ...]}（每石头影响 ±1 共 3 颗灯）。
+
+        保持原逐 marker 迭代顺序，等价于「for ring, slc in markers: if dist≤1: blend」。
+        """
+        idx: dict[int, list[int]] = {}
+        for ring, slc in markers:
+            center = led_index_for_sector(slc)
+            for d in (-1, 0, 1):
+                led_idx = (center + d) % LED_COUNT
+                idx.setdefault(led_idx, []).append(ring)
+        return idx
 
     # ── 短效查询 ──
     def _preview_for_led(self, i: int, t: float):
@@ -127,6 +140,9 @@ class JamLedRenderer:
         post_play = form_ended and not playing
         idle = not post_play and not playing
         markers = stones if playing else []
+        # 倒排：每石头只影响 3 颗灯；摊到 N 石头 ≈ O(N) 而非 108×N
+        marker_index = self._build_marker_index(markers) if markers else None
+        empty_rings: tuple[int, ...] = ()
 
         out: list[tuple[int, int, int]] = []
         for i in range(LED_COUNT):
@@ -135,7 +151,8 @@ class JamLedRenderer:
             elif idle:
                 base = self._idle_transport_led(i, now)
             else:
-                base = self._playing_led(i, now, sweep_angle, markers)
+                rings_here = marker_index.get(i, empty_rings) if marker_index else empty_rings
+                base = self._playing_led(i, now, sweep_angle, rings_here)
 
             if not post_play:
                 mix, ring = self._preview_for_led(i, now)
