@@ -2,13 +2,14 @@
 
 逻辑对齐 ``soundmat_firmware/tools``（plot_sensors / led_gui / led_test）：
 - Mac：优先 ``/dev/cu.*``（call-out，避免 tty 占口）
-- Linux / 树莓派：``ttyUSB*`` / ``ttyACM*`` / ``by-id``
+- Linux / 树莓派：``ttyUSB*`` / ``ttyACM*`` / ``by-id``；``auto`` 排除板载 ``ttyS*`` / ``ttyAMA*``
 - 打开时 ``dtr=rts=False``，避免 CH340 复位 ESP32
 - 发 L 帧前等待首帧 ``S:``，避免 boot 窗口丢包
 """
 from __future__ import annotations
 
 import glob
+import re
 import sys
 import time
 from typing import TYPE_CHECKING
@@ -19,6 +20,20 @@ if TYPE_CHECKING:
 from .. import config
 
 _BLOCKED = ("bluetooth", "debug-console", "airpod", "boseqc", "headset")
+
+# 树莓派板载 UART（GPIO 串口），非 USB ESP32；auto 永不选用（--port 仍可显式指定）
+_LINUX_ONBOARD_UART_RE = re.compile(r"^/dev/tty(?:AMA|S)\d+$", re.IGNORECASE)
+_LINUX_ONBOARD_UART_SYMLINKS = frozenset({"/dev/serial0", "/dev/serial1"})
+
+
+def is_linux_onboard_uart(path: str) -> bool:
+    """Linux 板载 UART（ttyS / ttyAMA / serial0|1）。USB ESP32 不在此列。"""
+    if sys.platform != "linux":
+        return False
+    low = path.lower()
+    if low in _LINUX_ONBOARD_UART_SYMLINKS:
+        return True
+    return bool(_LINUX_ONBOARD_UART_RE.match(low))
 
 _PORT_KEYWORDS: tuple[tuple[str, int], ...] = (
     ("usbserial", 100),
@@ -57,7 +72,7 @@ def _glob_candidates() -> list[str]:
 
 
 def list_serial_ports() -> list[str]:
-    """可用串口列表（已过滤蓝牙等）。"""
+    """可用串口列表（已过滤蓝牙、Linux 板载 UART 等）。"""
     try:
         from serial.tools import list_ports
     except ImportError:
@@ -65,7 +80,12 @@ def list_serial_ports() -> list[str]:
     else:
         from_comports = [p.device for p in list_ports.comports()]
     merged = sorted(set(from_comports + _glob_candidates()))
-    return [p for p in merged if not any(b in p.lower() for b in _BLOCKED)]
+    return [
+        p
+        for p in merged
+        if not any(b in p.lower() for b in _BLOCKED)
+        and not is_linux_onboard_uart(p)
+    ]
 
 
 def pick_serial_port(arg: str) -> str:
@@ -75,7 +95,8 @@ def pick_serial_port(arg: str) -> str:
     ports = list_serial_ports()
     if not ports:
         raise RuntimeError(
-            "未找到可用串口（auto）。请连接 ESP32 后重试，或用 --port / --list-ports"
+            "未找到可用 USB 串口（auto）。请连接 ESP32 后重试，或用 --port / --list-ports"
+            "（Linux 已排除板载 ttyS/ttyAMA）"
         )
     ports.sort(key=_port_score)
     chosen = ports[0]

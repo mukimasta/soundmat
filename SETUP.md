@@ -47,7 +47,7 @@ uv run python scripts/compile_synths.py
 | `SOUNDMAT_SCLANG` | 编译 SynthDef 的 sclang | `/Applications/.../MacOS/sclang` | `/usr/bin/sclang` |
 | `SOUNDMAT_SAMPLE_RATE` | scsynth `-S` 采样率 | `44100` | `44100` 或 DAC 支持的值 |
 
-串口**不用**环境变量：CLI `--port auto`（默认）或显式路径即可。
+串口**不用**环境变量：CLI `--port auto`（默认）或显式路径即可。Linux `auto` 会排除板载 `ttyS*` / `ttyAMA*`（仅 USB 口）。
 
 **Ambient 素材：** Kyoto wav 若为 48000 Hz，**不必批量重转**。`playMono` / `playStereo` 使用 `PlayBuf` + `BufRateScale`，scsynth 会按 server 采样率正确回放音高与时长。仅 Jam 合成为实时生成，与 wav 文件采样率无关。
 
