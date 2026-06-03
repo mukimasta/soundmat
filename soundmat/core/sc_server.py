@@ -37,6 +37,7 @@ class SCServerHandle:
                 "-i", "0",
                 "-o", "2",
                 "-S", str(config.SAMPLE_RATE),
+                "-z", str(config.SC_BLOCK_SIZE),
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,

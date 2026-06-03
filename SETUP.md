@@ -46,6 +46,7 @@ uv run python scripts/compile_synths.py
 | `SOUNDMAT_SCSYNTH` | 运行时启动的 scsynth | `/Applications/SuperCollider.app/Contents/Resources/scsynth` | `/usr/bin/scsynth` |
 | `SOUNDMAT_SCLANG` | 编译 SynthDef 的 sclang | `/Applications/.../MacOS/sclang` | `/usr/bin/sclang` |
 | `SOUNDMAT_SAMPLE_RATE` | scsynth `-S` 采样率 | `44100` | `44100` 或 DAC 支持的值 |
+| `SOUNDMAT_BLOCK_SIZE` | scsynth `-z` 内部 block size；与 JACK period 对齐可减少调度切换 | `64`（默认） | `4096`（配 `jackd -p4096`） |
 
 串口**不用**环境变量：CLI `--port auto`（默认）或显式路径即可。Linux `auto` 会排除板载 `ttyS*` / `ttyAMA*`（仅 USB 口）。
 
@@ -121,7 +122,19 @@ sclang sc/compile.scd
 ```bash
 export SOUNDMAT_SCSYNTH=/usr/bin/scsynth
 export SOUNDMAT_SCLANG=/usr/bin/sclang
+# 配合 jackd -p4096：scsynth 内部 block size 与 JACK period 对齐，减少调度切换
+export SOUNDMAT_BLOCK_SIZE=4096
 ```
+
+### 音频引擎（jackd）
+
+Pi 上推荐用 JACK 跑 scsynth，period 大一些避免 XRun（爆音）：
+
+```bash
+jackd -P75 -t2000 -dalsa -dhw:Audio -r44100 -p4096 -n2
+```
+
+经验：`-p4096` + `SOUNDMAT_BLOCK_SIZE=4096` 较稳；现场密集触发时若仍 XRun，先降本机 Web 浏览器 / `/mat` 页占用，再考虑限制同时发声数。
 
 ### 硬件连接
 

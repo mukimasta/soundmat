@@ -23,6 +23,7 @@ from .theory import Tempo, Tonality
 
 LOOP_HZ = 60.0
 MASTER_SYNTH = "jam_master"
+REVERB_BUS_SYNTH = "jam_reverb_bus"
 
 # 默认总线增益（JAM_DESIGN §3/§6：和声 0.4、鼓 0.62 不变；旋律+bass 总线略抬）
 MELODY_BUS_GAIN = 0.9
@@ -62,6 +63,7 @@ class JamApp:
         self.group: int | None = None
         self.harmony_group: int | None = None
         self.master_node: int | None = None
+        self.reverb_bus_node: int | None = None
         self.bridge: SynthBridge | None = None
         self.master_fx: MasterFX | None = None
 
@@ -81,6 +83,21 @@ class JamApp:
         sc = self.services.sc
         self.group = sc.new_group()
         self.harmony_group = sc.new_group(target=self.group, add_action=ADD_TO_HEAD)
+        # 共享 reverb：voices(HEAD) → harmony_group → jam_reverb_bus → jam_master(TAIL)
+        # 先 add reverb_bus（TAIL），再 add master（TAIL）→ master 排在 reverb_bus 之后，
+        # 这样 voice 写入 send 总线后，同一 control block 内 reverb_bus 读到，master 再读
+        # MELODY_BUS 已含 reverb tail。
+        self.reverb_bus_node = self.services.osc.new_synth(
+            REVERB_BUS_SYNTH,
+            {
+                "in": config.JAM_REVERB_BUS,
+                "out": config.MELODY_BUS,
+                "decay": 1.4,
+                "preDelay": 0.02,
+                "amp": 1.0,
+            },
+            target=self.group, add_action=ADD_TO_TAIL,
+        )
         # master synth 挂在 group 尾部，读三条总线
         self.master_node = self.services.osc.new_synth(
             MASTER_SYNTH,
@@ -124,6 +141,7 @@ class JamApp:
             self.group = None
             self.harmony_group = None
             self.master_node = None
+            self.reverb_bus_node = None
             self.bridge = None
             self.master_fx = None
 

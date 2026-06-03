@@ -80,7 +80,11 @@ MELODY_BUS = 2       # 旋律 + bass 总线（R2-R7）
 HARMONY_BUS = 4      # 和声 pad 总线
 DRUM_BUS = 6         # 鼓总线
 REVERB_BUS = 8       # 混响 aux 送（ambient 用）
-FIRST_PRIVATE_BUS = 10
+JAM_REVERB_BUS = 10  # Jam marimba 共享 reverb send（per-voice → 总线，省 N 倍 reverb 开销）
+FIRST_PRIVATE_BUS = 12
+
+# scsynth 内部 block size（与 JACK period 对齐可减少调度切换；Pi 部署 SOUNDMAT_BLOCK_SIZE=4096 配 jackd -p4096）
+SC_BLOCK_SIZE = int(os.environ.get("SOUNDMAT_BLOCK_SIZE", "64"))
 
 # ── Web 控制台 ──────────────────────────────────────────────────────────
 WEB_HOST = "0.0.0.0"

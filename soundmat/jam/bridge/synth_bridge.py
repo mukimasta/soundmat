@@ -17,6 +17,9 @@ from ..types import ChordEvent, NoteEvent
 # 鼓声部 → SynthDef 名
 DRUM_SYNTHS = {"kick": "jam_kick", "snare": "jam_snare", "hihat": "jam_hihat"}
 
+# jam_chord_pad 多通道版本接受 5 路 freq；progression voicing 即 5 音
+CHORD_PAD_VOICES = 5
+
 
 class SynthBridge:
     def __init__(
@@ -81,19 +84,23 @@ class SynthBridge:
     # ── 和声 pad ──
     def handle_chord(self, ev: ChordEvent) -> None:
         # web releaseAll + 新和弦：旧 pad 靠包络 release 淡出，不逐个 free_node
+        # 多频点合并：原 N voice = N 个 SynthDef 实例 → 1 个实例 + N 路 freq（共享 envelope/LPF/vibrato）
         freqs = self.tonality.freqs(ev.degrees)
-        for f in freqs:
-            self.osc.new_synth(
-                self.chord_pad_synth,
-                {
-                    "freq": float(f),
-                    "amp": float(self.chord_pad_gain),
-                    "hold": float(ev.hold),
-                    "out": config.HARMONY_BUS,
-                },
-                target=self.harmony_group,
-                add_action=ADD_TO_HEAD,
-            )
+        if not freqs:
+            return
+        params: dict = {
+            "amp": float(self.chord_pad_gain),
+            "hold": float(ev.hold),
+            "out": config.HARMONY_BUS,
+        }
+        for i in range(CHORD_PAD_VOICES):
+            params[f"freq{i}"] = float(freqs[i]) if i < len(freqs) else 0.0
+        self.osc.new_synth(
+            self.chord_pad_synth,
+            params,
+            target=self.harmony_group,
+            add_action=ADD_TO_HEAD,
+        )
 
     def _release_pad(self) -> None:
         # pad 包络结束会 doneAction:2 自毁；勿对历史 node id 发 /n_free（会报 not found）
