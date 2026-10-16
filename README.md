@@ -1,5 +1,7 @@
 # SoundMat 上位机软件
 
+> 正在按新架构重写。新的设计与文档见 `docs/`：先读 `docs/OVERVIEW.md` 和 `docs/ARCHITECTURE.md`；Agent 工作协议见 `AGENTS.md`。下文描述的是 2026 年 6 月的第一版实现，重写完成后更新。
+
 公共艺术装置：圆形压力垫上放石头 → 实时生成音乐。运行在树莓派 + SuperCollider。
 
 ```
