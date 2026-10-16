@@ -130,7 +130,7 @@
         <div class="mat-frame">
           <svg id="svg" viewBox="0 0 480 480">
             <defs>
-              <filter id="led-glow" x="-100%" y="-100%" width="300%" height="300%">
+              <filter id="led-glow" x="-5%" y="-5%" width="110%" height="110%">
                 <feGaussianBlur stdDeviation="1.6" result="blur"/>
                 <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
               </filter>
@@ -351,7 +351,7 @@ function initPad(){
     const [cx,cy]=cellCenter(r,s);
     const g=document.createElementNS(SVGNS,"g");
     g.setAttribute("visibility","hidden");
-    g.setAttribute("filter","url(#stone-glow)");
+    // 滤镜只挂在已放下的石头上（见 paint），256 个隐藏石头挂滤镜会让每次灯变化都重算一遍
     for (const [rad, fill, op] of [[CONTROL.has(r)?12:9,RING_GLOW[r],0.35],[CONTROL.has(r)?5.5:4.5,rgb(RING_RGB[r]),0.9],[1.8,"#fff",0.55]]) {
       const c=document.createElementNS(SVGNS,"circle");
       c.setAttribute("cx",cx); c.setAttribute("cy",cy); c.setAttribute("r",String(rad));
@@ -411,11 +411,13 @@ function paint(r,s,on){
     p.setAttribute("fill",rgb(c)); p.setAttribute("fill-opacity","0.22");
     p.setAttribute("stroke",rgb(c)); p.setAttribute("stroke-opacity","0.45"); p.setAttribute("stroke-width","0.5");
     st.setAttribute("visibility","visible");
+    st.setAttribute("filter","url(#stone-glow)");
   } else {
     p.setAttribute("fill",rgb(c));
     p.setAttribute("fill-opacity", CONTROL.has(r)?"0.04":"0.05");
     p.setAttribute("stroke",rgb(c)); p.setAttribute("stroke-opacity","0.14"); p.setAttribute("stroke-width","0.35");
     st.setAttribute("visibility","hidden");
+    st.removeAttribute("filter");
   }
 }
 
@@ -439,13 +441,13 @@ async function postCells(){
 }
 
 function updateMockLeds(leds){
-  const noGlow = piModeEnabled;
+  // 光晕挂在整个 #leds 组上（一次滤镜），不再逐颗挂；Pi mode 下关掉
+  const g=document.getElementById("leds");
+  if(piModeEnabled) g.removeAttribute("filter"); else if(!g.hasAttribute("filter")) g.setAttribute("filter","url(#led-glow)");
   for(let i=0;i<LED_COUNT && i<leds.length;i++){
     const c=leds[i], lum=(c[0]+c[1]+c[2])/3;
     ledDots[i].setAttribute("fill",rgb(c));
     ledDots[i].setAttribute("opacity", lum>8?"1":"0.35");
-    if(noGlow) ledDots[i].removeAttribute("filter");
-    else ledDots[i].setAttribute("filter", lum>40?"url(#led-glow)":"");
   }
 }
 

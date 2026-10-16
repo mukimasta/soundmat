@@ -381,7 +381,7 @@ input[type="range"] {
   height: 100%;
   display: block;
   touch-action: none;
-  filter: drop-shadow(0 20px 60px rgba(0, 0, 0, 0.5));
+  /* filter: drop-shadow(0 20px 60px rgba(0, 0, 0, 0.5));  2026-10-14 临时关掉，测试是否是卡顿原因 */
 }
 
 .pad-hint {
