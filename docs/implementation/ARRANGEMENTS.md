@@ -58,3 +58,63 @@ tiers = [                  # 按这一环的石头数分档（取不超过当前
 持续角色的 `atk`、`rel` 用作声部的淡入、淡出时长（秒），不再作为参数传给音色。音色角色在触发时如果没有给出 `freq`，按区域取音高：环内序号按两半对称映射到音阶（与第一版相同）；间歇触发在两个八度的音阶里随机取音。
 
 《京都岚山》由第一版 `manifest/ambient/kyoto.toml` 转换而来，声音内容不变；位置策略取默认值，与第一版的声像一致（持续声居中，触发按扇区，间歇随机）。
+
+## Jam 编排
+
+```toml
+[music]
+bpm = 120
+key = "C"                       # 调；改调即全局移调
+scale = "major"                 # major / natural_minor / harmonic_minor / dorian
+scheme = 2                      # 时间方案 1 / 2 / 3（见 soundmat/sonification/jam/timing.py）
+lookahead = 0.1                 # 前瞻时间窗（秒）
+
+[control]                       # 控制区；压力数值是 ADC 原始读数之和（满量程 4095）
+rings = [0, 1]
+start_threshold = 250           # 超过即开始播放
+release_hold = 0.1              # 压力消失超过这么久才算松开（秒）
+lofi_range = [1000, 8000]       # 压力和在此区间内映射为 Lo-Fi 0–1000
+preview_idle = 0.5              # 空闲时放下石头的预听力度（0 = 不预听）
+preview_playing = 0.0           # 播放中放下石头的预听力度
+
+[lofi]                          # Lo-Fi 强度 → 模式总处理参数，分段线性 [[强度, 值], ...]
+cutoff = [[0, 14000], [1000, 2425]]
+drive = [[0, 0.0], [1000, 0.025]]
+gain = [[0, 1.0], [1000, 1.45]]
+
+[mix]                           # 各总线的增益：ring2…ring7、harmony、drums
+harmony = 0.4
+
+[instruments]                   # 和声与鼓用的音色
+pad = "jam_chord_pad"
+
+[[progression]]                 # 和弦进行：小节数与 5 音配音（首调级数）
+id = "2m9"
+bars = 2
+voicing = ["2_", "4_", "6_", "1", "3"]
+
+[rings.7]                       # 触发环
+role = "melody"                 # melody 用 note_sec；bass 的时长 = 四分音符 + tail_sec
+instrument = "jam_marimba"
+note_sec = 2.012
+gain = 2.75                     # 该环增益（作为 ringGain 参数交给音色）
+# 其他键作为数值参数交给音色，例如 far = 1
+
+[triggers."2m9"]                # 触发表：和弦 → 环 → 8 个八分位的音级（"null" 不发声）
+7 = ["3^", "1^", "2^", "3^", "3^", "2^", "1^", "6"]
+
+[drums]                         # 十六分位 0 休止 / 1 正常 / 2 ghost
+sequence = ["A", "B", "C"]      # 曲式：每项是一个和声循环（方案 2 为 8 小节）
+[drums.patterns.A]
+kick = [0, 0, ...]              # 16 个
+```
+
+音级记号：1–7 是当前调音阶的音级，升降写在数字后（`#` / `b`），八度写在最后（`^` / `_`，可叠加），无八度记号为第 4 八度，例如 `1#^`。
+
+Jam 发出的参数：和声声部 `freq0`…`freq4`、`amp`；鼓 `amp`（ghost 为 0.38）、`sustain`；旋律与贝斯 `freq`、`velocity`（同一扇区组 N 颗石头时为 1/√N，下限 0.2）、`ringGain`、`sustain` 和该环的额外参数。全局参数：`cutoff`、`drive`、`lofiGain`，以及 `bus.<总线>` 形式的各总线增益。
+
+《Lo-Fi Loop · Progression 1》由第一版 `manifest/jam/lofi_1.toml` 及其引用的 YAML 合并转换而来，音乐内容不变。
+
+### 精确时刻的计算
+
+扫描线位置以扇区为单位，是音乐时间的线性函数（方案 2、120 BPM 时每秒 8 个扇区）。每一拍把前瞻时间窗换算成音乐时间区间 `[已排到, 当前 + 提前量)`，直接解出扫描线经过各有石头的触发扇区中心的时刻，以及区间内的十六分格时刻，生成定时事件；区间是半开的，相邻两拍不会重复也不会遗漏。第一版按帧比较扫描角前后两次的位置，命中时刻会落在帧上；新版的命中时刻精确到扫描线经过的那一刻。

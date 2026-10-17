@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import math
 import random
+import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -140,6 +141,8 @@ class AmbientMode(Mode):
 
     def start(self, t: float) -> None:
         self.rng = random.Random(self.ctx.seed)
+        # 事件标识的前缀：同一份编排交叉淡化切换到自己时，两个实例的事件标识也不会相同
+        self.prefix = f"{self.arrangement.id}.{uuid.uuid4().hex[:6]}"
         self.next_fire: dict[str, float] = {}
         self.fired = 0
 
@@ -226,7 +229,7 @@ class AmbientMode(Mode):
             file, params = self._sample_params(sid, role.params)
             source = Source("sample", file)
         return Event(
-            id=f"{self.arrangement.id}:{role.key}#{self.fired}", time=t, source=source,
+            id=f"{self.prefix}:{role.key}#{self.fired}", time=t, source=source,
             bus=f"ring{role.ring}", params=_numeric(params),
             position=self._position(role, zone, zones), priority=role.priority,
         )

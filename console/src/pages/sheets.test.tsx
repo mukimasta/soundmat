@@ -72,6 +72,25 @@ test('dashboard shows recent warnings and returns to mat', async () => {
   expect(screen.getByText('点按垫面放下，再点拿起')).toBeInTheDocument();
 });
 
+test('jam status line shows section progress and Lo-Fi reading', () => {
+  const { client } = setup();
+  act(() => {
+    client.handle(hello(playingState()));
+    client.handle({ type: 'patch', changes: [
+      ['status.current.arrangement', 'lofi_1'],
+      ['status.current.modeStatus', { text: '第 3 段 C · 0:44 / 2:08', reading: 'Lo-Fi 45%', transport: 'playing' }],
+    ] });
+  });
+  expect(screen.getByText('第 3 段 C · 0:44 / 2:08')).toBeInTheDocument();
+  expect(screen.getByText('Lo-Fi 45%')).toBeInTheDocument();
+  expect(screen.getByText('Jam · 合奏 · 120 BPM · 演奏中')).toBeInTheDocument();
+  expect(screen.getByText('暗电钢')).toBeInTheDocument();
+  act(() => client.handle({ type: 'patch', changes: [
+    ['status.current.modeStatus', { text: '曲终 · 清空中间两环，再压一次重新开始', reading: '', transport: 'ended' }],
+  ] }));
+  expect(screen.getByText('Jam · 合奏 · 120 BPM · 曲终')).toBeInTheDocument();
+});
+
 test('sheets take focus, close on Escape and return focus to the opener', async () => {
   const { client } = setup();
   connect(client);

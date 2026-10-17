@@ -37,6 +37,7 @@ class Voice:
     position: Position | None = None          # None = 不定位，充满整个空间
     priority: int = 0
     category: str | None = None               # 声部预算的类别，例如 "melodic"
+    start: float | None = None                # 可选：在前瞻时间窗内的准确开始时刻（系统时间）
 
 
 @dataclass(frozen=True)

@@ -195,3 +195,13 @@ def test_layout_change():
     eng.set_layout(PRESETS["quad"], orientation=0.0, now=3.0)
     assert be.of_kind("create_mix")[0].args["channels"] == 4
     assert eng.voices == {}
+
+
+def test_voice_with_start_time_begins_exactly_then():
+    eng, be = make()
+    eng.apply("A", SoundIntent((v("bar5", start=1.08),)), now=1.0)
+    (s,) = be.of_kind("start_voice")
+    assert s.at == pytest.approx(1.08 + LAT)
+    be.clear()
+    eng.apply("A", SoundIntent((v("bar6", start=0.5),)), now=1.0)   # 已经过去：立即
+    assert be.of_kind("start_voice")[0].at == pytest.approx(1.0 + LAT)
