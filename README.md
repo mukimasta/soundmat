@@ -14,24 +14,18 @@ uv sync
 uv run python scripts/compile_instruments.py   # 编译音色，应显示"共 66 个 SynthDef 文件"
 ```
 
-另开一个终端启动合成器服务，并让它一直运行：
-
-```bash
-scripts/scsynth-dev.sh                         # 立体声，CoreAudio 的默认输出设备，48 kHz
-```
-
-看到 `SuperCollider 3 server ready.` 后，在原来的终端启动主机程序：
+然后启动主机程序。本机没有在运行的合成器服务时，它会自己启动 scsynth（立体声，CoreAudio 的默认输出设备，48 kHz），退出时一起关掉；已经有一个在运行（例如用 `scripts/scsynth-dev.sh` 手动启动的）就直接连它：
 
 ```bash
 SOUNDMAT_SOUND=/path/to/sound uv run soundmat --virtual
 ```
 
-打开 http://localhost:8000 ，点垫面放石头、再点拿起；看板上"声音"应为正常（缺少素材时为需要注意），采样率 48 kHz、声道 2；音色与素材一栏显示加载情况。Mac 上没有 JACK 和 USB 声卡检查，输出设备和缓冲两栏显示"—"属正常。
+启动后终端会打印控制台的网址（本机和局域网），点开 http://localhost:8000 ，点垫面放石头、再点拿起；看板上"声音"应为正常（缺少素材时为需要注意），采样率 48 kHz、声道 2；音色与素材一栏显示加载情况。Mac 上没有 JACK 和 USB 声卡检查，输出设备和缓冲两栏显示"—"属正常。
 
 1. 声音素材不在仓库里。`SOUNDMAT_SOUND` 指向包含 `samples/` 的文件夹；不设时使用与仓库并列的 `sound/`。缺少素材时照常运行，用到它的声部不发声，编排面板和看板会列出缺了哪些。
 2. scsynth 报采样率错误时，在"音频 MIDI 设置"里把输出设备设为 48000 Hz 再启动。SuperCollider IDE 里如果已经启动了服务器，先关掉它，否则 57110 端口被占用。
-3. 只有两个声道的设备上保持"立体声"布局；四声道、八声道布局需要多声道声卡，并用 `scripts/scsynth-dev.sh 4`（或 8）启动。
-4. 不需要发声时用 `uv run soundmat --virtual --no-synth`，不必编译音色和启动 scsynth；声音引擎只记录指令，录制只产生会话数据。
+3. 只有两个声道的设备上保持"立体声"布局；四声道、八声道布局需要多声道声卡。自动启动的 scsynth 按启动时的布局开声道，启动后再改布局需要重启主机程序，或先用 `scripts/scsynth-dev.sh 4`（或 8）手动启动。
+4. 不需要发声时用 `uv run soundmat --virtual --no-synth`，不必编译音色，也不会启动 scsynth；声音引擎只记录指令，录制只产生会话数据。
 5. 设置文件和录音在仓库的 `data/` 下。之前的版本会把声音素材库的位置写死在 `data/settings.json` 里，如果 `SOUNDMAT_SOUND` 不起作用，删掉这个文件即可。
 
 测试：`uv run pytest`（两个真实发声的测试需要 `SOUNDMAT_LIVE_SCSYNTH=1` 并在本机运行 scsynth，否则跳过；它们会清空 scsynth 的节点树并发声，不要在试听时打开），以及 `cd console && npm test`。

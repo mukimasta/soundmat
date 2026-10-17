@@ -7,12 +7,11 @@
 ```bash
 uv sync                         # 安装 Python 3.12 与依赖
 uv run python scripts/compile_instruments.py   # 编译音色（需要 SuperCollider）
-scripts/scsynth-dev.sh &        # 开发机上启动合成器服务
-uv run soundmat --virtual       # 用虚拟垫子运行，控制台在 http://localhost:8000
+uv run soundmat --virtual       # 用虚拟垫子运行；本机没有合成器服务时自己启动 scsynth
 uv run pytest                   # 测试
 ```
 
-主机程序默认连接本机的 scsynth（见 `SYNTH.md`），`--no-synth` 改用只记录指令、不发声的声音引擎。不带 `--virtual` 时连接控制器：`--port-serial` 指定串口，默认 `auto` 自动选择（规则见下文「设备连接」）。`--virtual` 用虚拟垫子代替控制器；`--config` 指定其他配置文件；`--data-dir` 指定本机数据目录（设置文件 `settings.json` 和录音，默认是程序目录下的 `data/`，树莓派上是 `/home/soundmat/data`）；`--host`、`--port` 覆盖控制接口的监听地址。控制台需要先在 `console/` 下构建（`npm ci && npm run build`），构建产物由控制接口直接提供；开发控制台时用 `npm run dev`，Vite 把 `/api` 和 `/ws` 转发到 8000 端口。
+主机程序默认连接本机的 scsynth，开发机上没有在运行的就自己启动一个、退出时一起关掉（见 `SYNTH.md`「运行 scsynth」）；启动后打印控制台的网址：本机 `http://localhost:<端口>`，监听所有网卡时再加局域网名字（`<主机名>.local`）和出口地址。`--no-synth` 改用只记录指令、不发声的声音引擎。不带 `--virtual` 时连接控制器：`--port-serial` 指定串口，默认 `auto` 自动选择（规则见下文「设备连接」）。`--virtual` 用虚拟垫子代替控制器；`--config` 指定其他配置文件；`--data-dir` 指定本机数据目录（设置文件 `settings.json` 和录音，默认是程序目录下的 `data/`，树莓派上是 `/home/soundmat/data`）；`--host`、`--port` 覆盖控制接口的监听地址。控制台需要先在 `console/` 下构建（`npm ci && npm run build`），构建产物由控制接口直接提供；开发控制台时用 `npm run dev`，Vite 把 `/api` 和 `/ws` 转发到 8000 端口。
 
 ## 模块与文件
 
