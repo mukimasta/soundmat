@@ -52,6 +52,8 @@ expected_output_device = "USB"
 # 合成器服务（scsynth）地址
 host = "127.0.0.1"
 port = 57110
+# 编译好的音色（sclang instruments/build.scd 的产物），相对于程序目录
+synthdefs = "instruments/compiled"
 
 [control]
 host = "0.0.0.0"

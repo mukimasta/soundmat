@@ -57,6 +57,12 @@ class SoundConfig:
 class SynthConfig:
     host: str = "127.0.0.1"
     port: int = 57110
+    synthdefs: str = "instruments/compiled"   # 编译好的音色目录，相对于程序目录
+
+    @property
+    def synthdefs_path(self) -> Path:
+        p = Path(self.synthdefs)
+        return p if p.is_absolute() else ROOT / p
 
 
 @dataclass(frozen=True)
@@ -123,7 +129,7 @@ def load_config(path: Path | str | None = None) -> Config:
         "late_tolerance", "asset_memory_mb", "crossfade_seconds",
         "expected_sample_rate", "expected_output_device",
     )})
-    synth = take("synth", {"host": "host", "port": "port"})
+    synth = take("synth", {"host": "host", "port": "port", "synthdefs": "synthdefs"})
     control = take("control", {"host": "host", "port": "port"})
     unknown = set(raw) - {"mat", "light", "sound", "synth", "control"}
     if unknown:

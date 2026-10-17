@@ -6,11 +6,13 @@
 
 ```bash
 uv sync                         # 安装 Python 3.12 与依赖
+uv run python scripts/compile_instruments.py   # 编译音色（需要 SuperCollider）
+scripts/scsynth-dev.sh &        # 开发机上启动合成器服务
 uv run soundmat --virtual       # 用虚拟垫子运行，控制台在 http://localhost:8000
 uv run pytest                   # 测试
 ```
 
-不带 `--virtual` 时连接控制器：`--port-serial` 指定串口，默认 `auto` 自动选择（规则见下文「设备连接」）。`--virtual` 用虚拟垫子代替控制器；`--config` 指定其他配置文件；`--data-dir` 指定本机数据目录（设置文件 `settings.json` 和录音，默认是程序目录下的 `data/`，树莓派上是 `/home/soundmat/data`）；`--host`、`--port` 覆盖控制接口的监听地址。控制台需要先在 `console/` 下构建（`npm ci && npm run build`），构建产物由控制接口直接提供；开发控制台时用 `npm run dev`，Vite 把 `/api` 和 `/ws` 转发到 8000 端口。
+主机程序默认连接本机的 scsynth（见 `SYNTH.md`），`--no-synth` 改用只记录指令、不发声的声音引擎。不带 `--virtual` 时连接控制器：`--port-serial` 指定串口，默认 `auto` 自动选择（规则见下文「设备连接」）。`--virtual` 用虚拟垫子代替控制器；`--config` 指定其他配置文件；`--data-dir` 指定本机数据目录（设置文件 `settings.json` 和录音，默认是程序目录下的 `data/`，树莓派上是 `/home/soundmat/data`）；`--host`、`--port` 覆盖控制接口的监听地址。控制台需要先在 `console/` 下构建（`npm ci && npm run build`），构建产物由控制接口直接提供；开发控制台时用 `npm run dev`，Vite 把 `/api` 和 `/ws` 转发到 8000 端口。
 
 ## 模块与文件
 
@@ -30,6 +32,7 @@ uv run pytest                   # 测试
 | 声音引擎 | `soundmat/sound/engine.py` | 对账、声部预算、定时与去重、混音结构与交叉淡化、重启后重建 |
 | 声音引擎 · 空间化 | `soundmat/sound/spatial.py` | 音箱布局预设与分配公式 |
 | 声音引擎 · 合成器接口 | `soundmat/sound/backend.py` | 抽象指令接口；`RecordingBackend` 只记录指令 |
+| 声音引擎 · scsynth | `soundmat/sound/scsynth.py` + `instruments/` | 带时间戳的 OSC bundle、节点树与总线、重启检测、电平；见 `SYNTH.md` |
 | 系统监测 · 日志 | `soundmat/monitor/log.py` | 最近的警告和错误 |
 | 声音化 · 编排文件 | `soundmat/sonification/arrangements.py` + `arrangements/` | 读取与校验，格式见 `ARRANGEMENTS.md` |
 | 声音化 · Ambient | `soundmat/sonification/ambient/` | 持续 / 间歇 / 触发、分档、条件、位置策略、灯光 |
@@ -42,7 +45,7 @@ uv run pytest                   # 测试
 | 配置 | `soundmat/config.py` + `config/soundmat.toml` | 已实现 |
 | 线程间容器 | `soundmat/exchange.py` | `Latest`、`EventQueue`、`EventHub` |
 
-scsynth 实现、录制、系统监测的其余部分尚未实现。没有 scsynth 实现之前，主机程序总是使用 `RecordingBackend`，不发声。
+录制、系统监测的其余部分尚未实现。
 
 ## 线程与数据交换
 
@@ -81,6 +84,8 @@ scsynth 实现、录制、系统监测的其余部分尚未实现。没有 scsyn
 `RecordingBackend` 是不发声的实现：照单记录指令，并模拟合成器服务的通知——淡出的声部在淡出时长之后结束，单次声音在固定的 2 秒后结束，`simulate_restart()` 模拟合成器服务重启。测试用它检查对账和调度的结果。
 
 已发出的定时事件标识保留 30 秒用于去重。合成器服务重启后引擎调用 `rebuild`：清空声部表，重新设置总输出、建立各实例的混音结构、恢复全局参数，并调用 `on_rebuild` 回调（例如素材库重新加载素材）；下一拍的对账把所有持续声部重新开始。
+
+引擎交给合成器接口的增益有三组：单声道声源用的一组，以及立体声声源左右声道各一组。立体声声源不定位时，左右声道放在房间的左前 330° 和右前 30°（立体声布局下即原样的左右声道）；定位时放在位置两侧各 10°。
 
 空间化公式见 `sound/spatial.py` 的说明：方向上在相邻两只音箱之间等功率分配，再按半径与均匀分布混合，最后归一到等功率。预设布局有立体声（左 330°、右 30°）、四声道（左前 315°、右前 45°、右后 135°、左后 225°）和八声道（0° 起每 45°）。
 

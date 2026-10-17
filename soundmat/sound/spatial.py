@@ -81,3 +81,30 @@ def speaker_gains(position: Position | None, layout: SpeakerLayout, orientation:
     g = [r * di + (1 - r) * ui for di, ui in zip(d, u)]
     power = math.sqrt(sum(x * x for x in g)) or 1.0
     return [x / power for x in g]
+
+
+@dataclass(frozen=True)
+class SpeakerGains:
+    """一个声部的音箱增益：单声道声源用 ``mono``；立体声声源的左右声道分别用 ``left``、``right``。"""
+    mono: list[float]
+    left: list[float]
+    right: list[float]
+
+
+STEREO_SPREAD = 10.0     # 定位的立体声声源：左右声道各偏开的角度（度）
+
+
+def voice_gains(position: Position | None, layout: SpeakerLayout, orientation: float = 0.0) -> SpeakerGains:
+    """立体声声源（例如环境录音、带合唱效果的音色）：
+
+    - 不定位时左右声道放在房间的左前（330°）和右前（30°），立体声布局下就是原样的左右声道；
+    - 定位时左右声道放在位置两侧各 10°，保留一点宽度。
+    """
+    mono = speaker_gains(position, layout, orientation)
+    if position is None:
+        left = speaker_gains(Position(330.0, 1.0), layout, 0.0)
+        right = speaker_gains(Position(30.0, 1.0), layout, 0.0)
+    else:
+        left = speaker_gains(Position(position.angle - STEREO_SPREAD, position.radius), layout, orientation)
+        right = speaker_gains(Position(position.angle + STEREO_SPREAD, position.radius), layout, orientation)
+    return SpeakerGains(mono, left, right)

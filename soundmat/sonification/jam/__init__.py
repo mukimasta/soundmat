@@ -164,7 +164,7 @@ class JamMode(Mode):
         control = frozenset(i for r in self.control_rings for i in ring_indices(r))
         return LoadPlan(
             instruments=frozenset(instruments), control_zones=control, lookahead=self.lookahead,
-            buses=tuple(f"ring{r}" for r in range(8)) + ("harmony", "drums"),
+            buses=tuple(f"ring{r}" for r in range(8)) + ("harmony", "drums"), fx="sm_fx_jam",
         )
 
     # ── 运行 ────────────────────────────────────────────────────────────

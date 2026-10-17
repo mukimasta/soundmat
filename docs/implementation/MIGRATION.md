@@ -4,7 +4,7 @@
 
 ### 第一版的结构
 
-第一版的代码保存在 git 标签 `v1-ece546`（提交 `3803932`）。重写开始后，Python 包、测试和脚本已从工作区移除，需要时用 `git show v1-ece546:<路径>` 查看；`manifest/` 已转换为 `arrangements/` 并移除；`sc/` 和 `SETUP.md` 在对应内容迁移完成后移除。第一版的结构：
+第一版的代码保存在 git 标签 `v1-ece546`（提交 `3803932`）。重写开始后，Python 包、测试和脚本已从工作区移除，需要时用 `git show v1-ece546:<路径>` 查看；`manifest/` 已转换为 `arrangements/`，`sc/` 的音色已移到 `instruments/`，两者都已移除；`SETUP.md` 待部署脚本完成后移除。第一版的结构：
 
 1. `soundmat/`：Python 包。`core/` 是串口、传感器、灯光、OSC 与 scsynth 管理；`jam/` 是 Jam 的五层实现；`ambient/` 是从 `sonification` 项目迁入的 Ambient；`web/` 是 FastAPI 控制台和静态网页。
 2. `sc/`：SuperCollider 音色源码 `synthdefs/{core,ambient,jam}`、编译脚本 `compile.scd`、编译产物 `compiled/`；`sc/assets/samples` 是指向 `SoundMat/sound/samples` 的符号链接。

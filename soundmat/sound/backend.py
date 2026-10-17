@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol, Sequence
 
 from ..sonification.intent import Source
+from .spatial import SpeakerGains
 
 
 @dataclass
@@ -23,15 +24,16 @@ class BackendEvents:
 class Backend(Protocol):
     online: bool
 
-    def create_mix(self, instance: str, buses: Sequence[str], channels: int, at: float) -> None: ...
+    def create_mix(self, instance: str, buses: Sequence[str], channels: int, at: float,
+                   fx: str | None = None) -> None: ...
     def set_mix_gain(self, instance: str, gain: float, fade: float, at: float) -> None: ...
     def free_mix(self, instance: str, at: float) -> None: ...
     def set_globals(self, instance: str, params: Mapping[str, float], at: float) -> None: ...
 
     def start_voice(self, node: int, instance: str, source: Source, bus: str,
-                    params: Mapping[str, float], gains: Sequence[float], fade_in: float,
+                    params: Mapping[str, float], gains: SpeakerGains, fade_in: float,
                     at: float, oneshot: bool) -> None: ...
-    def set_voice(self, node: int, params: Mapping[str, float], gains: Sequence[float] | None,
+    def set_voice(self, node: int, params: Mapping[str, float], gains: SpeakerGains | None,
                   at: float) -> None: ...
     def release_voice(self, node: int, fade_out: float, at: float) -> None: ...
     def free_voice(self, node: int, at: float) -> None: ...
@@ -42,6 +44,7 @@ class Backend(Protocol):
     def set_master(self, params: Mapping[str, float], at: float) -> None: ...
 
     def poll(self, now: float) -> BackendEvents: ...
+    def flush(self) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -86,8 +89,8 @@ class RecordingBackend:
     def _rec(self, kind: str, at: float, **args) -> None:
         self.commands.append(Command(kind, at, args))
 
-    def create_mix(self, instance, buses, channels, at):
-        self._rec("create_mix", at, instance=instance, buses=list(buses), channels=channels)
+    def create_mix(self, instance, buses, channels, at, fx=None):
+        self._rec("create_mix", at, instance=instance, buses=list(buses), channels=channels, fx=fx)
 
     def set_mix_gain(self, instance, gain, fade, at):
         self._rec("set_mix_gain", at, instance=instance, gain=gain, fade=fade)
@@ -100,14 +103,15 @@ class RecordingBackend:
 
     def start_voice(self, node, instance, source, bus, params, gains, fade_in, at, oneshot):
         self._rec("start_voice", at, node=node, instance=instance, source=source, bus=bus,
-                  params=dict(params), gains=list(gains), fade_in=fade_in, oneshot=oneshot)
+                  params=dict(params), gains=list(gains.mono), stereo=(list(gains.left), list(gains.right)),
+                  fade_in=fade_in, oneshot=oneshot)
         self._alive.add(node)
         if oneshot:
             heapq.heappush(self._ends, (at + self.oneshot_length, node))
 
     def set_voice(self, node, params, gains, at):
         self._rec("set_voice", at, node=node, params=dict(params),
-                  gains=None if gains is None else list(gains))
+                  gains=None if gains is None else list(gains.mono))
 
     def release_voice(self, node, fade_out, at):
         self._rec("release_voice", at, node=node, fade_out=fade_out)
@@ -125,6 +129,9 @@ class RecordingBackend:
 
     def set_master(self, params, at):
         self._rec("set_master", at, params=dict(params))
+
+    def flush(self):
+        pass
 
     def poll(self, now):
         ev = BackendEvents(restarted=self._restart_pending)
