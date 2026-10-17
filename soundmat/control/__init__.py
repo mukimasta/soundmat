@@ -10,6 +10,7 @@ import asyncio
 import contextlib
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, Callable
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
@@ -21,7 +22,9 @@ from ..exchange import Latest
 from ..perception.model import MatSnapshot
 from ..perception.virtual import VirtualMat
 from ..perception.zones import geometry_json
+from ..sonification.mode import LoadError
 from ..store import Store
+from ..store.settings import Settings
 
 CONSOLE_DIST = ROOT / "console" / "dist"
 MAT_PUSH_HZ = 30.0
@@ -34,12 +37,18 @@ class ControlContext:
     store: Store
     mat: Latest[MatSnapshot]
     virtual: VirtualMat | None = None
+    play: Callable[[str], None] | None = None        # 切换到一份编排；失败抛出 LoadError
+    settings: Settings | None = None
     # 额外的高频数据源，例如灯环预览：消息类型 → 保存可 JSON 化 dict 的最新值容器
     streams: dict[str, Latest[dict]] = field(default_factory=dict)
 
 
 class ZoneBody(BaseModel):
     zone: int
+
+
+class SettingsBody(BaseModel):
+    changes: dict[str, Any]
 
 
 def mat_message(snap: MatSnapshot) -> dict:
@@ -85,6 +94,26 @@ def create_app(ctx: ControlContext, console_dist: Path | None = CONSOLE_DIST) ->
     def virtual_clear() -> dict:
         require_virtual().clear()
         return {"ok": True}
+
+    @app.post("/api/arrangements/{arrangement_id}/play")
+    def play(arrangement_id: str) -> dict:
+        if ctx.play is None:
+            raise HTTPException(status_code=503, detail="声音化尚未启动")
+        try:
+            ctx.play(arrangement_id)
+        except LoadError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        return {"ok": True}
+
+    @app.post("/api/settings")
+    def update_settings(body: SettingsBody) -> dict:
+        if ctx.settings is None:
+            raise HTTPException(status_code=503, detail="设置不可用")
+        try:
+            applied = ctx.settings.update(body.changes)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        return {"applied": applied}
 
     @app.websocket("/ws")
     async def ws(socket: WebSocket) -> None:

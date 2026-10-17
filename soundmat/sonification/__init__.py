@@ -81,12 +81,23 @@ class Sonification:
         """请求在下一拍激活这个实例；当前实例交叉淡化后停止。"""
         self._pending.put(inst)
 
+    def run_in_beat(self, fn: Callable[[float], None]) -> None:
+        """在下一拍开始时、节拍线程里执行 ``fn(now)``。声音引擎只能在节拍线程里调用。"""
+        self._pending.put(fn)
+
     # ── 节拍 ────────────────────────────────────────────────────────────
 
     def on_beat(self, beat: Beat) -> None:
         now = beat.t
         while not self._pending.empty():
-            self._activate(self._pending.get_nowait(), now)
+            item = self._pending.get_nowait()
+            if isinstance(item, ModeInstance):
+                self._activate(item, now)
+            else:
+                try:
+                    item(now)
+                except Exception:
+                    log.exception("节拍线程中的命令出错")
 
         events = self._events.drain()
         snap = self.perception.snapshot.get()
@@ -161,7 +172,9 @@ class Sonification:
             if p >= 1.0 or not any(i.retiring for i in self.instances):
                 self._switch_started = None
             else:
-                switching = {"to": active.arrangement.id, "progress": round(p, 3)}
+                old = next((i for i in self.instances if i.retiring), None)
+                switching = {"from": old.arrangement.id if old else None,
+                             "to": active.arrangement.id, "progress": round(p, 3)}
         self.store.update({
             "status.current.switching": switching,
             "status.audio.engine": self.engine.status(),

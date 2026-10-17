@@ -1,7 +1,7 @@
 import time
 
 from soundmat.clock import Beat, BeatClock
-from soundmat.supervisor import Options, Supervisor
+
 
 from helpers import EchoMode, arrangement
 
@@ -27,8 +27,8 @@ def test_clock_ticks_and_survives_exceptions():
     assert all(b2.t > b1.t for b1, b2 in zip(beats, beats[1:]))
 
 
-def test_running_supervisor_end_to_end(config):
-    sup = Supervisor(config, Options(virtual=True, modes={"echo": EchoMode}))
+def test_running_supervisor_end_to_end(make_sup, tmp_path):
+    sup = make_sup(modes={"echo": EchoMode}, arrangements_dir=tmp_path / "none")
     sup.switch(arrangement())
     sup.start()
     try:

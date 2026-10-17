@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from ..clock import Beat
 from ..perception.model import MatEvent, MatSnapshot
@@ -42,10 +42,17 @@ class LoadPlan:
     lookahead: float = 0.0                    # 前瞻时间窗的提前量（秒）
 
 
+def _no_settings(path: str, default: Any = None) -> Any:
+    return default
+
+
 @dataclass(frozen=True)
 class ModeContext:
     led_count: int
-    settings: Mapping[str, Any] = field(default_factory=dict)
+    # 读取当前设置（点号路径，相对于 settings），例如 setting("sound.layout")
+    setting: Callable[[str, Any], Any] = _no_settings
+    # 随机数种子；None 表示每次运行不同（测试中固定）
+    seed: int | None = None
 
 
 class Mode(ABC):

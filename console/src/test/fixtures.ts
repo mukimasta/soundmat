@@ -25,3 +25,33 @@ export function mat(occupied: number[], source: 'virtual' | 'controller' = 'virt
   occupied.forEach((i) => (pressure[i] = 500));
   return { type: 'mat', t: 1, source, pressure, occupied, ringCounts: [0, 0, 0, 0, 0, 0, 0, 0], control: null };
 }
+
+export const KYOTO = {
+  id: 'kyoto', title: '京都岚山', mode: 'ambient', modeLabel: 'Ambient · 氛围',
+  description: 'C 五声音阶。', ringLabels: ['低音', '低音', '和声', '竹林', '天气', '马林巴', '旋律', '铃声'],
+  missing: ['a.wav', 'b.wav'], error: null,
+};
+export const LOFI = {
+  id: 'lofi_1', title: 'Lo-Fi Loop · Progression 1', mode: 'jam', modeLabel: 'Jam · 合奏 · 120 BPM',
+  description: '京都夜雨。', ringLabels: ['控制', '控制', '低音', '贝斯', '拨弦', '暗电钢', '电钢', '马林巴'],
+  missing: [], error: null,
+};
+
+export function playingState(extra: Record<string, unknown> = {}) {
+  return {
+    status: {
+      current: {
+        virtual: true, arrangement: 'kyoto', mode: 'ambient',
+        modeStatus: { text: '每环一层 · 左右两只音箱', reading: null, transport: null }, switching: null,
+      },
+      log: [{ at: 1760000000, level: 'warning', text: '京都岚山：缺少 2 个声音素材，用到它们的声音不会发声' }],
+    },
+    catalog: { arrangements: [KYOTO, LOFI] },
+    settings: {
+      sound: { layout: { azimuths: [330, 30], names: ['左', '右'] }, orientation: 0, volume: 0.8 },
+      run: { defaultArrangement: 'kyoto', soundLibrary: '/home/soundmat/sound' },
+      recording: { path: '/home/soundmat/data/recordings', stems: true },
+    },
+    ...extra,
+  };
+}

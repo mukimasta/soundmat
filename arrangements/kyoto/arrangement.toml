@@ -1,0 +1,162 @@
+# 《京都岚山》 · Ambient
+#
+# 由第一版 manifest/ambient/kyoto.toml 转换而来，声音内容不变。格式见
+# docs/implementation/ARRANGEMENTS.md。素材引用是素材库 samples/ 下的相对路径。
+#
+# 每环若干角色，behavior：
+#   sustained     有石头就持续响（按石头数分档，档位变化时交叉淡化）
+#   intermittent  有石头时以 interval 范围内的随机间隔触发
+#   trigger       放下石头的那一刻响一次
+# 其余键作为参数交给音色：amp（dB）、atk/rel（秒，持续声部的淡入淡出）、decay、freq、
+# semitones、winSize、revSend 等。
+
+title = "京都岚山"
+mode = "ambient"
+mode_label = "Ambient · 氛围"
+description = "C 五声音阶。由内到外：Drone → Pad → 竹林 → 天气 → 马林巴 → 旋律 → 事件。"
+ring_labels = ["低音", "低音", "和声", "竹林", "天气", "马林巴", "旋律", "铃声"]
+
+[music]
+root = 60                       # C4（MIDI）
+scale = [0, 2, 4, 7, 9]         # 五声音阶
+
+# 素材角色的默认参数（合成音色不套用）
+[defaults]
+amp = -12
+atk = 0.5
+rel = 1.5
+revSend = 0.25
+
+# ── 素材 ───────────────────────────────────────────────────────────────────
+[samples.bell]
+file = "kyoto/ring01/big-bell/622797__ilmari_freesound__2022-01-01-lingjiushan-bell-okm-ii-004.wav"
+amp = -6
+[samples.boom_33637]
+file = "kyoto/ring01/deep-boom/33637__herbertboland__cinematicboomnorm.wav"
+amp = -4
+[samples.boom_379352]
+file = "kyoto/ring01/deep-boom/379352__hard3eat__atomic-bomb.wav"
+amp = -4
+[samples.pad_robots]
+file = "kyoto/ring2/mid-pad/530217__sondredrakensson__do-robots-get-bored.wav"
+amp = -14
+[samples.wind_small]
+file = "kyoto/ring3/wind/335891__yoyodaman234__bamboo-creaking-in-wind.wav"
+[samples.wind_big]
+file = "kyoto/ring3/wind/670270__caleblopez__bamboo-creaking-in-wind.wav"
+[samples.stream]
+file = "kyoto/ring3/stream/253133__klankbeeld__rocky-stream-nt4invh2a-141015_0441.wav"
+amp = -16
+[samples.walk_grass]
+file = "kyoto/ring3/walk/85603__jankoehl__walk-grass.wav"
+[samples.walk_leaves]
+file = "kyoto/ring3/walk/421791__markbolden__walking-through-leaves.wav"
+[samples.rain_window]
+file = "kyoto/ring4/rain/346642__inspectorj__rain-on-windows-interior-a.wav"
+amp = -14
+[samples.rain_car]
+file = "kyoto/ring4/rain/432344__blackstorm88__rain-in-the-car-with-zoom-h4n-pro.wav"
+amp = -10
+[samples.thunder]
+file = "kyoto/ring4/thunder/446753__bluedelta__heavy-thunder-strike-no-rain-quadro.wav"
+amp = -3
+[samples.piece_piano]
+file = "kyoto/ring6/pieces/325647__shadydave__expressions-of-the-mind-piano-loop.wav"
+amp = -10
+[samples.incident_bell]
+file = "kyoto/ring7/incidents/131348__nahmandub__bell-at-daitokuji-templekyoto.wav"
+amp = -8
+
+# ── 第 0 环 低音 ───────────────────────────────────────────────────────────
+[rings.0.drone]                 # 合成管风琴 drone + 呼吸感
+behavior = "sustained"
+instrument = "diapasonHold"
+freq = 130.81                   # C3
+amp = -10
+atk = 4.0
+rel = 6.0
+[rings.0.bell]                  # 大梵钟
+behavior = "trigger"
+samples = ["bell"]
+semitones = -1.24               # 实测基频 140.5 Hz（C#3）→ C3
+winSize = 0.2
+[rings.0.boom]                  # 重鼓
+behavior = "trigger"
+samples = ["boom_33637", "boom_379352"]
+
+# ── 第 1 环 低音（与第 0 环相同） ─────────────────────────────────────────
+[rings.1.drone]
+behavior = "sustained"
+instrument = "diapasonHold"
+freq = 130.81
+amp = -10
+atk = 4.0
+rel = 6.0
+[rings.1.bell]
+behavior = "trigger"
+samples = ["bell"]
+semitones = -1.24
+winSize = 0.2
+[rings.1.boom]
+behavior = "trigger"
+samples = ["boom_33637", "boom_379352"]
+
+# ── 第 2 环 和声 ───────────────────────────────────────────────────────────
+[rings.2.pad]
+behavior = "sustained"
+samples = ["pad_robots"]
+atk = 3.0
+rel = 4.0
+
+# ── 第 3 环 竹林 ───────────────────────────────────────────────────────────
+[rings.3.wind]                  # 竹林风，随石头数变大
+behavior = "sustained"
+tiers = [
+    { count = 1, sample = "wind_small", amp = -15 },
+    { count = 2, sample = "wind_big", amp = -11 },
+]
+[rings.3.stream]
+behavior = "sustained"
+samples = ["stream"]
+[rings.3.step]                  # 走路声
+behavior = "trigger"
+samples = ["walk_grass", "walk_leaves"]
+
+# ── 第 4 环 天气 ───────────────────────────────────────────────────────────
+[rings.4.rain]                  # 雨，随石头数从小雨到大雨
+behavior = "sustained"
+tiers = [
+    { count = 1, sample = "rain_window", amp = -16 },
+    { count = 2, sample = "rain_car", amp = -11 },
+]
+[rings.4.thunder]
+behavior = "trigger"
+samples = ["thunder"]
+
+# ── 第 5 环 马林巴 ─────────────────────────────────────────────────────────
+[rings.5.marimba]               # 间歇随机马林巴，长衰减
+behavior = "intermittent"
+instrument = "marimbaNote"
+interval = [5.0, 15.0]
+decay = 10.0
+amp = -22
+[rings.5.hit]                   # 单击马林巴，音高按扇区
+behavior = "trigger"
+instrument = "marimbaNote"
+decay = 12.0
+amp = -18
+
+# ── 第 6 环 旋律片段 ───────────────────────────────────────────────────────
+[rings.6.melody]
+behavior = "sustained"
+samples = ["piece_piano"]
+atk = 2.0
+
+# ── 第 7 环 事件 ───────────────────────────────────────────────────────────
+[rings.7.event]                 # 庙宇铃声
+behavior = "trigger"
+samples = ["incident_bell"]
+[rings.7.random]                # 间歇铃声
+behavior = "intermittent"
+samples = ["incident_bell"]
+interval = [8.0, 15.0]

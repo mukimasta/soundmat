@@ -1,24 +1,7 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { App } from './App';
-import { SoundMatClient } from './api/client';
-import { ClientProvider } from './api/context';
+import { setup } from './test/render';
 import { hello, mat } from './test/fixtures';
-
-function setup() {
-  const client = new SoundMatClient('http://test');
-  const posts: [string, unknown][] = [];
-  client.post = async (path: string, body?: unknown) => {
-    posts.push([path, body]);
-    return {};
-  };
-  const view = render(
-    <ClientProvider client={client}>
-      <App />
-    </ClientProvider>,
-  );
-  return { client, posts, view };
-}
 
 test('shows disconnected state before hello and no mat data', () => {
   setup();
