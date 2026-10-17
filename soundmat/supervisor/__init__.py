@@ -14,6 +14,7 @@ from ..control import ControlContext
 from ..device import DeviceLink, RawFrame
 from ..light import LightEngine
 from ..exchange import Latest
+from ..monitor import Monitor, Probes
 from ..monitor.log import EventLog
 from ..perception import Perception
 from ..perception.signal import Signal
@@ -45,6 +46,8 @@ class Options:
     data_dir: Path = ROOT / "data"
     serial_port: str = "auto"
     synth: str = "recording"              # recording（不发声）或 scsynth
+    probes: Probes | None = None          # 系统监测的探针，测试时注入
+    monitor: bool = True
     device: DeviceLink | None = None      # 测试时注入模拟控制器
     arrangements_dir: Path = ARRANGEMENTS_DIR
     seed: int | None = None
@@ -109,9 +112,15 @@ class Supervisor:
         self.store.subscribe(self._on_change)
         self.sonification.run_in_beat(self._apply_sound_settings)
 
+        self.monitor = Monitor(
+            cfg, self.store, self.events, opts.data_dir,
+            synth_status=self.backend.status if isinstance(self.backend, ScsynthBackend) else (lambda: None),
+            layout_channels=lambda: self.engine.layout.channels, probes_=opts.probes,
+        )
+
         self.control = ControlContext(
             config=cfg, store=self.store, mat=self.perception.snapshot, virtual=self.virtual,
-            play=self.play, settings=self.settings,
+            play=self.play, settings=self.settings, test_tone=self.test_tone,
             streams={"leds": self.lights.preview, "levels": self.levels},
         )
 
@@ -189,6 +198,13 @@ class Supervisor:
                   "problem": None, "source": "virtual"}
         self.store.update({"status.mat": st})
 
+    def test_tone(self, channel: int) -> None:
+        """在某个声道上放 1 秒测试音，确认每只音箱接对了位置。"""
+        if not 0 <= channel < self.engine.layout.channels:
+            raise ValueError(f"声道 {channel} 超出当前音箱布局（共 {self.engine.layout.channels} 只）")
+        self.sonification.run_in_beat(
+            lambda now: self.backend.test_tone(channel, now + self.config.sound.output_latency))
+
     # ── 设置 ────────────────────────────────────────────────────────────
 
     def _layout(self) -> SpeakerLayout:
@@ -230,8 +246,11 @@ class Supervisor:
                 pass
         self.clock.start()
         self.lights.start()
+        if self.options.monitor:
+            self.monitor.start()
 
     def stop(self) -> None:
+        self.monitor.stop()
         self.lights.stop()
         self.clock.stop()
         if self.virtual:

@@ -66,3 +66,28 @@ export function dbText(db: number | undefined): string {
   if (db === undefined || db <= -59.5) return '—';
   return `−${Math.abs(Math.round(db))}`.replace('−0', '0');
 }
+
+export type Level = 'ok' | 'warn' | 'error' | 'unknown';
+
+export interface Health {
+  sound: { level: Level; reason: string };
+  mat: { level: Level; reason: string };
+  net: { level: Level; reason: string };
+  overall: Level;
+  issues: string[];
+}
+
+export const health = (s: ConsoleState) => getPath<Health>(s.state, 'status.health') ?? null;
+
+export const LOOK: Record<Level, { text: string; sq: string; tag: string; dashed?: boolean }> = {
+  ok: { text: '正常', sq: 'var(--green)', tag: 'var(--green-t)' },
+  warn: { text: '需要注意', sq: 'var(--amber)', tag: 'var(--amber-t)' },
+  error: { text: '异常', sq: 'var(--red)', tag: 'var(--red-t)' },
+  unknown: { text: '未知', sq: 'transparent', tag: 'var(--text-2)', dashed: true },
+};
+
+/** 页面顶部的提示条：只在需要注意或异常时出现，写出第一条原因 */
+export function alertOf(h: Health | null): { level: Level; text: string } | null {
+  if (!h || (h.overall !== 'warn' && h.overall !== 'error') || !h.issues.length) return null;
+  return { level: h.overall, text: h.issues[0] };
+}

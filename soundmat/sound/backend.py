@@ -42,6 +42,7 @@ class Backend(Protocol):
     def free_asset(self, ref: str, at: float) -> None: ...
 
     def set_master(self, params: Mapping[str, float], at: float) -> None: ...
+    def test_tone(self, channel: int, at: float) -> None: ...
 
     def poll(self, now: float) -> BackendEvents: ...
     def flush(self) -> None: ...
@@ -129,6 +130,9 @@ class RecordingBackend:
 
     def set_master(self, params, at):
         self._rec("set_master", at, params=dict(params))
+
+    def test_tone(self, channel, at):
+        self._rec("test_tone", at, channel=channel)
 
     def flush(self):
         pass

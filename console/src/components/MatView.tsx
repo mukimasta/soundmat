@@ -65,9 +65,10 @@ function MatViewImpl({ geometry, pressure, occupied, ledCount, leds, onZone }: P
         const c = leds?.[i];
         if (!c || Math.max(c[0], c[1], c[2]) < 24) return <circle key={i} cx={x} cy={y} r="0.34" fill="#2E2B26" />;
         const rgb = `${c[0]},${c[1]},${c[2]}`;
+        const b = Math.max(c[0], c[1], c[2]) / 255;
         return (
           <g key={i} pointerEvents="none">
-            <circle cx={x} cy={y} r="1.2" fill={`rgba(${rgb},0.45)`} />
+            <circle cx={x} cy={y} r={(0.8 + 0.6 * b).toFixed(2)} fill={`rgba(${rgb},${(0.5 * b * b).toFixed(2)})`} />
             <circle cx={x} cy={y} r="0.46" fill={`rgb(${rgb})`} />
           </g>
         );

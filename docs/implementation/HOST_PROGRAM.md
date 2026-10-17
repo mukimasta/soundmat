@@ -34,6 +34,7 @@ uv run pytest                   # 测试
 | 声音引擎 · 合成器接口 | `soundmat/sound/backend.py` | 抽象指令接口；`RecordingBackend` 只记录指令 |
 | 声音引擎 · scsynth | `soundmat/sound/scsynth.py` + `instruments/` | 带时间戳的 OSC bundle、节点树与总线、重启检测、电平；见 `SYNTH.md` |
 | 系统监测 · 日志 | `soundmat/monitor/log.py` | 最近的警告和错误 |
+| 系统监测 | `soundmat/monitor/__init__.py`、`monitor/probes.py` | 每秒采集音频链路、控制器、机器、网络；状态指示与原因 |
 | 声音化 · 编排文件 | `soundmat/sonification/arrangements.py` + `arrangements/` | 读取与校验，格式见 `ARRANGEMENTS.md` |
 | 声音化 · Ambient | `soundmat/sonification/ambient/` | 持续 / 间歇 / 触发、分档、条件、位置策略、灯光 |
 | 声音化 · 灯光工具 | `soundmat/sonification/lights.py` | 逐像素绘制灯光层 |
@@ -45,7 +46,7 @@ uv run pytest                   # 测试
 | 配置 | `soundmat/config.py` + `config/soundmat.toml` | 已实现 |
 | 线程间容器 | `soundmat/exchange.py` | `Latest`、`EventQueue`、`EventHub` |
 
-录制、系统监测的其余部分尚未实现。
+录制尚未实现。
 
 ## 线程与数据交换
 
@@ -57,7 +58,8 @@ uv run pytest                   # 测试
 2. **声音化**（`sonification`）：`BeatClock` 每秒 60 拍（配置 `sound.tick_hz`）。每拍取走垫面事件、读取最新快照、调用所有模式实例（切换期间新旧两个），把声音意图交给声音引擎，再处理合成器服务的通知、释放淡出完毕的实例。声音引擎不是线程安全的，只在这个线程里调用；切换编排的请求从其他线程放进队列，在下一拍开始时执行。某一拍的计算超过节拍间隔时不补拍，直接跳到当前时刻，并计入 `BeatClock.overruns`。
 3. **设备连接**（`device`）：真机上读串口，每收到一帧 S 帧就在本线程里完成垫面信号和垫面解读（代替虚拟垫子线程）。灯光帧由灯光线程直接写串口，写入加锁。
 4. **灯光**（`light`）：每秒 60 次（配置 `light.refresh_hz`）读取最新的灯光意图和系统提示层，合成后写给设备连接，并以 30 次/秒更新控制台的灯环预览。
-5. **主线程**：uvicorn 与控制接口。
+5. **系统监测**（`monitor`）：每秒采集一次并写入状态中心，较慢的探针（journal、nmcli、tailscale）每 10 秒一次。
+6. **主线程**：uvicorn 与控制接口。
 
 状态中心的订阅回调在修改者的线程里执行；控制接口在回调里只用 `loop.call_soon_threadsafe` 把变化交给事件循环，再由每个 WebSocket 连接自己的推送任务发出。
 
@@ -102,3 +104,24 @@ uv run pytest                   # 测试
 垫面信号把 256 个接线读数按预先算好的索引表取成 224 个区域，再做校准（无效读数 −1 当 0、可选反相、除以满量程）。索引表由第一版的映射规则逐步照搬生成：整体先做扇区镜像，外环直接取镜像后的扇区，内环从镜像后的奇数接线扇区读回，最后整体旋转 `sector_offset` 个扇区。需要注意的是，内环在第一版里经过两次镜像，结果其实没有被镜像：内环第 j 个有电极的接线扇区 2k 落在逻辑扇区 2k+1，而外环是反向的。新版照搬了这一行为，是否符合实物需要在真机上核对（见 `TODO.md`）。
 
 灯光引擎把各层按优先级从低到高、按不透明度合成到黑底上；施加偏移时逻辑位置 k 的颜色写到物理灯珠 (k + `led_offset`) mod 108。
+
+## 系统监测
+
+探针都只读，任何一个失败（开发机上没有 JACK、不是树莓派、没装 nmcli）都返回"未知"，不沿用旧值：
+
+| 项目 | 来源 |
+|---|---|
+| 音频服务是否运行、打开的设备、采样率、缓冲 | 在 `/proc` 里找到 `jackd` 进程，读它的命令行（`-d alsa -d hw:… -r -p -n`） |
+| USB 声卡、实际输出设备 | `/proc/asound/cards`，把 JACK 打开的 `hw:` 设备对应到声卡名字；名字或描述里有 USB 即为 USB 声卡 |
+| 卡顿次数 | 最近一小时 systemd journal 里 jackd 的 xrun 记录数 |
+| 合成器服务 | `/status.reply`：是否在线、音色是否加载、采样率、平均与峰值负载（另保留最近 60 秒的负载曲线） |
+| 机器 | `/sys/class/thermal`、`vcgencmd get_throttled`、`/proc/meminfo`、数据目录所在磁盘、`/proc/uptime`、`/proc/device-tree/model` |
+| 网络 | `nmcli` 当前连接、出口地址、`tailscale status --json` |
+
+状态指示的规则（按顺序，第一条成立的即为结果）：
+
+1. 声音：合成器服务没有响应 → 异常；没有连接合成器服务（`--no-synth`）→ 未知；音色没有加载 → 异常；Linux 上 JACK 没有运行 → 异常；期望 USB 而实际输出设备不是 USB 声卡、或找不到 USB 声卡 → 异常；采样率与期望不同 → 需要注意；当前编排缺少素材 → 需要注意；负载峰值超过 85% → 需要注意；最近一小时有卡顿 → 需要注意；否则正常。
+2. 垫子：使用虚拟垫子 → 正常；控制器未连接 → 异常（原因来自设备连接，例如"没有找到控制器的 USB 串口"）；实测帧率低于 20 → 需要注意。
+3. 网络：没有任何出口地址 → 需要注意（装置离线也能演奏，所以不算异常）。
+
+逐声道测试音由 `POST /api/audio/test-tone` 触发：在节拍线程里让合成器服务在指定的硬件声道上放 1 秒 440 Hz 的正弦波，绕过混音结构和系统音量。

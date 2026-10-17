@@ -288,3 +288,60 @@ button { font: inherit; color: inherit; }
 .log-item { display: flex; gap: 10px; align-items: baseline; font-size: 13px; line-height: 1.45; }
 .log-item .when { flex: none; width: 44px; font-family: var(--mono); font-size: 11.5px; color: var(--text-3); }
 .log-item .sq { flex: none; width: 8px; height: 8px; border-radius: 2px; transform: translateY(-1px); }
+
+/* ── 看板细节 ──────────────────────────────────────────────── */
+.verdict { padding: 4px 4px 14px; display: flex; flex-direction: column; gap: 10px; }
+.verdict .head { display: flex; align-items: center; gap: 10px; font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }
+.verdict .line { font-size: 14px; font-weight: 600; line-height: 1.55; }
+.sq { flex: none; border-radius: 4px; box-sizing: border-box; }
+.inds { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.ind { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.ind .lbl { color: var(--text-2); }
+.ind .val { font-weight: 600; }
+.sec-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sec-head .t { display: flex; align-items: baseline; gap: 8px; }
+.sec-head .no { font-family: var(--mono); font-size: 11.5px; color: var(--text-3); }
+.sec-head .nm { font-size: 13px; font-weight: 600; color: var(--text-2); }
+.sec-head .st { font-size: 12.5px; font-weight: 600; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.tile { min-height: 76px; padding: 10px 12px; border-radius: 12px; background: var(--tile); display: flex; flex-direction: column; justify-content: space-between; gap: 6px; }
+.tile .lbl { font-size: 12px; color: var(--text-2); }
+.tile .num { font-family: var(--mono); font-size: 24px; font-weight: 600; line-height: 1; }
+.tile .unit { font-family: var(--mono); font-size: 12px; color: var(--text-2); margin-left: 4px; font-weight: 400; }
+.tile .sub { font-size: 12px; font-weight: 600; }
+.tile .bar { display: block; height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+.tile .bar > span { display: block; height: 100%; background: var(--text); }
+.box { padding: 10px 12px; border-radius: 12px; background: var(--tile); display: flex; flex-direction: column; gap: 4px; }
+.box .lbl { font-size: 12px; color: var(--text-2); }
+.box .val { font-family: var(--mono); font-size: 14px; font-weight: 600; }
+.box .note { font-size: 12px; font-weight: 600; }
+.tone-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 13px; color: var(--text-2); }
+.tone-row .btns { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.tone-row button { min-width: 56px; min-height: 40px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--track); background: var(--tile); font-size: 13px; font-weight: 600; cursor: pointer; }
+.tone-row button[aria-pressed='true'] { background: var(--text); color: #100f0d; border-color: var(--text); }
+.vu-col { padding: 8px 6px 6px; border-radius: 12px; background: var(--tile); display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.vu-vals { display: flex; gap: 6px; padding-left: 16px; font-family: var(--mono); font-size: 11px; font-weight: 600; }
+.vu-vals span { width: 19px; text-align: center; }
+.load-col { padding: 10px 10px 8px; border-radius: 12px; background: var(--tile); display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
+.gauge-text { position: absolute; left: 0; right: 0; bottom: 6px; text-align: center; font-family: var(--mono); font-size: 24px; font-weight: 600; line-height: 1; }
+.small { font-size: 11px; color: var(--text-2); }
+.big-num { font-family: var(--mono); font-size: 34px; font-weight: 600; line-height: 1; }
+.segs { display: flex; gap: 3px; }
+.segs span { flex: 1; height: 8px; border-radius: 2px; }
+.kv { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 3px 0; }
+.kv span:first-child { color: var(--text-2); }
+.kv span:last-child { font-family: var(--mono); font-size: 12.5px; text-align: right; overflow-wrap: anywhere; }
+.alert {
+  flex: none;
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 12px 10px 18px;
+  border: 0;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+.alert .txt { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 600; line-height: 1.4; }
+.alert .go { flex: none; display: flex; align-items: center; gap: 2px; font-size: 12.5px; font-weight: 600; }
