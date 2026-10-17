@@ -1,7 +1,6 @@
 # TODO
 
 - [ ] 在 Mac 上试听重写后的主机程序并合并 PR（阶段 1–8，依次叠放）：编译音色、启动 scsynth、用虚拟垫子逐个检查《京都岚山》与 Lo-Fi，与第一版对比
-- [ ] 把本地标签 `v1-ece546`（提交 `3803932`）推送到 GitHub：云端会话的 git 代理拒绝推送标签，需要在开发机上执行 `git tag -a v1-ece546 3803932 -m v1 && git push origin v1-ece546`
 - [ ] 上真机核对坐标对齐：在每环放一颗石头，确认控制台垫面上的位置与实物一致。第一版的内环实际没有做扇区镜像（外环做了），新版照搬，见 `implementation/HOST_PROGRAM.md`「设备连接与垫面信号」
 - [ ] 上真机调整去抖时间（`config/soundmat.toml` 的 `occupy_hold`、`release_hold`，当前是未经实测的初值）
 - [ ] 确定 SoundMat 系列文档正本的存放位置，更新 `design/SOUNDMAT_SERIES.md`
