@@ -246,8 +246,9 @@ const RATE_ROWS: { key: string; label: string; upTo?: boolean }[] = [
 function RhythmSection() {
   const s = useConsole();
   const rates = getPath<Record<string, Rate | null>>(s.state, 'status.rates') ?? {};
-  const t = getPath<{ overruns: number | null; overrunsRecent: number | null; late: number | null; lateRecent: number | null;
-    yields: number | null; rejected: number | null; overrunsAttention?: boolean; lateAttention?: boolean }>(s.state, 'status.timing');
+  const t = getPath<{ overruns: number | null; overrunsRecent: number | null; stalls: number | null; stallsRecent: number | null;
+    maxLagMs: number | null; late: number | null; lateRecent: number | null; yields: number | null; rejected: number | null;
+    stallsAttention?: boolean; lateAttention?: boolean }>(s.state, 'status.timing');
   const display = useDisplayFps();
   const rows = RATE_ROWS.map((r) => ({ ...r, rate: rates[r.key] ?? null }))
     .filter((r) => r.rate && (r.rate.actual !== null || r.rate.expected !== null));
@@ -276,8 +277,10 @@ function RhythmSection() {
       </div>
       <span className="small">单位：次/秒。垫面和灯环只在有变化时推送，静止时为 0 属于正常。</span>
       <div className="grid2">
-        <Tile label="节拍超时" value={t?.overrunsRecent ?? '—'} unit={t?.overrunsRecent == null ? '' : '次 · 最近 1 分钟'}
-          sub={t?.overruns == null ? undefined : `启动以来 ${t.overruns} 次`} tone={t?.overrunsAttention ? 'warn' : t ? 'ok' : undefined} />
+        <Tile label="节拍延迟" value={t?.maxLagMs == null ? '—' : Math.round(t.maxLagMs)} unit={t?.maxLagMs == null ? '' : 'ms · 最近 1 分钟最大'}
+          sub={t?.stallsRecent == null ? undefined
+            : `超过 50 ms ${t.stallsRecent} 次 · 小幅超时 ${t.overrunsRecent ?? 0} 次（不影响声音）`}
+          tone={t?.stallsAttention ? 'warn' : t ? 'ok' : undefined} />
         <Tile label="迟到丢弃" value={t?.lateRecent ?? '—'} unit={t?.lateRecent == null ? '' : '次 · 最近 1 分钟'}
           sub={t?.late == null ? undefined : `启动以来 ${t.late} 次`} tone={t?.lateAttention ? 'warn' : t ? 'ok' : undefined} />
         <Tile label="声部让位" value={t?.yields ?? '—'} unit={t?.yields == null ? '' : '次'} sub="为新声部腾出位置" />

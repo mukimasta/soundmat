@@ -31,9 +31,8 @@ LOW_FPS = 20.0
 SLOW_PROBE_PERIOD = 10.0      # 较慢的探针（journal、tailscale、nmcli、systemctl、git）的间隔
 RECENT = 60.0                 # 秒：「最近 1 分钟」的节拍超时与迟到
 RESTART_WINDOW = 3600.0       # 秒：主机程序这么久之内被自动重启过，记为需要注意
-# 最近 1 分钟节拍超时达到这个次数才提示。实测切换编排时会超时 0–4 次（加载编排与节拍线程争用
-# Python 的全局锁），持续卡顿时每分钟是几十次，10 次可以把两者分开。
-OVERRUN_WARN = 10
+# 最近 1 分钟节拍「卡住」（晚到超过迟到容忍度）达到这个次数才提示；偶尔一次（例如切换编排）不提示。
+STALL_WARN = 3
 
 
 @dataclass
@@ -136,6 +135,7 @@ class Monitor:
 
         rt = self.runtime()
         timing = self._timing(now, rt.get("counters") or {})
+        timing["maxLagMs"] = rt.get("maxLagMs")
         uptime = probes.program_uptime(self.started)
         program = {"uptime": uptime, "restarts": self._slow.get("restarts"), "version": self._slow.get("version")}
         storage = self._storage(machine, rt)
@@ -150,11 +150,11 @@ class Monitor:
             self._counters.popleft()
         oldest = self._counters[0][1]
         out: dict = {}
-        for k in ("overruns", "late", "yields", "rejected"):
+        for k in ("overruns", "stalls", "late", "yields", "rejected"):
             v = counters.get(k)
             out[k] = v
             out[f"{k}Recent"] = None if v is None or oldest.get(k) is None else v - oldest[k]
-        out["overrunsAttention"] = (out["overrunsRecent"] or 0) >= OVERRUN_WARN
+        out["stallsAttention"] = (out["stallsRecent"] or 0) >= STALL_WARN
         out["lateAttention"] = bool(out["lateRecent"])
         return out
 
@@ -221,10 +221,11 @@ class Monitor:
         return Indicator(OK)
 
     def _indicate_timing(self, data: dict) -> Indicator | None:
-        """节拍超时、定时事件迟到、主机程序最近被自动重启：都会让声音不稳，记为需要注意。"""
+        """节拍卡住、定时事件迟到、主机程序最近被自动重启：都会让声音不稳，记为需要注意。"""
         t = data.get("timing") or {}
-        if t.get("overrunsAttention"):
-            return Indicator(WARN, f"最近 1 分钟声音化节拍超时 {t['overrunsRecent']} 次，声音可能不稳")
+        if t.get("stallsAttention"):
+            return Indicator(WARN, f"最近 1 分钟声音化节拍有 {t['stallsRecent']} 次晚到超过 "
+                                   f"{self.config.sound.late_tolerance * 1000:g} ms，定时声音可能迟到")
         if t.get("lateAttention"):
             return Indicator(WARN, f"最近 1 分钟有 {t['lateRecent']} 个定时事件迟到被丢弃")
         p = data.get("program") or {}

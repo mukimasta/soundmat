@@ -98,7 +98,8 @@ class Supervisor:
         )
         self.sonification.before_activate.append(self._acquire_assets)
         self.sonification.after_retire.append(lambda inst, now: self.assets.release(inst.id, now))
-        self.clock = BeatClock(cfg.sound.tick_hz, self.sonification.on_beat, name="sonification")
+        self.clock = BeatClock(cfg.sound.tick_hz, self.sonification.on_beat, name="sonification",
+                               stall_after=cfg.sound.late_tolerance)
 
         self.signal = Signal(cfg.mat)
         self.device: DeviceLink | None = None
@@ -238,9 +239,10 @@ class Supervisor:
             "pushLeds": {"actual": ctl.push_rate("leds"), "expected": cfg.light.refresh_hz},
         }
         st = self.engine.stats
-        counters = {"overruns": self.clock.overruns, "late": st.late, "yields": st.yields, "rejected": st.rejected}
+        counters = {"overruns": self.clock.overruns, "stalls": self.clock.stalls, "late": st.late,
+                    "yields": st.yields, "rejected": st.rejected}
         stems = len(self.backend.recordable_stems())
-        return {"rates": rates, "counters": counters,
+        return {"rates": rates, "counters": counters, "maxLagMs": round(self.clock.max_lag() * 1000, 1),
                 "recordBytesPerSecond": self.recorder.bytes_per_second(stems), "recordRoot": self.recorder.root}
 
     def _current_arrangement(self) -> dict:

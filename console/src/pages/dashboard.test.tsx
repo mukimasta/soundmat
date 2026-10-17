@@ -76,7 +76,8 @@ test('rhythm card, network kind, program and recording time', async () => {
       beat: { actual: 60, expected: 60 }, light: { actual: 41, expected: 60 },
       ledWrites: { actual: 41, expected: 60 }, pushMat: { actual: 12, expected: 30 }, pushLeds: { actual: 0, expected: 60 },
     },
-    timing: { overruns: 7, overrunsRecent: 2, late: 0, lateRecent: 0, yields: 3, rejected: 0, overrunsAttention: false, lateAttention: false },
+    timing: { overruns: 70, overrunsRecent: 52, stalls: 0, stallsRecent: 0, maxLagMs: 9.6, late: 0, lateRecent: 0, yields: 3, rejected: 0,
+      stallsAttention: false, lateAttention: false },
     program: { uptime: 5400, restarts: 1, version: { commit: '2d09273', deployedAt: '2026-10-17T15:04:00-07:00', dirty: null, source: 'deploy' } },
     storage: { freeGB: 52, minutes: 1500 },
   };
@@ -93,7 +94,7 @@ test('rhythm card, network kind, program and recording time', async () => {
   expect(row('pushLeds').querySelector('.num')!.getAttribute('style')).toBeNull();     // 只在有变化时推送：0 不算异常
   expect(row('sensing').textContent).toContain('—');
   expect(row('display')).toBeTruthy();
-  expect(within(rhythm).getByText('启动以来 7 次')).toBeInTheDocument();
+  expect(within(rhythm).getByText('超过 50 ms 0 次 · 小幅超时 52 次（不影响声音）')).toBeInTheDocument();
 
   const net = screen.getByRole('region', { name: '网络' });
   expect(within(net).getByText('自建热点')).toBeInTheDocument();

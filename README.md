@@ -34,7 +34,7 @@ SOUNDMAT_SOUND=/path/to/sound uv run soundmat --virtual
 4. 不需要发声时用 `uv run soundmat --virtual --no-synth`，不必编译音色和启动 scsynth；声音引擎只记录指令，录制只产生会话数据。
 5. 设置文件和录音在仓库的 `data/` 下。之前的版本会把声音素材库的位置写死在 `data/settings.json` 里，如果 `SOUNDMAT_SOUND` 不起作用，删掉这个文件即可。
 
-测试：`uv run pytest`（连得上 scsynth 时额外运行两个真实发声的测试，否则跳过），以及 `cd console && npm test`。
+测试：`uv run pytest`（两个真实发声的测试需要 `SOUNDMAT_LIVE_SCSYNTH=1` 并在本机运行 scsynth，否则跳过；它们会清空 scsynth 的节点树并发声，不要在试听时打开），以及 `cd console && npm test`。
 
 ## 文档
 

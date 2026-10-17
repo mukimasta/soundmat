@@ -8,7 +8,7 @@ scsynth 是独立的系统服务，主机程序不启动它，只通过 UDP 5711
 
 主机程序默认连接 scsynth；连不上时照常运行、什么都不发，等 scsynth 出现后自动接上。`--no-synth` 改用只记录指令的声音引擎。
 
-云端和 CI 没有声卡：可以安装 `jackd2` 和 `supercollider-server`，用 `jackd -d dummy -r 48000` 起一个虚拟声卡，再启动 scsynth。`tests/test_scsynth.py` 的最后一个测试在本机能连上 scsynth 时运行真实的 Jam，否则跳过。
+云端和 CI 没有声卡：可以安装 `jackd2` 和 `supercollider-server`，用 `jackd -d dummy -r 48000` 起一个虚拟声卡，再启动 scsynth。`tests/test_scsynth.py` 里连真实 scsynth 的两个测试（真实的 Jam、录音打板）只在设置 `SOUNDMAT_LIVE_SCSYNTH=1` 并且本机能连上 scsynth 时运行，CI 里打开。它们会清空 scsynth 的节点树、发声并录音，所以默认不运行，免得打断开发机上正在试听的合成器服务。
 
 ## 音色
 

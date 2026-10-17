@@ -39,3 +39,25 @@ def test_running_supervisor_end_to_end(make_sup, tmp_path):
     finally:
         sup.stop()
     assert sup.backend.of_kind("start_voice")
+
+
+
+def test_beat_lag_and_stalls_are_measured():
+    """节拍延迟：比计划晚开始多久；超过 stall_after 计为一次卡住，最近 1 分钟的最大值可读。"""
+    import time
+    from soundmat.clock import BeatClock
+
+    slow = {"n": 0}
+
+    def on_beat(beat):
+        slow["n"] += 1
+        if slow["n"] == 5:
+            time.sleep(0.08)                    # 一拍算了 80 ms：下一拍至少晚 60 ms
+
+    clk = BeatClock(60, on_beat, stall_after=0.05)
+    clk.start()
+    time.sleep(0.4)
+    clk.stop()
+    assert clk.stalls >= 1
+    assert clk.max_lag() >= 0.05
+    assert clk.overruns >= 1

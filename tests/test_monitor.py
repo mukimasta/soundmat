@@ -179,23 +179,25 @@ def test_program_network_storage_and_rates_published(rig, tmp_path):
     assert store.get("status.storage.minutes") is None          # 不录音频时无法换算成分钟
 
 
-def test_recent_overruns_and_late_events_need_attention(rig):
+def test_recent_stalls_and_late_events_need_attention(rig):
+    """小幅超时只作参考；节拍晚到超过迟到容忍度（卡住）或定时事件迟到才需要注意。"""
     mon, store, fake, synth = rig
-    counts = {"overruns": 5, "late": 0}
-    mon.runtime = lambda: {"counters": {**counts, "yields": 0, "rejected": 0}}
+    counts = {"overruns": 5, "stalls": 0, "late": 0}
+    mon.runtime = lambda: {"counters": {**counts, "yields": 0, "rejected": 0}, "maxLagMs": 12.0}
     assert mon.step(0)["sound"]["level"] == "ok"                # 启动以来的累计数不算
-    counts["overruns"] = 9
-    assert mon.step(0.5)["sound"]["level"] == "ok"              # 切换编排时超时几次不提示
-    assert store.get("status.timing.overrunsAttention") is False
-    counts["overruns"] = 15
+    counts["overruns"] = 85
+    counts["stalls"] = 2
+    assert mon.step(0.5)["sound"]["level"] == "ok"              # 小幅超时很多、卡住两次：不提示
+    assert store.get("status.timing.overrunsRecent") == 80
+    assert store.get("status.timing.maxLagMs") == 12.0
+    counts["stalls"] = 5
     h = mon.step(1)
-    assert h["sound"]["level"] == "warn" and "节拍超时 10 次" in h["sound"]["reason"]
-    assert store.get("status.timing.overrunsRecent") == 10
+    assert h["sound"]["level"] == "warn" and "5 次晚到超过 50 ms" in h["sound"]["reason"]
+    assert store.get("status.timing.stallsAttention") is True
     counts["late"] = 2
     mon.step(30)
-    counts["overruns"] = 15
-    h = mon.step(62)                                            # 一分钟之后：最近 1 分钟里没有新的超时
-    assert store.get("status.timing.overrunsRecent") == 0
+    h = mon.step(62)                                            # 一分钟之后：最近 1 分钟里没有新的卡住
+    assert store.get("status.timing.stallsRecent") == 0
     assert h["sound"]["level"] == "warn" and "迟到" in h["sound"]["reason"]
     h = mon.step(95)
     assert h["sound"]["level"] == "ok"
