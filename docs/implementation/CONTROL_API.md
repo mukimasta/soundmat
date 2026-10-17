@@ -40,6 +40,7 @@
 | `status.rates` | 各条链路的帧率，每项为 `{actual, expected}`（次/秒，没有这条链路或没有数据时为 `null`）：`sensing`（控制器传感）、`perception`（垫面解读）、`beat`（声音化节拍）、`light`（灯光引擎）、`ledWrites`（写给控制器的灯光帧）、`pushMat`、`pushLeds`（推送到控制台，取所有连接里最高的一个；只在有变化时推送，期望值是上限） |
 | `status.timing` | `overruns`（小幅超时，参考）、`stalls`（节拍晚到超过迟到容忍度）、`late`、`yields`、`rejected` 的累计数，各自带 `…Recent`（最近 1 分钟的增加量）；`maxLagMs`（最近 1 分钟最大的节拍延迟）；`stallsAttention`、`lateAttention`（是否达到需要注意的程度） |
 | `status.program` | 主机程序：`uptime`（秒）、`restarts`（systemd 自动重启次数，不在 systemd 下为 `null`）、`version`（`{commit, deployedAt, dirty, source}`，`source` 为 `deploy` 或 `git`；都读不到为 `null`） |
+| `status.update` | 软件更新：`enabled`（是否从发布包、在 systemd 下运行）、`state`（`idle` / `downloading` / `installing` / `restarting` / `error`）、`message`、`previous`（可以回到的上一版）、`pending`（待确认的新版本）、`failed`（启动失败被自动回退的版本） |
 | `status.storage` | 录音空间：`freeGB`、`minutes`（按当前声道数和分轨设置还能录的分钟数，不录音频时为 `null`） |
 | `status.machine` | `host`、`model`、`tempC`、`throttled`、`memUsedMB`、`memTotalMB`、`diskFreeGB`、`diskTotalGB`、`uptime`、`programUptime` |
 | `status.network` | `name`、`type`、`address`、`tailscale`、`tailscaleAddress`、`localName`（局域网名字，主机名已带 `.local` 时不再追加）、`line`（垫面页顶部显示的一行）、`kind`（`phoneHotspot` / `selfHotspot` / `external` / `wired`，按配置 `[network]` 的连接名区分）、`apClients`（自建热点开着时大约连着的设备数，否则 `null`） |
@@ -62,6 +63,9 @@
 | `POST /api/virtual/clear` | — | 清空虚拟垫子 |
 | `POST /api/arrangements/{id}/play` | — | 切换到这份编排；加载失败返回 422 和原因 |
 | `POST /api/audio/test-tone` | `{"channel": 声道序号}` | 在该硬件声道放 1 秒测试音；超出当前音箱布局返回 422 |
+| `GET /api/update` | — | `{allowed, enabled, available, error}`：`available` 是 GitHub 上的发布包 `[{tag, commit, branch, builtAt, current}]`，最新在前，只在 `allowed` 时列出；`allowed` 只对本机和 Tailscale（100.64.0.0/10）的请求为真 |
+| `POST /api/update` | `{"tag": "build-<短提交号>"}` | 在后台下载、安装并切换到这个版本，之后主机程序重新启动；不是本机或 Tailscale 来的请求返回 403，不能更新或正在更新返回 409 |
+| `POST /api/update/rollback` | — | 切回上一版并重新启动；权限与返回同上 |
 | `POST /api/recording/start` | — | 开始录制；空间不足、已在录制或合成器服务没有响应时返回 409 和原因 |
 | `POST /api/recording/stop` | — | 停止录制 |
 | `GET /api/recordings` | — | 录制列表 |

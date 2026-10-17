@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+"""SoundMat 启动保护：systemd 每次启动主机程序之前运行（ExecStartPre），只用标准库。
+
+更新切换到新版本时，主机程序在 update.json 里写下待确认的新版本（pending）和上一版（previous）。
+新版本正常运行 60 秒后自己确认，清除 pending。如果它一直起不来，这里每次启动前把 attempts 加一，
+超过 MAX_ATTEMPTS 次就把 current 改回上一版，让装置回到能演奏的状态。
+
+这个脚本安装在 /usr/local/bin，不随版本更新，所以新版本坏了它照样工作。总是以 0 退出，不阻止启动。
+"""
+import json
+import os
+import sys
+from pathlib import Path
+
+BASE = Path(os.environ.get("SOUNDMAT_HOME", "/home/soundmat/soundmat"))
+STATE = Path(os.environ.get("SOUNDMAT_UPDATE_STATE", "/home/soundmat/data/update.json"))
+MAX_ATTEMPTS = 3
+
+
+def main() -> int:
+    try:
+        st = json.loads(STATE.read_text())
+    except (OSError, ValueError):
+        return 0
+    pending = st.get("pending")
+    if not pending:
+        return 0
+    current = BASE / "current"
+    try:
+        running = Path(os.readlink(current)).name
+    except OSError:
+        return 0
+    if running != pending:            # current 已被别的方式改过：不再管这次更新
+        st["pending"] = None
+    else:
+        st["attempts"] = int(st.get("attempts", 0)) + 1
+        prev = st.get("previous")
+        if st["attempts"] > MAX_ATTEMPTS and prev and (BASE / "releases" / prev).is_dir():
+            tmp = BASE / ".current.guard"
+            if tmp.is_symlink():
+                tmp.unlink()
+            os.symlink(Path("releases") / prev, tmp)
+            os.replace(tmp, current)
+            print(f"soundmat-guard: 版本 {pending} 启动 {MAX_ATTEMPTS} 次都没有成功，回到 {prev}", file=sys.stderr)
+            st.update({"pending": None, "failed": pending, "attempts": 0, "previous": None})
+    tmp_state = STATE.with_suffix(".guard.tmp")
+    tmp_state.write_text(json.dumps(st, indent=2))
+    os.replace(tmp_state, STATE)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

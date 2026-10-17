@@ -370,3 +370,11 @@ button { font: inherit; color: inherit; }
 .rate-row .num { font-family: var(--mono); text-align: right; }
 .rate-row .num.dim { color: var(--text-2); }
 .rate-row.head span:nth-child(n+2) { text-align: right; }
+
+/* 软件更新 */
+.upd-current { display: flex; flex-direction: column; gap: 4px; padding: 14px; border-radius: 16px; background: #22201d; }
+.upd-current .lbl { font-size: 12px; color: var(--text-2); }
+.upd-current .val { font-family: var(--mono); font-size: 18px; font-weight: 600; }
+.hint.warn { color: var(--amber-line); }
+.link-btn { align-self: flex-start; background: none; border: 0; padding: 8px 2px; color: var(--text-2); font: inherit; font-size: 13px; text-decoration: underline; cursor: pointer; }
+.link-btn:disabled, .btn-clear:disabled { opacity: 0.4; cursor: default; }

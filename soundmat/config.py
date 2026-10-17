@@ -84,6 +84,11 @@ class NetworkConfig:
 
 
 @dataclass(frozen=True)
+class UpdateConfig:
+    repo: str = "mukimasta/soundmat"            # 发布包所在的 GitHub 仓库
+
+
+@dataclass(frozen=True)
 class Config:
     mat: MatConfig = field(default_factory=MatConfig)
     light: LightConfig = field(default_factory=LightConfig)
@@ -92,6 +97,7 @@ class Config:
     control: ControlConfig = field(default_factory=ControlConfig)
     system: SystemConfig = field(default_factory=SystemConfig)
     network: NetworkConfig = field(default_factory=NetworkConfig)
+    update: UpdateConfig = field(default_factory=UpdateConfig)
 
     def describe(self) -> list[dict[str, str]]:
         """控制台「配置 · 只读」一栏显示的条目。"""
@@ -147,7 +153,8 @@ def load_config(path: Path | str | None = None) -> Config:
     control = take("control", {"host": "host", "port": "port"})
     system = take("system", {"service": "service"})
     network = take("network", {k: k for k in ("interface", "phone_hotspot", "self_hotspot")})
-    unknown = set(raw) - {"mat", "light", "sound", "synth", "control", "system", "network"}
+    update = take("update", {"repo": "repo"})
+    unknown = set(raw) - {"mat", "light", "sound", "synth", "control", "system", "network", "update"}
     if unknown:
         raise ValueError(f"配置有未知的段：{', '.join(sorted(unknown))}")
     return Config(
@@ -158,4 +165,5 @@ def load_config(path: Path | str | None = None) -> Config:
         control=ControlConfig(**control),
         system=SystemConfig(**system),
         network=NetworkConfig(**network),
+        update=UpdateConfig(**update),
     )

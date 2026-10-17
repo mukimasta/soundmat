@@ -1,0 +1,22 @@
+# SoundMat 主机程序（DEPLOYMENT.md「发布与更新」）
+#
+# 从 current 指向的版本目录启动；更新切换版本后主机程序自己退出，Restart=always 让它按新版本重新启动。
+# 每次启动前 soundmat-guard 检查待确认的新版本，反复启动失败时切回上一版。
+# 声音素材和本机数据不在版本目录里，用环境变量和 --data-dir 指定。
+[Unit]
+Description=SoundMat host program
+After=network-online.target soundmat-scsynth.service
+Wants=network-online.target soundmat-scsynth.service
+
+[Service]
+User=soundmat
+WorkingDirectory=/home/soundmat/soundmat/current
+Environment=SOUNDMAT_SOUND=/home/soundmat/sound
+Environment=PYTHONUNBUFFERED=1
+ExecStartPre=/usr/local/bin/soundmat-guard
+ExecStart=/home/soundmat/soundmat/current/.venv/bin/soundmat --data-dir /home/soundmat/data
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

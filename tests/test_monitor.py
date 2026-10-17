@@ -147,7 +147,9 @@ def test_neigh_and_network_kind():
 def test_version_prefers_deploy_file(tmp_path):
     (tmp_path / "VERSION").write_text("2d09273\n2026-10-17T15:00:00-07:00\n")
     assert P.version(tmp_path) == {"commit": "2d09273", "deployedAt": "2026-10-17T15:00:00-07:00",
-                                   "dirty": None, "source": "deploy"}
+                                   "branch": None, "dirty": None, "source": "deploy"}
+    (tmp_path / "VERSION").write_text("2d09273\n2026-10-17T15:00:00-07:00\nmaster\n")
+    assert P.version(tmp_path)["branch"] == "master"
     assert P.version(tmp_path / "nowhere") is None
 
 

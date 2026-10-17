@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from ..clock import BeatClock, system_time
 from ..config import ROOT, Config
@@ -15,6 +16,7 @@ from ..device import DeviceLink, RawFrame
 from ..light import LightEngine
 from ..exchange import Latest
 from ..monitor import Monitor, Probes
+from ..monitor import probes
 from ..monitor.log import EventLog
 from ..perception import Perception
 from ..perception.signal import Signal
@@ -34,8 +36,18 @@ from ..sound.scsynth import ScsynthBackend
 from ..sound.spatial import SpeakerLayout
 from ..store import Store
 from ..store.settings import Settings
+from ..updater import Updater, detect_layout
 
 log = logging.getLogger("soundmat")
+
+
+def _exit_for_restart() -> None:
+    """更新切换版本后：让主机程序正常退出，systemd（Restart=always）按 current 指向的新版本重新启动。"""
+    import os
+    import signal
+    import threading
+
+    threading.Timer(0.5, lambda: os.kill(os.getpid(), signal.SIGTERM)).start()
 
 MODES: dict[str, ModeFactory] = {"ambient": AmbientMode, "jam": JamMode}
 
@@ -53,6 +65,7 @@ class Options:
     device: DeviceLink | None = None      # 测试时注入模拟控制器
     arrangements_dir: Path = ARRANGEMENTS_DIR
     seed: int | None = None
+    restart: Callable[[], None] | None = None   # 更新后重新启动主机程序；默认让进程退出、由 systemd 拉起
 
 
 class Supervisor:
@@ -135,7 +148,13 @@ class Supervisor:
             runtime=self.runtime,
         )
 
+        version = probes.version(ROOT)
+        self.updater = Updater(self.store, self.events, cfg.update.repo, opts.data_dir,
+                               version["commit"] if version else None, layout=detect_layout(),
+                               restart=opts.restart or _exit_for_restart)
+
         self.control = ControlContext(
+            updater=self.updater,
             config=cfg, store=self.store, mat=self.perception.snapshot, virtual=self.virtual,
             play=self.play, settings=self.settings, test_tone=self.test_tone, recorder=self.recorder,
             streams={"leds": self.lights.preview, "levels": self.levels},
@@ -301,6 +320,8 @@ class Supervisor:
                 pass
         self.clock.start()
         self.lights.start()
+        if self.updater.enabled:
+            self.updater.start_confirm_timer()
         if self.options.monitor:
             self.monitor.start()
 

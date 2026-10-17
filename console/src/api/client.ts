@@ -91,13 +91,22 @@ export class SoundMatClient {
     this.socket?.close();
   }
 
+  async get(path: string): Promise<unknown> {
+    const r = await fetch(this.base + path);
+    if (!r.ok) throw new Error(`${path}: ${r.status}`);
+    return r.json();
+  }
+
   async post(path: string, body?: unknown): Promise<unknown> {
     const r = await fetch(this.base + path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-    if (!r.ok) throw new Error(`${path}: ${r.status}`);
+    if (!r.ok) {
+      const detail = await r.json().then((j) => j?.detail).catch(() => null);
+      throw new Error(typeof detail === 'string' ? detail : `${path}: ${r.status}`);
+    }
     return r.json();
   }
 

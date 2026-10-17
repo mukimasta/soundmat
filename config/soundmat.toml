@@ -69,3 +69,7 @@ service = "soundmat.service"
 interface = "wlan0"
 phone_hotspot = "phone-hotspot"
 self_hotspot = "soundmat-ap"
+
+[update]
+# 软件更新从这个 GitHub 仓库的预发布版本（build-<短提交号>）下载发布包，见 DEPLOYMENT.md「发布与更新」
+repo = "mukimasta/soundmat"

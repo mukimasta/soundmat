@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ipaddress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -49,11 +50,34 @@ class ControlContext:
     streams: dict[str, Latest[dict]] = field(default_factory=dict)
     # 每个 WebSocket 连接实际推送的帧率：连接序号 → 消息类型 → 速率计
     push_rates: dict[int, dict[str, RateMeter]] = field(default_factory=dict)
+    updater: Any = None                              # 软件更新（soundmat.updater.Updater）
 
     def push_rate(self, kind: str) -> float | None:
         """所有连接里这类消息的最高实际推送帧率；没有控制台连着时为 None。"""
         rates = [r[kind].rate() for r in list(self.push_rates.values()) if kind in r]
         return max(rates) if rates else None
+
+
+TAILSCALE = ipaddress.ip_network("100.64.0.0/10")
+
+
+def may_update(client_host: str | None) -> bool:
+    """只有从本机或 Tailscale 来的请求能发起更新和回退（控制台不设登录，热点上的人只能看）。"""
+    if not client_host:
+        return False
+    if client_host in ("localhost", "testclient"):
+        return True
+    try:
+        ip = ipaddress.ip_address(client_host)
+    except ValueError:
+        return False
+    if ip.version == 6 and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    return ip.is_loopback or (ip.version == 4 and ip in TAILSCALE)
+
+
+class UpdateBody(BaseModel):
+    tag: str
 
 
 class ZoneBody(BaseModel):
@@ -153,6 +177,44 @@ def create_app(ctx: ControlContext, console_dist: Path | None = CONSOLE_DIST) ->
         try:
             require_recorder().request_start()
         except RecordingError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
+        return {"ok": True}
+
+    def require_updater(request: Request):
+        if ctx.updater is None:
+            raise HTTPException(status_code=409, detail="这里不能更新")
+        if not may_update(request.client.host if request.client else None):
+            raise HTTPException(status_code=403, detail="只有从本机或 Tailscale 打开的控制台能更新")
+        return ctx.updater
+
+    @app.get("/api/update")
+    def update_info(request: Request) -> dict:
+        """软件更新面板的数据：能否更新、当前状态，以及 GitHub 上可以安装的版本（能更新时才列出）。"""
+        up = ctx.updater
+        allowed = up is not None and up.enabled and may_update(request.client.host if request.client else None)
+        out: dict = {"allowed": allowed, "enabled": bool(up and up.enabled), "available": [], "error": None}
+        if allowed:
+            try:
+                out["available"] = up.available()
+            except Exception as e:      # GitHub 连不上：面板照常打开，写明原因
+                out["error"] = f"读取 GitHub 上的版本失败：{e}"
+        return out
+
+    @app.post("/api/update", status_code=202)
+    def update_start(body: UpdateBody, request: Request) -> dict:
+        from ..updater import UpdateError
+        try:
+            require_updater(request).start_update(body.tag)
+        except UpdateError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
+        return {"ok": True}
+
+    @app.post("/api/update/rollback", status_code=202)
+    def update_rollback(request: Request) -> dict:
+        from ..updater import UpdateError
+        try:
+            require_updater(request).rollback()
+        except UpdateError as e:
             raise HTTPException(status_code=409, detail=str(e)) from e
         return {"ok": True}
 

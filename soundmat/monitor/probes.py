@@ -209,14 +209,16 @@ def version(root: Path) -> dict | None:
     if text:
         lines = text.splitlines()
         return {"commit": lines[0].strip(), "deployedAt": lines[1].strip() if len(lines) > 1 else None,
-                "dirty": None, "source": "deploy"}
+                "branch": lines[2].strip() if len(lines) > 2 else None, "dirty": None, "source": "deploy"}
     if not (root / ".git").exists():
         return None
     commit = _run(["git", "-C", str(root), "rev-parse", "--short", "HEAD"])
     if not commit:
         return None
     status = _run(["git", "-C", str(root), "status", "--porcelain", "--untracked-files=no"])
-    return {"commit": commit.strip(), "deployedAt": None, "dirty": bool(status and status.strip()), "source": "git"}
+    branch = _run(["git", "-C", str(root), "rev-parse", "--abbrev-ref", "HEAD"])
+    return {"commit": commit.strip(), "deployedAt": None, "branch": branch.strip() if branch else None,
+            "dirty": bool(status and status.strip()), "source": "git"}
 
 
 def ap_clients(interface: str) -> int | None:

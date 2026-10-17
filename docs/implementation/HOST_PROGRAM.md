@@ -40,6 +40,7 @@ uv run pytest                   # 测试
 | 录制 | `soundmat/recorder/` | 空间检查、倒计时与打板、合成器服务内部录音、会话数据、录制信息、打包下载 |
 | 系统监测 | `soundmat/monitor/` | 每秒采集音频链路、控制器、机器、网络；状态指示与原因；最近的警告和错误（`log.py`） |
 | 状态中心 | `soundmat/store/` | 状态树、按路径修改、变化通知；设置的默认值、校验与原子写入（`settings.py`） |
+| 软件更新 | `soundmat/updater/` | 发布包的格式（`package.py`）；从 GitHub 下载、校验、安装成版本目录、切换 `current`、重启与确认；发布命令是 `scripts/release.py`，启动保护是 `system/update/soundmat-guard`，见 `DEPLOYMENT.md`「发布与更新」 |
 | 控制接口 | `soundmat/control/` | FastAPI：WebSocket 推送、命令与设置、提供控制台 |
 | 配置 | `soundmat/config.py` + `config/soundmat.toml` | 启动时读取，未知键报错 |
 | 线程间容器 | `soundmat/exchange.py` | `Latest`、`EventQueue`、`EventHub` |
