@@ -4,7 +4,7 @@
 
 ## 运行 scsynth
 
-scsynth 是独立的系统服务，主机程序不启动它，只通过 UDP 57110 端口通信（配置 `[synth]`）。树莓派上由 systemd 服务启动（JACK 之后，见 `DEPLOYMENT.md`）；开发机上用 `scripts/scsynth-dev.sh [声道数]` 手动启动，macOS 走 CoreAudio 的默认输出设备。scsynth 的硬件输出声道数（`-o`）不能少于音箱布局的声道数。
+scsynth 是独立的系统服务，主机程序不启动它，只通过 UDP 57110 端口通信（配置 `[synth]`）。树莓派上由 systemd 服务启动（JACK 之后，见 `DEPLOYMENT.md`）；开发机上用 `scripts/scsynth-dev.sh [声道数]` 手动启动：优先用 `/Applications/SuperCollider.app` 里的 scsynth，否则用 PATH 里的；macOS 走 CoreAudio 的默认输出设备，不开输入（`-i 0`，避免输入输出设备采样率不一致），采样率 48 kHz（`-S 48000`，设备设不到时 scsynth 报错退出，需在"音频 MIDI 设置"里改）。scsynth 的硬件输出声道数（`-o`）不能少于音箱布局的声道数。
 
 主机程序默认连接 scsynth；连不上时照常运行、什么都不发，等 scsynth 出现后自动接上。`--no-synth` 改用只记录指令的声音引擎。
 
