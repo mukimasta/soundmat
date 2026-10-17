@@ -1,0 +1,214 @@
+"""设备连接：与压力垫与灯环控制器（ESP32）的 USB 串口链路（ARCHITECTURE「设备连接」）。
+
+职责：解析和校验压力帧、编码灯光帧、开机时等待控制器就绪、断线后自动重连，并报告链路健康
+（是否连接、实测帧率、校验错误数）。
+
+沿用第一版的串口细节：打开时 DTR、RTS 置低，避免 USB 串口芯片把 ESP32 复位；ESP32 开机灯效期间
+不发 S 帧，要等到第一帧 ``S:`` 才开始发送灯光帧；连上后的第一帧灯光发两次，防止开机窗口丢包。
+"""
+from __future__ import annotations
+
+import logging
+import threading
+import time
+from collections import deque
+from dataclasses import dataclass
+from typing import Callable, Protocol
+
+import numpy as np
+
+from ..clock import system_time
+from .ports import pick_port
+from .protocol import BAUD, FrameError, encode_led_frame, parse_sensor_frame
+
+log = logging.getLogger("soundmat.device")
+
+RETRY_SECONDS = 2.0       # 打不开或断线后多久重试
+SILENCE_SECONDS = 5.0     # 连着但这么久没有 S 帧：关掉重开
+
+
+class SerialLike(Protocol):
+    def read(self, size: int) -> bytes: ...
+    def write(self, data: bytes) -> int | None: ...
+    def close(self) -> None: ...
+
+
+def open_serial(port: str) -> SerialLike:
+    import serial
+
+    ser = serial.Serial()
+    ser.port = port
+    ser.baudrate = BAUD
+    ser.timeout = 0.1
+    ser.write_timeout = 1.0
+    ser.dtr = False
+    ser.rts = False
+    ser.open()
+    time.sleep(0.15)
+    ser.reset_input_buffer()
+    ser.reset_output_buffer()
+    return ser
+
+
+@dataclass(frozen=True)
+class RawFrame:
+    t: float
+    seq: int
+    values: np.ndarray        # 256 个 ADC 读数，环优先的接线顺序
+
+
+class DeviceLink:
+    def __init__(self, on_frame: Callable[[RawFrame], None], port: str = "auto",
+                 opener: Callable[[str], SerialLike] = open_serial,
+                 picker: Callable[[str], str | None] = pick_port,
+                 on_event: Callable[[str, str], None] | None = None):
+        self._on_frame = on_frame
+        self._port_setting = port
+        self._opener = opener
+        self._picker = picker
+        self._on_event = on_event or (lambda level, text: None)
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._write_lock = threading.Lock()
+        self._ser: SerialLike | None = None
+        self._booted = False
+        self._double_send = False
+        self._times: deque[float] = deque(maxlen=240)
+        self.seq = 0
+        self.port: str | None = None
+        self.connected = False
+        self.checksum_errors = 0
+        self.last_frame = 0.0
+        self.problem: str | None = "尚未连接"
+
+    # ── 状态 ────────────────────────────────────────────────────────────
+
+    def fps(self, now: float | None = None) -> float:
+        """最近 1 秒的实测帧率。"""
+        now = system_time() if now is None else now
+        recent = [t for t in self._times if now - t <= 1.0]
+        return float(len(recent))
+
+    def status(self) -> dict:
+        now = system_time()
+        return {
+            "connected": self.connected and self._booted,
+            "port": self.port,
+            "fps": round(self.fps(now), 1),
+            "checksumErrors": self.checksum_errors,
+            "problem": self.problem,
+        }
+
+    # ── 灯光 ────────────────────────────────────────────────────────────
+
+    def send_leds(self, colors: np.ndarray) -> None:
+        """发送一帧灯光（物理顺序）。控制器还没就绪时丢弃。"""
+        ser = self._ser
+        if ser is None or not self._booted:
+            return
+        data = encode_led_frame(colors)
+        try:
+            with self._write_lock:
+                ser.write(data)
+                if self._double_send:
+                    self._double_send = False
+                    time.sleep(0.02)
+                    ser.write(data)
+        except Exception as e:  # 写失败：读线程会发现断线并重连
+            log.debug("写灯光帧失败：%s", e)
+
+    # ── 线程 ────────────────────────────────────────────────────────────
+
+    def start(self) -> None:
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, name="device", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=2.0)
+        self._close()
+
+    def _close(self) -> None:
+        ser, self._ser = self._ser, None
+        self._booted = False
+        if ser is not None:
+            try:
+                ser.close()
+            except Exception:
+                pass
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            port = self._picker(self._port_setting)
+            if port is None:
+                self._set_problem("没有找到控制器的 USB 串口")
+                self._stop.wait(RETRY_SECONDS)
+                continue
+            try:
+                ser = self._opener(port)
+            except Exception as e:
+                self._set_problem(f"无法打开 {port}：{e}")
+                self._stop.wait(RETRY_SECONDS)
+                continue
+            self._ser, self.port, self.connected = ser, port, True
+            self._booted = False
+            self.problem = "等待控制器就绪"
+            try:
+                self._read_loop(ser)
+            except Exception as e:
+                if not self._stop.is_set():
+                    log.debug("串口读取出错：%s", e)
+            was_booted = self._booted
+            self._close()
+            self.connected = False
+            if self._stop.is_set():
+                break
+            if was_booted:
+                self._on_event("warning", "控制器断开，正在重连")
+            self._set_problem("控制器断开，正在重连")
+            self._stop.wait(RETRY_SECONDS / 2)
+
+    def _set_problem(self, text: str) -> None:
+        if text != self.problem:
+            log.info(text)
+        self.problem = text
+
+    def _read_loop(self, ser: SerialLike) -> None:
+        buf = b""
+        opened = system_time()
+        while not self._stop.is_set():
+            chunk = ser.read(4096)
+            now = system_time()
+            if chunk:
+                buf += chunk
+                while b"\n" in buf:
+                    raw, buf = buf.split(b"\n", 1)
+                    self._line(raw.decode("ascii", errors="replace").strip(), now)
+            last = self.last_frame if self._booted else opened
+            if now - max(last, opened) > SILENCE_SECONDS:
+                raise TimeoutError("控制器没有数据")
+
+    def _line(self, text: str, now: float) -> None:
+        if not text:
+            return
+        if text.startswith("#"):
+            log.debug("控制器：%s", text)
+            return
+        if not text.startswith("S:"):
+            return
+        try:
+            values = parse_sensor_frame(text)
+        except FrameError:
+            self.checksum_errors += 1
+            return
+        if not self._booted:
+            self._booted = True
+            self._double_send = True
+            self.problem = None
+            self._on_event("info", f"控制器已连接（{self.port}）")
+        self.seq += 1
+        self.last_frame = now
+        self._times.append(now)
+        self._on_frame(RawFrame(now, self.seq, values))

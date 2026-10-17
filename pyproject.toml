@@ -9,6 +9,7 @@ dependencies = [
     "uvicorn>=0.29",
     "wsproto>=1.2",
     "soundfile>=0.14.0",
+    "pyserial>=3.5",
 ]
 
 [project.scripts]

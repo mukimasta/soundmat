@@ -10,6 +10,7 @@
 |---|---|---|
 | `hello` | `geometry`（224 个区域的几何：`index`、`id`、`ring`、`slot`、`center`、`span`、`rInner`、`rOuter`）、`config`（只读配置的显示条目 `{label, value}`）、`ledCount`、`state`（状态中心的完整快照） | 连接时一次 |
 | `patch` | `changes`：`[[路径, 新值], ...]`，路径是状态树里的点号路径 | 状态中心有变化时，按 30 次/秒合批 |
+| `leds` | `colors`：每个逻辑灯位一个 `[r, g, b]`（0–255），不亮为 `null`；逻辑位置 0 在 12 点方向，未施加灯带偏移 | 最多 30 次/秒，有变化时 |
 | `mat` | `t`、`source`（`controller` 或 `virtual`）、`pressure`（224 个整数，压力 × 1000）、`occupied`（有石头的区域序号）、`ringCounts`、`control`（控制区压力，未声明为 `null`） | 垫面变化时，最多 30 次/秒 |
 
 客户端把 `patch` 逐条应用到 `hello` 给出的状态树上。断开后客户端丢弃全部实时数据，重连后重新收到 `hello`。
@@ -27,6 +28,7 @@
 | `status.audio.engine` | 声音引擎：在响声部数 `voices`、预算 `budget`、各类别在响数 `categories`、让位 `yields`、放弃 `rejected`、迟到 `late`、去重 `duplicates`、合成器服务重启 `restarts` |
 | `status.log` | 最近的警告和错误：`[{at, level, text, count?}]`，最新在前 |
 | `status.audio.assets` | `missing`（当前编排缺失的素材）、`needed`（引用总数）、`state`（`loaded`、`memoryMB`、`budgetMB`、`library`） |
+| `status.mat` | 控制器链路：`connected`、`port`、`fps`（实测传感帧率）、`checksumErrors`、`problem`（问题说明）、`source`（`controller` 或 `virtual`；虚拟垫子时其余项为 `null`） |
 | `catalog.arrangements` | `[{id, title, mode, modeLabel, description, ringLabels, missing, error}]` |
 | `settings.sound.layout` | 音箱布局 `{azimuths, names}` |
 | `settings.sound.orientation` | 垫面朝向偏移（度，0–360） |

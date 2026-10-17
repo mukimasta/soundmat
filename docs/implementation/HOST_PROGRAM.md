@@ -10,7 +10,7 @@ uv run soundmat --virtual       # 用虚拟垫子运行，控制台在 http://lo
 uv run pytest                   # 测试
 ```
 
-`--virtual` 用虚拟垫子代替控制器；`--config` 指定其他配置文件；`--data-dir` 指定本机数据目录（设置文件 `settings.json` 和录音，默认是程序目录下的 `data/`，树莓派上是 `/home/soundmat/data`）；`--host`、`--port` 覆盖控制接口的监听地址。控制台需要先在 `console/` 下构建（`npm ci && npm run build`），构建产物由控制接口直接提供；开发控制台时用 `npm run dev`，Vite 把 `/api` 和 `/ws` 转发到 8000 端口。
+不带 `--virtual` 时连接控制器：`--port-serial` 指定串口，默认 `auto` 自动选择（规则见下文「设备连接」）。`--virtual` 用虚拟垫子代替控制器；`--config` 指定其他配置文件；`--data-dir` 指定本机数据目录（设置文件 `settings.json` 和录音，默认是程序目录下的 `data/`，树莓派上是 `/home/soundmat/data`）；`--host`、`--port` 覆盖控制接口的监听地址。控制台需要先在 `console/` 下构建（`npm ci && npm run build`），构建产物由控制接口直接提供；开发控制台时用 `npm run dev`，Vite 把 `/api` 和 `/ws` 转发到 8000 端口。
 
 ## 模块与文件
 
@@ -20,6 +20,9 @@ uv run pytest                   # 测试
 | 感知 · 垫面解读 | `soundmat/perception/interpret/` | 占用判定与去抖、每环数量、控制区压力、事件、可插拔特征 |
 | 感知 · 虚拟垫子 | `soundmat/perception/virtual/` | 已实现 |
 | 感知 · 区域几何 | `soundmat/perception/zones.py` | 224 区的几何描述 |
+| 感知 · 垫面信号 | `soundmat/perception/signal/` | 校准与坐标对齐（第一版规则） |
+| 设备连接 | `soundmat/device/` | 串口选择、S/L 帧、等待就绪、断线重连、实测帧率与校验错误 |
+| 灯光引擎 | `soundmat/light/` | 60 Hz 分层合成、系统提示层、灯带偏移、控制台预览 |
 | 感知 · 标准输出 | `soundmat/perception/model.py`、`perception/__init__.py` | 压力图、垫面状态、事件、快照；`Perception` 负责发布 |
 | 时钟 | `soundmat/clock/` | 系统时间；`BeatClock` 固定节拍线程 |
 | 声音化 · 意图 | `soundmat/sonification/intent.py` | 持续声部、定时事件、全局参数、灯光层、模式状态 |
@@ -39,7 +42,7 @@ uv run pytest                   # 测试
 | 配置 | `soundmat/config.py` + `config/soundmat.toml` | 已实现 |
 | 线程间容器 | `soundmat/exchange.py` | `Latest`、`EventQueue`、`EventHub` |
 
-垫面信号、设备连接、scsynth 实现、灯光引擎、录制、系统监测的其余部分尚未实现。没有 scsynth 实现之前，主机程序总是使用 `RecordingBackend`，不发声。
+scsynth 实现、录制、系统监测的其余部分尚未实现。没有 scsynth 实现之前，主机程序总是使用 `RecordingBackend`，不发声。
 
 ## 线程与数据交换
 
@@ -49,7 +52,9 @@ uv run pytest                   # 测试
 
 1. **虚拟垫子**（`virtual-mat`）：每秒 60 次产生压力图，在本线程里调用 `Perception.feed` 完成垫面解读，发布快照和事件。以后真机上由设备连接的读取线程调用同一个入口。
 2. **声音化**（`sonification`）：`BeatClock` 每秒 60 拍（配置 `sound.tick_hz`）。每拍取走垫面事件、读取最新快照、调用所有模式实例（切换期间新旧两个），把声音意图交给声音引擎，再处理合成器服务的通知、释放淡出完毕的实例。声音引擎不是线程安全的，只在这个线程里调用；切换编排的请求从其他线程放进队列，在下一拍开始时执行。某一拍的计算超过节拍间隔时不补拍，直接跳到当前时刻，并计入 `BeatClock.overruns`。
-3. **主线程**：uvicorn 与控制接口。
+3. **设备连接**（`device`）：真机上读串口，每收到一帧 S 帧就在本线程里完成垫面信号和垫面解读（代替虚拟垫子线程）。灯光帧由灯光线程直接写串口，写入加锁。
+4. **灯光**（`light`）：每秒 60 次（配置 `light.refresh_hz`）读取最新的灯光意图和系统提示层，合成后写给设备连接，并以 30 次/秒更新控制台的灯环预览。
+5. **主线程**：uvicorn 与控制接口。
 
 状态中心的订阅回调在修改者的线程里执行；控制接口在回调里只用 `loop.call_soon_threadsafe` 把变化交给事件循环，再由每个 WebSocket 连接自己的推送任务发出。
 
@@ -84,3 +89,11 @@ uv run pytest                   # 测试
 设置保存在数据目录的 `settings.json`，结构与状态树的 `settings` 一致，但只写入改过的项：没改过的项每次启动时取默认值，声音素材库的默认位置因此跟随环境变量 `SOUNDMAT_SOUND` 和程序目录。读取时逐项校验，非法或无法读取的项回到默认值并写一条警告；修改经过 `Settings.update` 逐项校验，任何一项非法就整批拒绝。写入先写同目录的临时文件、`fsync` 后再 `os.replace`，断电时要么是旧文件、要么是新文件。
 
 声音相关的设置（总音量、音箱布局、朝向）变化时，运行管理把应用动作放进声音化的命令队列，在下一拍由节拍线程交给声音引擎。素材库位置变化时重新检查所有编排的素材。启动时播放设置里的默认编排；它不存在时改用第一份能找到的编排，并写一条警告。
+
+## 设备连接与垫面信号
+
+串口协议、选口规则和打开方式沿用第一版：921600 波特；Mac 上只看 `/dev/cu.*`，Linux 上看 `ttyUSB*`、`ttyACM*`、`/dev/serial/by-id/*` 并排除板载 UART；打开时 DTR、RTS 置低；收到第一帧 `S:` 才算控制器就绪并开始发灯光帧，就绪后的第一帧灯光发两次。打不开或没有找到串口时每 2 秒重试；连着但 5 秒没有 S 帧时关掉重开。校验失败的帧丢弃并计数。链路状态每 0.5 秒写入 `status.mat`。
+
+垫面信号把 256 个接线读数按预先算好的索引表取成 224 个区域，再做校准（无效读数 −1 当 0、可选反相、除以满量程）。索引表由第一版的映射规则逐步照搬生成：整体先做扇区镜像，外环直接取镜像后的扇区，内环从镜像后的奇数接线扇区读回，最后整体旋转 `sector_offset` 个扇区。需要注意的是，内环在第一版里经过两次镜像，结果其实没有被镜像：内环第 j 个有电极的接线扇区 2k 落在逻辑扇区 2k+1，而外环是反向的。新版照搬了这一行为，是否符合实物需要在真机上核对（见 `TODO.md`）。
+
+灯光引擎把各层按优先级从低到高、按不透明度合成到黑底上；施加偏移时逻辑位置 k 的颜色写到物理灯珠 (k + `led_offset`) mod 108。
