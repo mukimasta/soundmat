@@ -112,9 +112,8 @@ class Monitor:
         machine = self.probes.machine(self.data_dir)
         machine["programUptime"] = probes.program_uptime(self.started)
         network = self._slow.get("network") or {}
-        host = machine.get("host")
-        line_parts = [network.get("name") or None, f"{host}.local" if host else None]
-        network["line"] = " · ".join(p for p in line_parts if p)
+        network["localName"] = probes.local_name(machine.get("host"))
+        network["line"] = " · ".join(p for p in (network.get("name"), network["localName"]) if p)
         return {"audio": audio, "machine": machine, "network": network, "matHistory": list(self.fps_history)}
 
     # ── 判断 ────────────────────────────────────────────────────────────

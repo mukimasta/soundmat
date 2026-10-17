@@ -17,7 +17,7 @@ function state(health: Record<string, unknown>, extra: Record<string, unknown> =
     buffer: { period: 2048, periods: 2, driver: 'JACK' }, xruns: 0, loadHistory: [20, 22],
     assets: { missing: [], needed: 14 }, engine: { voices: 18, budget: 48 },
   };
-  st.status.network = { name: 'iPhone 热点', address: '172.20.10.3', tailscale: 'Running', tailscaleAddress: '100.101.33.8', line: 'iPhone 热点 · soundmat-pi.local' };
+  st.status.network = { name: 'iPhone 热点', address: '172.20.10.3', tailscale: 'Running', tailscaleAddress: '100.101.33.8', localName: 'soundmat-pi.local', line: 'iPhone 热点 · soundmat-pi.local' };
   st.status.machine = { host: 'soundmat-pi', model: 'Raspberry Pi 5', tempC: 49, throttled: false, memUsedMB: 800, memTotalMB: 2048,
     diskFreeGB: 52, diskTotalGB: 64, uptime: 9600, programUptime: 9000 };
   Object.assign(st.status, extra);
@@ -37,6 +37,7 @@ test('normal dashboard', async () => {
   expect(within(sound).getByText('✓ 最近 1 小时没有卡顿')).toBeInTheDocument();
   expect(within(screen.getByRole('region', { name: '垫子' })).getByText('58.6')).toBeInTheDocument();
   expect(within(screen.getByRole('region', { name: '网络' })).getByText('已连接 · 100.101.33.8')).toBeInTheDocument();
+  expect(within(screen.getByRole('region', { name: '网络' })).getByText('soundmat-pi.local · 172.20.10.3')).toBeInTheDocument();
   expect(within(screen.getByRole('region', { name: '机器' })).getByText('Raspberry Pi 5')).toBeInTheDocument();
 });
 

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 
 interface Props {
   title: string;
@@ -7,12 +7,35 @@ interface Props {
   children: ReactNode;
 }
 
-/** 从底部升起的面板（设计稿的编排、菜单、已录制、设置）。 */
+/**
+ * 从底部升起的面板（设计稿的编排、菜单、已录制、设置）。
+ * 打开时焦点移进面板，按 Esc 关闭，关闭后焦点回到打开它的按钮。
+ */
 export function Sheet({ title, onClose, onBack, children }: Props) {
+  const ref = useRef<HTMLDivElement>(null);
+  const close = useRef(onClose);
+  close.current = onClose;
+
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    ref.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        close.current();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      if (opener && opener.isConnected) opener.focus();
+    };
+  }, []);
+
   return (
     <div className="sheet-backdrop">
       <button type="button" className="close-area" aria-label="关闭面板" onClick={onClose} />
-      <div className="sheet" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="sheet" role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} ref={ref}>
         <div className="sheet-handle"><span /></div>
         <div className="sheet-head">
           {onBack && (

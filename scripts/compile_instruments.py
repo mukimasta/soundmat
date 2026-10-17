@@ -32,9 +32,11 @@ def main() -> int:
         print("找不到 sclang。安装 SuperCollider，或用环境变量 SOUNDMAT_SCLANG 指定。", file=sys.stderr)
         return 1
     env = dict(os.environ)
-    # 无桌面环境（Linux、CI）里 sclang 也能运行
-    env.setdefault("QT_QPA_PLATFORM", "offscreen")
-    env.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
+    if sys.platform.startswith("linux"):
+        # 无桌面的 Linux（树莓派、CI、云端）里 sclang 也能运行。macOS 版 SuperCollider.app
+        # 只带 cocoa 平台插件，设置 offscreen 会让 sclang 直接退出，所以只在 Linux 上设置。
+        env.setdefault("QT_QPA_PLATFORM", "offscreen")
+        env.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
     proc = subprocess.run([sclang, str(ROOT / "instruments" / "build.scd")], cwd=ROOT, env=env,
                           capture_output=True, text=True, timeout=300)
     lines = [l for l in proc.stdout.splitlines() if "声道" in l or "完成" in l or "ERROR" in l]

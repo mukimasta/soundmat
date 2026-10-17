@@ -90,3 +90,23 @@ test('jam status line shows section progress and Lo-Fi reading', () => {
   ] }));
   expect(screen.getByText('Jam · 合奏 · 120 BPM · 曲终')).toBeInTheDocument();
 });
+
+test('sheets take focus, close on Escape and return focus to the opener', async () => {
+  const { client } = setup();
+  connect(client);
+  const opener = screen.getByRole('button', { name: /当前编排：京都岚山/ });
+  await userEvent.click(opener);
+  const dialog = screen.getByRole('dialog', { name: '编排' });
+  expect(dialog).toHaveFocus();
+  await userEvent.keyboard('{Escape}');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(opener).toHaveFocus();
+  // 菜单 → 设置 → Esc：焦点回到底部的菜单按钮
+  const menu = screen.getByRole('button', { name: '菜单' });
+  await userEvent.click(menu);
+  await userEvent.click(screen.getByRole('button', { name: /设置/ }));
+  expect(screen.getByRole('dialog', { name: '设置' })).toHaveFocus();
+  await userEvent.keyboard('{Escape}');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(menu).toHaveFocus();
+});

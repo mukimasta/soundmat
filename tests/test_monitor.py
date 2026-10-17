@@ -27,6 +27,12 @@ def test_parse_cards_and_jack_device():
     assert P.parse_jack_args(["jackd", "-d", "dummy", "-r", "48000"])["device"] == "dummy"
 
 
+def test_local_name_not_doubled():
+    assert P.local_name("soundmat-pi") == "soundmat-pi.local"
+    assert P.local_name("MacBook-Pro.local") == "MacBook-Pro.local"
+    assert P.local_name(None) is None
+
+
 def test_real_probes_do_not_crash(tmp_path):
     m = P.machine(tmp_path)
     assert m["host"] and m["diskFreeGB"] is not None
@@ -64,6 +70,7 @@ def test_all_ok_and_dashboard_fields(rig):
     assert store.get("status.audio.outputDevice") == {"name": "USB-Audio - JCALLY JM6", "usb": True}
     assert store.get("status.audio.buffer") == {"period": 2048, "periods": 2, "driver": "JACK"}
     assert store.get("status.network.line") == "soundmat · soundmat-pi.local"
+    assert store.get("status.network.localName") == "soundmat-pi.local"
     assert store.get("status.audio.loadHistory") == [22.0]
 
 

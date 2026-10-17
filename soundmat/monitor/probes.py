@@ -181,5 +181,12 @@ def network() -> dict:
     return info
 
 
+def local_name(host: str | None) -> str | None:
+    """局域网里的名字：主机名加 ``.local``；macOS 的主机名本身常带 ``.local``，不再重复。"""
+    if not host:
+        return None
+    return host if host.lower().endswith(".local") else f"{host}.local"
+
+
 def program_uptime(started: float) -> int:
     return int(time.time() - started)

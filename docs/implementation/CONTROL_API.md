@@ -37,7 +37,7 @@
 | `status.audio.channels`、`status.audio.buffer`、`status.audio.xruns`、`status.audio.loadHistory` | 声道数、缓冲 `{period, periods, driver}`、最近一小时卡顿次数、最近 60 秒负载 |
 | `status.matHistory` | 最近 60 秒的实测传感帧率 |
 | `status.machine` | `host`、`model`、`tempC`、`throttled`、`memUsedMB`、`memTotalMB`、`diskFreeGB`、`diskTotalGB`、`uptime`、`programUptime` |
-| `status.network` | `name`、`type`、`address`、`tailscale`、`tailscaleAddress`、`line`（垫面页顶部显示的一行） |
+| `status.network` | `name`、`type`、`address`、`tailscale`、`tailscaleAddress`、`localName`（局域网名字，主机名已带 `.local` 时不再追加）、`line`（垫面页顶部显示的一行） |
 | `status.recording` | `{state}`，`state` 为 `idle` / `countdown` / `recording`；录制中另有 `count`（倒计时数字）、`flash`（打板的一瞬）、`elapsed`、`folder`、`audio`、`freeGB` |
 | `catalog.recordings` | `[{name, startedAt, title, duration, audio}]`，最新在前 |
 | `catalog.arrangements` | `[{id, title, mode, modeLabel, description, ringLabels, missing, error}]` |
