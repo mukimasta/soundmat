@@ -68,3 +68,15 @@ def test_controller_end_to_end_with_fake_esp32(make_sup, tmp_path, monkeypatch):
         assert st["connected"] and st["source"] == "controller" and st["fps"] > 0
     finally:
         sup.stop()
+
+
+def test_test_tone_endpoint(make_sup, tmp_path, monkeypatch):
+    from soundmat.clock import Beat
+
+    monkeypatch.setenv("SOUNDMAT_SOUND", str(tmp_path / "no-sound"))
+    sup = make_sup(monitor=False)
+    client = TestClient(create_app(sup.control, console_dist=None))
+    assert client.post("/api/audio/test-tone", json={"channel": 1}).json() == {"ok": True}
+    assert client.post("/api/audio/test-tone", json={"channel": 2}).status_code == 422
+    sup.sonification.on_beat(Beat(0, 1.0, 1 / 60))
+    assert sup.backend.of_kind("test_tone")[0].args["channel"] == 1

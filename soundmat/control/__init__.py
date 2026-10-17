@@ -39,6 +39,7 @@ class ControlContext:
     virtual: VirtualMat | None = None
     play: Callable[[str], None] | None = None        # 切换到一份编排；失败抛出 LoadError
     settings: Settings | None = None
+    test_tone: Callable[[int], None] | None = None   # 逐声道测试音
     # 额外的高频数据源，例如灯环预览：消息类型 → 保存可 JSON 化 dict 的最新值容器
     streams: dict[str, Latest[dict]] = field(default_factory=dict)
 
@@ -49,6 +50,10 @@ class ZoneBody(BaseModel):
 
 class SettingsBody(BaseModel):
     changes: dict[str, Any]
+
+
+class ToneBody(BaseModel):
+    channel: int
 
 
 def mat_message(snap: MatSnapshot) -> dict:
@@ -114,6 +119,16 @@ def create_app(ctx: ControlContext, console_dist: Path | None = CONSOLE_DIST) ->
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e)) from e
         return {"applied": applied}
+
+    @app.post("/api/audio/test-tone")
+    def test_tone(body: ToneBody) -> dict:
+        if ctx.test_tone is None:
+            raise HTTPException(status_code=503, detail="声音引擎不可用")
+        try:
+            ctx.test_tone(body.channel)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        return {"ok": True}
 
     @app.websocket("/ws")
     async def ws(socket: WebSocket) -> None:

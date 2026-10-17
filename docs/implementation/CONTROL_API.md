@@ -10,6 +10,7 @@
 |---|---|---|
 | `hello` | `geometry`（224 个区域的几何：`index`、`id`、`ring`、`slot`、`center`、`span`、`rInner`、`rOuter`）、`config`（只读配置的显示条目 `{label, value}`）、`ledCount`、`state`（状态中心的完整快照） | 连接时一次 |
 | `patch` | `changes`：`[[路径, 新值], ...]`，路径是状态树里的点号路径 | 状态中心有变化时，按 30 次/秒合批 |
+| `levels` | `output`：总输出各声道峰值（dBFS）；`rings`：每环 `[左, 右]` 峰值（dBFS，−120 表示无声） | 有合成器服务时 10 次/秒 |
 | `leds` | `colors`：每个逻辑灯位一个 `[r, g, b]`（0–255），不亮为 `null`；逻辑位置 0 在 12 点方向，未施加灯带偏移 | 最多 30 次/秒，有变化时 |
 | `mat` | `t`、`source`（`controller` 或 `virtual`）、`pressure`（224 个整数，压力 × 1000）、`occupied`（有石头的区域序号）、`ringCounts`、`control`（控制区压力，未声明为 `null`） | 垫面变化时，最多 30 次/秒 |
 
@@ -29,6 +30,14 @@
 | `status.log` | 最近的警告和错误：`[{at, level, text, count?}]`，最新在前 |
 | `status.audio.assets` | `missing`（当前编排缺失的素材）、`needed`（引用总数）、`state`（`loaded`、`memoryMB`、`budgetMB`、`library`） |
 | `status.mat` | 控制器链路：`connected`、`port`、`fps`（实测传感帧率）、`checksumErrors`、`problem`（问题说明）、`source`（`controller` 或 `virtual`；虚拟垫子时其余项为 `null`） |
+| `status.health` | 状态指示：`sound`、`mat`、`net` 各为 `{level, reason}`（`ok` / `warn` / `error` / `unknown`），`overall` 为最严重的一项，`issues` 为"声音：原因"形式的列表 |
+| `status.audio.service`、`status.audio.usbCard` | 音频服务是否运行、是否有 USB 声卡（未知为 `null`） |
+| `status.audio.synth` | 合成器服务：`online`、`synthdefsLoaded`、`sampleRate`、`avgLoad`、`peakLoad` |
+| `status.audio.outputDevice` | 实际输出设备 `{name, usb}` |
+| `status.audio.channels`、`status.audio.buffer`、`status.audio.xruns`、`status.audio.loadHistory` | 声道数、缓冲 `{period, periods, driver}`、最近一小时卡顿次数、最近 60 秒负载 |
+| `status.matHistory` | 最近 60 秒的实测传感帧率 |
+| `status.machine` | `host`、`model`、`tempC`、`throttled`、`memUsedMB`、`memTotalMB`、`diskFreeGB`、`diskTotalGB`、`uptime`、`programUptime` |
+| `status.network` | `name`、`type`、`address`、`tailscale`、`tailscaleAddress`、`localName`（局域网名字，主机名已带 `.local` 时不再追加）、`line`（垫面页顶部显示的一行） |
 | `catalog.arrangements` | `[{id, title, mode, modeLabel, description, ringLabels, missing, error}]` |
 | `settings.sound.layout` | 音箱布局 `{azimuths, names}` |
 | `settings.sound.orientation` | 垫面朝向偏移（度，0–360） |
@@ -45,4 +54,5 @@
 | `POST /api/virtual/toggle` | `{"zone": 序号}` | 切换一个区的虚拟石头，返回 `{"zone", "stone"}`；不在虚拟垫子模式时返回 409，序号越界返回 422 |
 | `POST /api/virtual/clear` | — | 清空虚拟垫子 |
 | `POST /api/arrangements/{id}/play` | — | 切换到这份编排；加载失败返回 422 和原因 |
+| `POST /api/audio/test-tone` | `{"channel": 声道序号}` | 在该硬件声道放 1 秒测试音；超出当前音箱布局返回 422 |
 | `POST /api/settings` | `{"changes": {"sound.volume": 0.7, ...}}` | 修改设置（键是 `settings` 下的路径；`sound.layout` 也可以是预设名 `stereo` / `quad` / `octo`）；任一项非法返回 422，整批不生效 |
