@@ -31,6 +31,7 @@ uv run pytest                   # 测试
 | 声音化 · 编排文件 | `soundmat/sonification/arrangements.py` + `arrangements/` | 读取与校验，格式见 `ARRANGEMENTS.md` |
 | 声音化 · Ambient | `soundmat/sonification/ambient/` | 持续 / 间歇 / 触发、分档、条件、位置策略、灯光 |
 | 声音化 · 灯光工具 | `soundmat/sonification/lights.py` | 逐像素绘制灯光层 |
+| 声音化 · Jam | `soundmat/sonification/jam/` | 走带、Lo-Fi、和声 / 鼓 / 扫描命中的精确时刻、预听、灯光；理论与时间方案移植自第一版 |
 | 声音引擎 · 素材库 | `soundmat/sound/assets.py` | 读文件头估算内存、预算检查、引用计数、重启后重载 |
 | 状态中心 · 设置 | `soundmat/store/settings.py` | 默认值、校验、原子写入 `settings.json` |
 | 状态中心 | `soundmat/store/` | 状态树、按路径修改、变化通知（尚无持久化） |
@@ -38,7 +39,7 @@ uv run pytest                   # 测试
 | 配置 | `soundmat/config.py` + `config/soundmat.toml` | 已实现 |
 | 线程间容器 | `soundmat/exchange.py` | `Latest`、`EventQueue`、`EventHub` |
 
-垫面信号、设备连接、Jam 模式、scsynth 实现、灯光引擎、录制、系统监测的其余部分尚未实现。没有 scsynth 实现之前，主机程序总是使用 `RecordingBackend`，不发声。
+垫面信号、设备连接、scsynth 实现、灯光引擎、录制、系统监测的其余部分尚未实现。没有 scsynth 实现之前，主机程序总是使用 `RecordingBackend`，不发声。
 
 ## 线程与数据交换
 

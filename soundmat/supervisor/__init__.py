@@ -17,6 +17,7 @@ from ..perception import Perception
 from ..perception.virtual import VirtualMat
 from ..sonification import ModeFactory, ModeInstance, Sonification
 from ..sonification.ambient import AmbientMode
+from ..sonification.jam import JamMode
 from ..sonification.arrangements import ARRANGEMENTS_DIR, discover
 from ..sonification.intent import LightIntent
 from ..sonification.mode import Arrangement, LoadError, ModeContext
@@ -29,7 +30,7 @@ from ..store.settings import Settings
 
 log = logging.getLogger("soundmat")
 
-MODES: dict[str, ModeFactory] = {"ambient": AmbientMode}
+MODES: dict[str, ModeFactory] = {"ambient": AmbientMode, "jam": JamMode}
 
 
 @dataclass

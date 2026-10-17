@@ -162,6 +162,9 @@ class SoundEngine:
                 self.stats.rejected += 1
             return
         inst.rejected.discard(v.id)
+        if v.start is not None:
+            # 模式提前给出的准确开始时刻（例如 Jam 下一小节的和声）；已经过去就立即开始
+            at = max(at, v.start + self.cfg.output_latency)
         node = next(self._nodes)
         self.voices[node] = VoiceRecord(
             node=node, instance=inst.id, key=v.id, source=v.source, bus=v.bus,
