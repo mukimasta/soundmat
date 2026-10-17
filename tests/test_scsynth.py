@@ -129,18 +129,21 @@ def test_restart_detected_by_lost_root_group_and_offline(rig):
     assert be.mixes
 
 
-def test_levels_mapping(rig):
+def test_levels_per_meter(rig):
+    """每根电平条取它的各条总线、所有声道的最大峰值；不认识的实例或总线是静音。"""
     fake, be, eng = rig
-    eng.add_instance("A", [f"ring{r}" for r in range(8)], system_time())
+    eng.add_instance("A", [f"ring{r}" for r in range(8)] + ["harmony", "drums"], system_time())
     pump(eng, be, 2, until=lambda: be.state == "ready" and be.mixes)
     mix = be.mixes["A"]
     fake.send(reply("/sm_peak", be.master_node, 100, 0.5, 0.1, 0.25, 0.05))
-    fake.send(reply("/sm_peak", mix.mode_node, 3, 0.1, 0.0, 1.0, 0.0))
+    fake.send(reply("/sm_peak", mix.mode_node, 3, 0.1, 0.0, 1.0, 0.0))        # ring3：左 0.1、右 1.0
+    fake.send(reply("/sm_peak", mix.mode_node, 8, 0.05, 0.0, 0.02, 0.0))      # harmony
+    fake.send(reply("/sm_peak", mix.mode_node, 9, 0.5, 0.0, 0.1, 0.0))        # drums
     pump(eng, be, 0.2)
-    lv = be.levels([330.0, 30.0])
+    lv = be.levels("A", [["ring3"], ["harmony", "drums"], ["ring0"], ["nope"]])
     assert lv["output"] == pytest.approx([-6.0, -12.0], abs=0.1)
-    assert lv["rings"][3] == pytest.approx([-20.0, 0.0], abs=0.1)
-    assert lv["rings"][0] == [-120.0, -120.0]
+    assert lv["meters"] == pytest.approx([0.0, -6.0, -120.0, -120.0], abs=0.1)
+    assert be.levels("other", [["ring3"]])["meters"] == [-120.0]
 
 
 def _scsynth_running():

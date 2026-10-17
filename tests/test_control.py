@@ -55,3 +55,31 @@ def test_virtual_endpoints_refused_without_virtual_mat(make_sup):
     client = TestClient(create_app(s.control, console_dist=None))
     assert client.post("/api/virtual/toggle", json={"zone": 1}).status_code == 409
     assert "控制台还没有构建" in client.get("/").text
+
+
+def test_led_preview_pushed_every_frame_and_rate_tracked(sup):
+    """灯环预览有新值就推送：60 次/秒的连续帧一帧都不丢（之前按 30 Hz 轮询，实测只剩约 23 帧）。"""
+    import threading
+    import time
+
+    client = TestClient(create_app(sup.control, console_dist=None))
+    with client.websocket_connect("/ws") as ws:
+        assert ws.receive_json()["type"] == "hello"
+        frames = [f"{i:02x}" * 3 * 108 for i in range(30)]
+
+        def produce():
+            for f in frames:
+                sup.lights.preview.set({"colors": f})
+                time.sleep(1 / 60)
+        t = threading.Thread(target=produce)
+        t.start()
+        got = []
+        deadline = time.monotonic() + 5
+        while len(got) < len(frames) and time.monotonic() < deadline:
+            msg = ws.receive_json()
+            if msg["type"] == "leds":
+                got.append(msg["colors"])
+        t.join()
+        assert got == frames
+        assert sup.control.push_rate("leds") >= 25     # 30 帧在约半秒内发完
+    assert sup.control.push_rate("leds") is None      # 连接断开后不再统计

@@ -9,6 +9,16 @@ mode_label = "Jam · 合奏 · 120 BPM"
 description = "京都夜雨。和弦 2m9 → 513 → 1maj9 → 69。内两环放石头开始，扫描线经过石头时发声。"
 ring_labels = ["控制", "控制", "低音", "贝斯", "拨弦", "暗电钢", "电钢", "马林巴"]
 
+
+# 控制台的电平条：背景是不靠放石头、自己在走的和声与鼓；石头一组用默认规则（第 2–7 环，控制环不显示）
+[[meters.background]]
+label = "和声"
+buses = ["harmony"]
+
+[[meters.background]]
+label = "鼓"
+buses = ["drums"]
+
 [music]
 bpm = 120
 key = "C"

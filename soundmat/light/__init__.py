@@ -2,7 +2,9 @@
 
 每一帧取当前的灯光意图，再叠上系统提示层（例如录制倒计时，优先级最高），从低到高按不透明度
 合成到黑底上，得到逻辑顺序的颜色；施加灯带的物理对齐偏移后交给设备连接。刷新率由它统一决定，
-与声音化每秒算几次无关。合成结果（物理偏移之前）也作为控制台的灯环预览。
+与声音化每秒算几次无关；不过声音化交出新的灯光意图时会立刻合成一帧，两个时钟错开时也不会
+漏掉或重复一份意图，没有新意图时（例如只有录制倒计时在变）按自己的刷新率继续。合成结果（物理偏移之前）也作为控制台的灯环预览：与灯光引擎同频，
+颜色没有变化的帧不更新预览；预览编码成十六进制字符串（每颗灯 6 个字符 rrggbb，逻辑顺序）。
 """
 from __future__ import annotations
 
@@ -14,9 +16,8 @@ import numpy as np
 from ..clock import system_time
 from ..config import LightConfig
 from ..exchange import Latest
+from ..rates import RateMeter
 from ..sonification.intent import LightIntent, LightLayer
-
-PREVIEW_HZ = 30.0
 
 
 def composite(layers, led_count: int) -> np.ndarray:
@@ -35,6 +36,11 @@ def to_physical(colors: np.ndarray, offset: int) -> np.ndarray:
     return np.roll(colors, offset % len(colors), axis=0)
 
 
+def to_hex(colors: np.ndarray) -> str:
+    """(N, 3) 的 0–255 颜色 → 十六进制字符串，每颗灯 6 个字符 rrggbb。"""
+    return np.ascontiguousarray(colors, dtype=np.uint8).tobytes().hex()
+
+
 class LightEngine:
     def __init__(self, cfg: LightConfig, intent: Latest[LightIntent],
                  send: Callable[[np.ndarray], None] | None = None):
@@ -44,10 +50,13 @@ class LightEngine:
         self.system: dict[str, LightLayer] = {}
         self._lock = threading.Lock()
         self.preview: Latest[dict] = Latest()
-        self._next_preview = 0.0
+        self._last_preview: str | None = None
         self._stop = threading.Event()
+        self._fresh = threading.Event()  # 声音化交出了新的灯光意图
+        self._unsub = None
         self._thread: threading.Thread | None = None
         self.frames = 0
+        self.rate = RateMeter()          # 灯光引擎实际合成的帧率
 
     def set_system_layer(self, name: str, layer: LightLayer | None) -> None:
         """设置或移除一个系统提示层（例如录制倒计时），它叠在声音化的灯光之上。"""
@@ -64,30 +73,40 @@ class LightEngine:
         colors = composite(list(intent.layers) + system, self.cfg.led_count)
         if self.send is not None:
             self.send(to_physical(colors, self.cfg.led_offset))
-        if now >= self._next_preview:
-            self._next_preview = now + 1.0 / PREVIEW_HZ
-            self.preview.set({"colors": [None if not c.any() else [int(x) for x in c] for c in colors]})
+        hex_colors = to_hex(colors)
+        if hex_colors != self._last_preview:
+            self._last_preview = hex_colors
+            self.preview.set({"colors": hex_colors})
         self.frames += 1
+        self.rate.tick(now)
         return colors
 
     def start(self) -> None:
         self._stop.clear()
+        self._unsub = self.intent.subscribe(self._fresh.set)
         self._thread = threading.Thread(target=self._run, name="light", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
         self._stop.set()
+        self._fresh.set()
+        if self._unsub:
+            self._unsub()
+            self._unsub = None
         if self._thread:
             self._thread.join(timeout=2.0)
 
     def _run(self) -> None:
+        """有新意图就合成；没有新意图时最迟每个刷新周期合成一次。两帧之间至少间隔半个周期，不超过刷新率太多。"""
         period = 1.0 / self.cfg.refresh_hz
-        next_t = system_time()
+        last = 0.0
         while not self._stop.is_set():
-            self.render(system_time())
-            next_t += period
-            delay = next_t - system_time()
-            if delay > 0:
-                self._stop.wait(delay)
-            else:
-                next_t = system_time()
+            self._fresh.wait(period)
+            if self._stop.is_set():
+                break
+            gap = system_time() - last
+            if gap < period / 2:
+                self._stop.wait(period / 2 - gap)
+            self._fresh.clear()
+            last = system_time()
+            self.render(last)

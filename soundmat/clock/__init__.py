@@ -12,6 +12,8 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
+from ..rates import RateMeter
+
 log = logging.getLogger("soundmat.clock")
 
 
@@ -41,6 +43,7 @@ class BeatClock:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.overruns = 0                  # 计算超过一个节拍间隔的次数
+        self.rate = RateMeter()            # 实际节拍率
         self.index = 0
 
     def start(self) -> None:
@@ -57,6 +60,7 @@ class BeatClock:
         next_t = system_time()
         while not self._stop.is_set():
             now = system_time()
+            self.rate.tick(now)
             try:
                 self._on_beat(Beat(self.index, now, self.period))
             except Exception:  # 节拍线程不能因为一次异常停下

@@ -19,6 +19,7 @@ from ..perception import Perception
 from ..sound.engine import SoundEngine
 from ..store import Store
 from .intent import BeatOutput, LightIntent, SoundIntent
+from .meters import Meter, resolve_meters
 from .mode import Arrangement, LoadError, LoadPlan, Mode, ModeContext
 
 log = logging.getLogger("soundmat.sonification")
@@ -33,6 +34,7 @@ class ModeInstance:
     arrangement: Arrangement
     mode: Mode
     plan: LoadPlan
+    meters: tuple[Meter, ...] = ()
     last: BeatOutput | None = None
     retiring: bool = False
     failing: bool = False
@@ -76,8 +78,9 @@ class Sonification:
         mode = factory(arrangement, self.ctx)
         plan = mode.load()
         mode.plan = plan
+        meters = resolve_meters(arrangement, plan)
         iid = f"{arrangement.id}-{next(self._ids)}"
-        return ModeInstance(iid, arrangement, mode, plan)
+        return ModeInstance(iid, arrangement, mode, plan, meters)
 
     def switch(self, inst: ModeInstance) -> None:
         """请求在下一拍激活这个实例；当前实例交叉淡化后停止。"""
@@ -160,6 +163,7 @@ class Sonification:
         self.store.update({
             "status.current.arrangement": a.id,
             "status.current.mode": a.mode,
+            "status.current.meters": [m.to_json() for m in inst.meters],
         })
         self.log.info(f"开始演奏：{a.title}")
 

@@ -123,12 +123,13 @@ button { font: inherit; color: inherit; }
 .sec-line .left { min-width: 0; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sec-line .right { flex: none; font-family: var(--mono); color: var(--text); }
 
-.meters { flex: none; position: relative; height: 92px; margin: 6px 14px 0; }
-.meters .axis { position: absolute; left: 0; right: 0; top: 50px; height: 1px; background: rgba(237, 232, 223, 0.16); }
-.meters .lr { position: absolute; top: 55px; font-family: var(--mono); font-size: 10px; color: var(--text-3); }
-.meters .bar { position: absolute; width: 6px; border-radius: 1px; background: rgba(245, 240, 230, 0.85); transition: top 0.12s linear, height 0.12s linear; }
-.meters .cap { position: absolute; width: 6px; height: 2px; border-radius: 1px; transition: top 0.12s linear; }
-.meters .label { position: absolute; top: 56px; width: 12px; display: flex; flex-direction: column; align-items: center; font-size: 10.5px; line-height: 1.08; }
+.meters { flex: none; display: flex; justify-content: center; align-items: flex-start; gap: 30px; min-height: 92px; margin: 6px 14px 0; }
+.meter-group { display: flex; gap: 14px; }
+.meter { display: flex; flex-direction: column; align-items: center; width: 12px; }
+.meter .well { position: relative; width: 6px; height: 50px; border-bottom: 1px solid rgba(237, 232, 223, 0.16); }
+.meter .bar { position: absolute; left: 0; bottom: 0; width: 6px; border-radius: 1px; background: rgba(245, 240, 230, 0.85); transition: height 0.12s linear; }
+.meter .cap { position: absolute; left: 0; width: 6px; height: 2px; border-radius: 1px; transition: bottom 0.12s linear; }
+.meter .label { margin-top: 5px; display: flex; flex-direction: column; align-items: center; font-size: 10.5px; line-height: 1.08; }
 
 .spacer { flex: 1 1 auto; min-height: 6px; }
 
@@ -360,3 +361,12 @@ button { font: inherit; color: inherit; }
   font-size: 18px; font-weight: 700; letter-spacing: 0.3em;
 }
 .toast { flex: none; margin: 0 16px 6px; padding: 10px 14px; border-radius: 12px; background: var(--red-bg); color: var(--red-line); font-size: 13px; font-weight: 600; }
+
+/* 看板「节奏」卡：各条链路的实测与期望帧率 */
+.rate-table { display: flex; flex-direction: column; }
+.rate-row { display: grid; grid-template-columns: minmax(0, 1fr) 56px 64px; gap: 8px; padding: 6px 0; font-size: 13px; border-bottom: 1px solid var(--track); }
+.rate-row:last-child { border-bottom: 0; }
+.rate-row.head { font-size: 11px; color: var(--text-3); padding-top: 0; }
+.rate-row .num { font-family: var(--mono); text-align: right; }
+.rate-row .num.dim { color: var(--text-2); }
+.rate-row.head span:nth-child(n+2) { text-align: right; }

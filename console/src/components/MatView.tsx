@@ -11,8 +11,8 @@ interface Props {
   pressure: number[] | null;
   occupied: number[];
   ledCount: number;
-  /** 灯环预览：每个逻辑位置的颜色 [r, g, b]，未亮为 null */
-  leds?: ([number, number, number] | null)[] | null;
+  /** 灯环预览：十六进制字符串，每颗灯 6 个字符 rrggbb（逻辑顺序）；null 表示没有数据 */
+  leds?: string | null;
   onZone?: (zone: number) => void;
 }
 
@@ -20,10 +20,6 @@ function MatViewImpl({ geometry, pressure, occupied, ledCount, leds, onZone }: P
   const paths = useMemo(
     () => geometry.map((z) => ({ z, d: sectorPath(z.rInner, z.rOuter, z.center, z.span) })),
     [geometry],
-  );
-  const ledPos = useMemo(
-    () => Array.from({ length: ledCount }, (_, i) => polar(LED_RADIUS, (i * 360) / ledCount)),
-    [ledCount],
   );
   const tappable = !!onZone;
   const stones = occupied.map((i) => geometry[i]).filter(Boolean);
@@ -61,20 +57,50 @@ function MatViewImpl({ geometry, pressure, occupied, ledCount, leds, onZone }: P
           </g>
         );
       })}
-      {ledPos.map(([x, y], i) => {
-        const c = leds?.[i];
-        if (!c || Math.max(c[0], c[1], c[2]) < 24) return <circle key={i} cx={x} cy={y} r="0.34" fill="#2E2B26" />;
-        const rgb = `${c[0]},${c[1]},${c[2]}`;
-        const b = Math.max(c[0], c[1], c[2]) / 255;
-        return (
-          <g key={i} pointerEvents="none">
-            <circle cx={x} cy={y} r={(0.8 + 0.6 * b).toFixed(2)} fill={`rgba(${rgb},${(0.5 * b * b).toFixed(2)})`} />
-            <circle cx={x} cy={y} r="0.46" fill={`rgb(${rgb})`} />
-          </g>
-        );
-      })}
+      <LedRing ledCount={ledCount} leds={leds ?? null} />
     </svg>
   );
 }
 
 export const MatView = memo(MatViewImpl);
+
+/** 解码灯环预览：亮度过低的灯当作不亮 */
+export function decodeLeds(hex: string | null, count: number): ([number, number, number] | null)[] {
+  const out: ([number, number, number] | null)[] = new Array(count).fill(null);
+  if (!hex) return out;
+  for (let i = 0; i < count && i * 6 + 6 <= hex.length; i++) {
+    const r = parseInt(hex.slice(i * 6, i * 6 + 2), 16);
+    const g = parseInt(hex.slice(i * 6 + 2, i * 6 + 4), 16);
+    const b = parseInt(hex.slice(i * 6 + 4, i * 6 + 6), 16);
+    out[i] = Math.max(r, g, b) < 24 ? null : [r, g, b];
+  }
+  return out;
+}
+
+/**
+ * 灯环预览单独成一个组件：它和灯光引擎同频刷新（60 次/秒），
+ * 拆开后每帧只重画 108 颗灯，不连带重画 224 个区域。
+ */
+const LedRing = memo(function LedRing({ ledCount, leds }: { ledCount: number; leds: string | null }) {
+  const ledPos = useMemo(
+    () => Array.from({ length: ledCount }, (_, i) => polar(LED_RADIUS, (i * 360) / ledCount)),
+    [ledCount],
+  );
+  const colors = decodeLeds(leds, ledCount);
+  return (
+    <g pointerEvents="none">
+      {ledPos.map(([x, y], i) => {
+        const c = colors[i];
+        if (!c) return <circle key={i} cx={x} cy={y} r="0.34" fill="#2E2B26" />;
+        const rgb = `${c[0]},${c[1]},${c[2]}`;
+        const b = Math.max(c[0], c[1], c[2]) / 255;
+        return (
+          <g key={i}>
+            <circle cx={x} cy={y} r={(0.8 + 0.6 * b).toFixed(2)} fill={`rgba(${rgb},${(0.5 * b * b).toFixed(2)})`} />
+            <circle cx={x} cy={y} r="0.46" fill={`rgb(${rgb})`} />
+          </g>
+        );
+      })}
+    </g>
+  );
+});

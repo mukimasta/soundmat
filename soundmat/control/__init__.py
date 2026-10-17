@@ -1,7 +1,8 @@
 """控制接口：控制台与主机程序之间唯一的通道（ARCHITECTURE「控制接口」）。
 
 状态通过一条 WebSocket 推送：连接时先发完整快照，之后只发生了变化的部分；
-垫面这类高频数据单独以 ``mat`` 消息限频推送。命令和设置修改走 HTTP。
+垫面这类高频数据单独以 ``mat`` 消息限频推送（最多 30 次/秒），灯环预览等数据流有新值就推送。
+推送由数据变化唤醒，不按固定间隔轮询，所以不会因为两边节奏错开而丢帧。命令和设置修改走 HTTP。
 协议见 docs/implementation/CONTROL_API.md。
 """
 from __future__ import annotations
@@ -17,17 +18,20 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from ..clock import system_time
 from ..config import ROOT, Config
 from ..exchange import Latest
 from ..perception.model import MatSnapshot
 from ..perception.virtual import VirtualMat
 from ..perception.zones import geometry_json
+from ..rates import RateMeter
 from ..sonification.mode import LoadError
 from ..store import Store
 from ..store.settings import Settings
 
 CONSOLE_DIST = ROOT / "console" / "dist"
 MAT_PUSH_HZ = 30.0
+PATCH_HZ = 30.0      # 状态变化合批推送的上限
 
 
 @dataclass
@@ -43,6 +47,13 @@ class ControlContext:
     recorder: Any = None                             # 录制（soundmat.recorder.Recorder）
     # 额外的高频数据源，例如灯环预览：消息类型 → 保存可 JSON 化 dict 的最新值容器
     streams: dict[str, Latest[dict]] = field(default_factory=dict)
+    # 每个 WebSocket 连接实际推送的帧率：连接序号 → 消息类型 → 速率计
+    push_rates: dict[int, dict[str, RateMeter]] = field(default_factory=dict)
+
+    def push_rate(self, kind: str) -> float | None:
+        """所有连接里这类消息的最高实际推送帧率；没有控制台连着时为 None。"""
+        rates = [r[kind].rate() for r in list(self.push_rates.values()) if kind in r]
+        return max(rates) if rates else None
 
 
 class ZoneBody(BaseModel):
@@ -169,11 +180,19 @@ def create_app(ctx: ControlContext, console_dist: Path | None = CONSOLE_DIST) ->
         await socket.accept()
         loop = asyncio.get_running_loop()
         changes: asyncio.Queue = asyncio.Queue()
+        wake = asyncio.Event()
+
+        def nudge() -> None:
+            loop.call_soon_threadsafe(wake.set)
 
         def on_change(items):
             loop.call_soon_threadsafe(changes.put_nowait, items)
+            nudge()
 
-        unsubscribe = ctx.store.subscribe(on_change)
+        unsubs = [ctx.store.subscribe(on_change), ctx.mat.subscribe(nudge),
+                  *(latest.subscribe(nudge) for latest in ctx.streams.values())]
+        conn = id(socket)
+        ctx.push_rates[conn] = {"mat": RateMeter(), **{name: RateMeter() for name in ctx.streams}}
         try:
             await socket.send_json({
                 "type": "hello",
@@ -182,7 +201,7 @@ def create_app(ctx: ControlContext, console_dist: Path | None = CONSOLE_DIST) ->
                 "ledCount": ctx.config.light.led_count,
                 "state": ctx.store.snapshot(),
             })
-            sender = asyncio.create_task(_push(socket, ctx, changes))
+            sender = asyncio.create_task(_push(socket, ctx, changes, wake, ctx.push_rates[conn]))
             try:
                 # 客户端不通过 WebSocket 发命令；这里只为及时发现断开
                 while True:
@@ -194,7 +213,9 @@ def create_app(ctx: ControlContext, console_dist: Path | None = CONSOLE_DIST) ->
         except WebSocketDisconnect:
             pass
         finally:
-            unsubscribe()
+            for unsub in unsubs:
+                unsub()
+            ctx.push_rates.pop(conn, None)
 
     if console_dist and console_dist.is_dir():
         app.mount("/", StaticFiles(directory=console_dist, html=True), name="console")
@@ -207,31 +228,51 @@ def create_app(ctx: ControlContext, console_dist: Path | None = CONSOLE_DIST) ->
     return app
 
 
-async def _push(socket: WebSocket, ctx: ControlContext, changes: asyncio.Queue) -> None:
-    period = 1.0 / MAT_PUSH_HZ
+async def _push(socket: WebSocket, ctx: ControlContext, changes: asyncio.Queue, wake: asyncio.Event,
+                rates: dict[str, RateMeter]) -> None:
+    mat_period = 1.0 / MAT_PUSH_HZ
+    patch_period = 1.0 / PATCH_HZ
+    pending: list = []
+    last_patch_sent = -1.0
     last_mat_version = -1
     last_mat_body = None
+    last_mat_sent = -1.0
     stream_versions = {name: -1 for name in ctx.streams}
+    timeout = 0.5
     while True:
-        batch: list = []
-        try:
-            batch.extend(await asyncio.wait_for(changes.get(), timeout=period))
-        except asyncio.TimeoutError:
-            pass
+        with contextlib.suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(wake.wait(), timeout=timeout)
+        wake.clear()
+        timeout = 0.5
         while not changes.empty():
-            batch.extend(changes.get_nowait())
-        if batch:
-            await socket.send_json({"type": "patch", "changes": [[p, v] for p, v in batch]})
+            pending.extend(changes.get_nowait())
+        if pending:
+            now = system_time()
+            wait = last_patch_sent + patch_period - now
+            if wait > 0:
+                timeout = min(timeout, wait)  # 状态变化合批：到时间再一起发
+            else:
+                await socket.send_json({"type": "patch", "changes": [[p, v] for p, v in pending]})
+                pending = []
+                last_patch_sent = now
         snap, version = ctx.mat.get_versioned()
         if snap is not None and version != last_mat_version:
-            last_mat_version = version
-            msg = mat_message(snap)
-            body = (msg["source"], msg["pressure"], msg["occupied"], msg["control"])
-            if body != last_mat_body:  # 垫面没有变化时不重复推送
-                last_mat_body = body
-                await socket.send_json(msg)
+            now = system_time()
+            wait = last_mat_sent + mat_period - now
+            if wait > 0:
+                timeout = min(timeout, wait)  # 垫面限频：到时间再发这一份最新的
+            else:
+                last_mat_version = version
+                msg = mat_message(snap)
+                body = (msg["source"], msg["pressure"], msg["occupied"], msg["control"])
+                if body != last_mat_body:  # 垫面没有变化时不重复推送
+                    last_mat_body = body
+                    last_mat_sent = now
+                    await socket.send_json(msg)
+                    rates["mat"].tick(now)
         for name, latest in ctx.streams.items():
             data, v = latest.get_versioned()
             if data is not None and v != stream_versions[name]:
                 stream_versions[name] = v
                 await socket.send_json({"type": name, **data})
+                rates[name].tick()

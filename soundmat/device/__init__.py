@@ -18,6 +18,7 @@ from typing import Callable, Protocol
 import numpy as np
 
 from ..clock import system_time
+from ..rates import RateMeter
 from .ports import pick_port
 from .protocol import BAUD, FrameError, encode_led_frame, parse_sensor_frame
 
@@ -74,6 +75,7 @@ class DeviceLink:
         self._booted = False
         self._double_send = False
         self._times: deque[float] = deque(maxlen=240)
+        self.led_rate = RateMeter()      # 实际写给控制器的灯光帧率
         self.seq = 0
         self.port: str | None = None
         self.connected = False
@@ -114,6 +116,7 @@ class DeviceLink:
                     self._double_send = False
                     time.sleep(0.02)
                     ser.write(data)
+            self.led_rate.tick()
         except Exception as e:  # 写失败：读线程会发现断线并重连
             log.debug("写灯光帧失败：%s", e)
 

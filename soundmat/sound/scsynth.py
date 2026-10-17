@@ -512,26 +512,25 @@ class ScsynthBackend:
         return {"online": self.online, "everOnline": self.ever_online, "state": self.state,
                 "synthdefsLoaded": self.defs_loaded, **self.info}
 
-    def levels(self, azimuths: Sequence[float], now: float | None = None) -> dict | None:
-        """总输出各声道和每环左右两侧的峰值电平（dBFS）；超过 1 秒没有更新的值不算。"""
+    def levels(self, instance: str | None, meters: Sequence[Sequence[str]], now: float | None = None) -> dict | None:
+        """总输出各声道的峰值电平，以及每根电平条的峰值电平（dBFS）：取这根条的各条总线、所有声道的最大值。
+
+        ``meters`` 是每根条对应的总线名；只看 ``instance`` 这个模式实例（切换期间是新实例）。
+        超过 1 秒没有更新的值不算。
+        """
         now = system_time() if now is None else now
         with self._lock:
             fresh = {k: v[1] for k, v in self._levels.items() if now - v[0] < 1.0}
         if self.master_node is None:
             return None
         output = [db(p) for p in fresh.get((self.master_node, 100), [])]
-        left = [i for i, a in enumerate(azimuths) if 180 <= a % 360 < 360 or a % 360 == 0]
-        right = [i for i, a in enumerate(azimuths) if 0 <= a % 360 <= 180]
-        rings = []
-        for r in range(8):
-            peaks: list[float] = []
-            for mix in self.mixes.values():
-                names = list(mix.buses)
-                if f"ring{r}" in names:
-                    p = fresh.get((mix.mode_node, names.index(f"ring{r}")))
-                    if p:
-                        peaks = p if not peaks else [max(a, b) for a, b in zip(peaks, p)]
-            lv = max((peaks[i] for i in left if i < len(peaks)), default=0.0)
-            rv = max((peaks[i] for i in right if i < len(peaks)), default=0.0)
-            rings.append([round(db(lv), 1), round(db(rv), 1)])
-        return {"output": [round(x, 1) for x in output], "rings": rings}
+        mix = self.mixes.get(instance) if instance else None
+        names = list(mix.buses) if mix else []
+        values = []
+        for buses in meters:
+            peak = 0.0
+            for b in buses:
+                if mix and b in names:
+                    peak = max([peak, *fresh.get((mix.mode_node, names.index(b)), [])])
+            values.append(round(db(peak), 1))
+        return {"output": [round(x, 1) for x in output], "meters": values}

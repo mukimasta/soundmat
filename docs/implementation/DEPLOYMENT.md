@@ -38,7 +38,7 @@
 2. **实时音频权限**：把 `soundmat` 用户加入 `audio` 组，并允许它以实时优先级运行音频服务。
 3. **电源设置**：降压模块只输出 5V，不和 Pi 5 协商快充，Pi 5 默认会把 USB 总输出限制在 600 mA。在确认电源能提供足够电流的前提下，于 `/boot/firmware/config.txt` 打开 `usb_max_current_enable`，避免 USB 声卡和 ESP32 供电不足。
 4. **Python 环境**：安装 uv，由它安装 Python 和依赖，不使用系统自带的 Python。
-5. **程序与数据**：用 rsync 把主机程序、编排、编译好的音色同步到树莓派；把开发机的 `SoundMat/sound/` 同步到树莓派的声音素材目录。
+5. **程序与数据**：用 rsync 把主机程序、编排、编译好的音色同步到树莓派；把开发机的 `SoundMat/sound/` 同步到树莓派的声音素材目录。树莓派上没有 `.git`，所以同步时在程序目录写一个 `VERSION` 文件：第一行是提交号（有未提交的改动时加 `+dirty`），第二行是部署时间（ISO 8601，带时区）。看板据此显示当前运行的版本。
 6. **系统服务**：安装 `system/systemd/` 下的三个服务，依次是 JACK、scsynth、主机程序，后一个依赖前一个，任何一个异常退出都会自动重启，并设为开机启动。
 7. **网络**：按下面「网络」一节建立 NetworkManager 连接，安装 `system/network/` 下的网络选择与兜底定时任务。avahi 随系统启用，局域网内可以用 `soundmat-pi.local` 访问。
 8. **Tailscale**：从 Tailscale 官方 apt 源安装，用密钥文件里的授权密钥加入网络；没有授权密钥时由 `tailscale up` 打印登录链接，在浏览器里授权。设备名 `soundmat-pi`。

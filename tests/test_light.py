@@ -36,6 +36,42 @@ def test_engine_sends_physical_and_previews_logical_with_system_layer():
     colors = eng.render(0.0)
     assert tuple(colors[0]) == (255, 255, 255) and tuple(colors[1]) == (0, 0, 255)
     assert tuple(sent[0][101]) == (255, 255, 255)
-    assert eng.preview.get()["colors"][0] == [255, 255, 255]
+    hex_colors = eng.preview.get()["colors"]
+    assert len(hex_colors) == 108 * 6
+    assert hex_colors[:12] == "ffffff0000ff"
     eng.set_system_layer("countdown", None)
     assert tuple(eng.render(1.0)[0]) == (0, 0, 255)
+
+
+def test_preview_follows_every_changed_frame_and_skips_unchanged():
+    intent = Latest(LightIntent((layer("base", 0, (0, 0, 1), 1.0),)))
+    eng = LightEngine(LightConfig(led_count=108, led_offset=0), intent)
+    _, v0 = eng.preview.get_versioned()
+    eng.render(0.0)
+    eng.render(1 / 60)                       # 颜色没变：不更新预览
+    _, v1 = eng.preview.get_versioned()
+    assert v1 == v0 + 1
+    intent.set(LightIntent((layer("base", 0, (1, 0, 0), 1.0),)))
+    eng.render(2 / 60)                       # 下一帧就反映到预览，不按 30 Hz 降频
+    colors, v2 = eng.preview.get_versioned()
+    assert v2 == v1 + 1 and colors["colors"].startswith("ff0000")
+    assert eng.rate.rate(2 / 60) == 3
+
+
+def test_running_engine_renders_every_new_intent():
+    """声音化交出的每一份新灯光意图都会被合成：两个 60 Hz 时钟错开时也不漏帧。"""
+    import time
+
+    intent = Latest(LightIntent())
+    eng = LightEngine(LightConfig(led_count=108, led_offset=0), intent)
+    seen = []
+    eng.preview.subscribe(lambda: seen.append(eng.preview.get()["colors"][:6]))
+    eng.start()
+    try:
+        for i in range(1, 31):
+            intent.set(LightIntent((layer("base", 0, (i / 255, 0, 0), 1.0),)))
+            time.sleep(1 / 60)
+        time.sleep(0.05)
+    finally:
+        eng.stop()
+    assert [c for c in seen if c != "000000"] == [f"{i:02x}0000" for i in range(1, 31)]

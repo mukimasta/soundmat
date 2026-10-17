@@ -9,6 +9,6 @@ test('hello connects, patch updates, other types go to streams', () => {
   expect((s.state.status as any).current.virtual).toBe(false);
   s = reduce(s, mat([3]));
   expect(s.mat?.occupied).toEqual([3]);
-  s = reduce(s, { type: 'leds', colors: [null] });
-  expect(s.streams.leds).toEqual({ colors: [null] });
+  s = reduce(s, { type: 'leds', colors: 'ff0000' });
+  expect(s.streams.leds).toEqual({ colors: 'ff0000' });
 });

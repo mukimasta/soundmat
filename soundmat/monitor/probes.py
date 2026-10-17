@@ -190,3 +190,57 @@ def local_name(host: str | None) -> str | None:
 
 def program_uptime(started: float) -> int:
     return int(time.time() - started)
+
+
+def systemd_restarts(service: str) -> int | None:
+    """主机程序被 systemd 自动重启的次数（NRestarts）。不在 systemd 下运行时为 None。"""
+    if not os.environ.get("INVOCATION_ID"):      # systemd 启动的进程才有这个环境变量
+        return None
+    out = _run(["systemctl", "show", "-p", "NRestarts", "--value", service])
+    if out is None or not out.strip().isdigit():
+        return None
+    return int(out.strip())
+
+
+def version(root: Path) -> dict | None:
+    """当前运行的程序版本。先读部署时写入的 VERSION 文件（第一行提交号，第二行部署时间），
+    没有时用 git 读当前提交（有未提交的改动时标出）。都没有时为 None。"""
+    text = _read(str(root / "VERSION"))
+    if text:
+        lines = text.splitlines()
+        return {"commit": lines[0].strip(), "deployedAt": lines[1].strip() if len(lines) > 1 else None,
+                "dirty": None, "source": "deploy"}
+    if not (root / ".git").exists():
+        return None
+    commit = _run(["git", "-C", str(root), "rev-parse", "--short", "HEAD"])
+    if not commit:
+        return None
+    status = _run(["git", "-C", str(root), "status", "--porcelain", "--untracked-files=no"])
+    return {"commit": commit.strip(), "deployedAt": None, "dirty": bool(status and status.strip()), "source": "git"}
+
+
+def ap_clients(interface: str) -> int | None:
+    """自建热点上连着的设备数：内核邻居表里这个网卡上仍有效的条目（约数，离开的设备几分钟后才消失）。"""
+    out = _run(["ip", "-4", "neigh", "show", "dev", interface])
+    if out is None:
+        return None
+    return parse_neigh(out)
+
+
+def parse_neigh(text: str) -> int:
+    alive = ("REACHABLE", "STALE", "DELAY", "PROBE")
+    return sum(1 for line in text.splitlines() if "lladdr" in line and line.split()[-1] in alive)
+
+
+def network_kind(n: dict, phone_hotspot: str, self_hotspot: str) -> str | None:
+    """连接类型：phoneHotspot（手机热点）、selfHotspot（自建热点）、external（其他 Wi-Fi）、wired（网线）。"""
+    name, kind = n.get("name"), n.get("type")
+    if name is None:
+        return None
+    if kind == "ethernet":
+        return "wired"
+    if name == phone_hotspot:
+        return "phoneHotspot"
+    if name == self_hotspot:
+        return "selfHotspot"
+    return "external"

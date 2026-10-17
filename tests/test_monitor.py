@@ -46,11 +46,15 @@ class Fake:
         self.cards = P.parse_cards(CARDS)
         self.xruns = 0
         self.network = {"name": "soundmat", "address": "172.20.10.3", "tailscale": "Running"}
+        self.restarts = None
+        self.version = {"commit": "abc1234", "deployedAt": "2026-10-17T15:00", "dirty": None, "source": "deploy"}
+        self.clients = 2
 
     def probes(self):
         return Probes(jack=lambda: self.jack, cards=lambda: self.cards, xruns=lambda: self.xruns,
                       machine=lambda d: {"host": "soundmat-pi", "tempC": 49.0}, network=lambda: self.network,
-                      platform_linux=True)
+                      restarts=lambda svc: self.restarts, version=lambda root: self.version,
+                      ap_clients=lambda iface: self.clients, platform_linux=True)
 
 
 @pytest.fixture
@@ -125,3 +129,83 @@ def test_no_synth_is_unknown(config, tmp_path):
     mon = Monitor(config, store, EventLog(store), tmp_path, synth_status=lambda: None,
                   layout_channels=lambda: 2, probes_=Fake().probes())
     assert mon.step(0)["sound"]["level"] == "unknown"
+
+
+def test_neigh_and_network_kind():
+    text = ("10.42.0.23 lladdr 3a:11:22:33:44:55 REACHABLE\n"
+            "10.42.0.31 lladdr 3a:11:22:33:44:66 STALE\n"
+            "10.42.0.40 FAILED\n")
+    assert P.parse_neigh(text) == 2
+    kind = lambda name, t="wifi": P.network_kind({"name": name, "type": t}, "phone-hotspot", "soundmat-ap")
+    assert kind("phone-hotspot") == "phoneHotspot"
+    assert kind("soundmat-ap") == "selfHotspot"
+    assert kind("netplan-wlan0-Avocado") == "external"
+    assert kind("netplan-eth0", "ethernet") == "wired"
+    assert kind(None) is None
+
+
+def test_version_prefers_deploy_file(tmp_path):
+    (tmp_path / "VERSION").write_text("2d09273\n2026-10-17T15:00:00-07:00\n")
+    assert P.version(tmp_path) == {"commit": "2d09273", "deployedAt": "2026-10-17T15:00:00-07:00",
+                                   "dirty": None, "source": "deploy"}
+    assert P.version(tmp_path / "nowhere") is None
+
+
+def test_restarts_unknown_outside_systemd(monkeypatch):
+    monkeypatch.delenv("INVOCATION_ID", raising=False)
+    assert P.systemd_restarts("soundmat.service") is None
+
+
+def runtime(overruns=0, late=0, rate=0, root=None):
+    return lambda: {"rates": {"beat": {"actual": 60.0, "expected": 60.0}},
+                    "counters": {"overruns": overruns, "late": late, "yields": 0, "rejected": 0},
+                    "recordBytesPerSecond": rate, "recordRoot": root}
+
+
+def test_program_network_storage_and_rates_published(rig, tmp_path):
+    mon, store, fake, synth = rig
+    fake.network = {"name": "soundmat-ap", "type": "wifi", "address": "10.42.0.1", "tailscale": None}
+    mon.runtime = runtime(rate=48000 * 2 * 3, root=tmp_path / "recordings")
+    mon.step(0)
+    assert store.get("status.network.kind") == "selfHotspot"
+    assert store.get("status.network.apClients") == 2
+    assert store.get("status.program.version.commit") == "abc1234"
+    assert store.get("status.program.restarts") is None
+    assert store.get("status.rates.beat") == {"actual": 60.0, "expected": 60.0}
+    st = store.get("status.storage")
+    assert st["freeGB"] > 0 and st["minutes"] > 0
+    mon.runtime = runtime(rate=0, root=tmp_path)
+    mon.step(1)
+    assert store.get("status.storage.minutes") is None          # 不录音频时无法换算成分钟
+
+
+def test_recent_overruns_and_late_events_need_attention(rig):
+    mon, store, fake, synth = rig
+    counts = {"overruns": 5, "late": 0}
+    mon.runtime = lambda: {"counters": {**counts, "yields": 0, "rejected": 0}}
+    assert mon.step(0)["sound"]["level"] == "ok"                # 启动以来的累计数不算
+    counts["overruns"] = 9
+    assert mon.step(0.5)["sound"]["level"] == "ok"              # 切换编排时超时几次不提示
+    assert store.get("status.timing.overrunsAttention") is False
+    counts["overruns"] = 15
+    h = mon.step(1)
+    assert h["sound"]["level"] == "warn" and "节拍超时 10 次" in h["sound"]["reason"]
+    assert store.get("status.timing.overrunsRecent") == 10
+    counts["late"] = 2
+    mon.step(30)
+    counts["overruns"] = 15
+    h = mon.step(62)                                            # 一分钟之后：最近 1 分钟里没有新的超时
+    assert store.get("status.timing.overrunsRecent") == 0
+    assert h["sound"]["level"] == "warn" and "迟到" in h["sound"]["reason"]
+    h = mon.step(95)
+    assert h["sound"]["level"] == "ok"
+
+
+def test_recent_restart_needs_attention(rig):
+    mon, store, fake, synth = rig
+    fake.restarts = 2
+    h = mon.step(0)
+    assert h["sound"]["level"] == "warn" and "自动重启" in h["sound"]["reason"]
+    mon.started -= 7200                                         # 已经稳定运行了两小时
+    mon._next_slow = 0
+    assert mon.step(20)["sound"]["level"] == "ok"

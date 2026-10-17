@@ -9,6 +9,7 @@ import threading
 
 from ..config import MatConfig
 from ..exchange import EventHub, Latest
+from ..rates import RateMeter
 from .interpret import Interpreter
 from .model import MatEvent, MatSnapshot, PressureMap, empty_snapshot
 
@@ -22,12 +23,14 @@ class Perception:
         self.snapshot: Latest[MatSnapshot] = Latest(empty_snapshot(source=source))
         self.events: EventHub[MatEvent] = EventHub()
         self._lock = threading.Lock()
+        self.rate = RateMeter()          # 实际完成垫面解读的帧率
 
     def set_control_zones(self, zones) -> None:
         with self._lock:
             self.interpreter.set_control_zones(zones)
 
     def feed(self, pressure: PressureMap) -> None:
+        self.rate.tick()
         with self._lock:
             state, events, features = self.interpreter.update(pressure)
         self.snapshot.set(MatSnapshot(pressure=pressure, state=state, features=features, source=self.source))
