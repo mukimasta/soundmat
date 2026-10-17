@@ -105,10 +105,14 @@ class Settings:
         self.path = Path(data_dir) / "settings.json"
         self._lock = threading.Lock()
         data = defaults(Path(data_dir))
+        # 只保存改过的项：默认值（声音素材库、录音位置）每次启动时重新得出，
+        # 所以移动程序目录或设置 SOUNDMAT_SOUND 后仍然生效。
+        self._changed: dict[str, Any] = {}
         for key, value in self._read().items():
             if key in VALIDATORS:
                 try:
-                    _set(data, key, VALIDATORS[key](value))
+                    self._changed[key] = VALIDATORS[key](value)
+                    _set(data, key, self._changed[key])
                 except ValueError as e:
                     log.warning("设置 %s 的值无效（%s），使用默认值", key, e)
         store.set("settings", data)
@@ -141,11 +145,14 @@ class Settings:
                 raise ValueError(f"{key}：{e}") from e
         with self._lock:
             self.store.update({f"settings.{k}": v for k, v in clean.items()})
+            self._changed.update(clean)
             self._save()
         return clean
 
     def _save(self) -> None:
-        data = self.store.get("settings", {})
+        data: dict = {}
+        for key, value in self._changed.items():
+            _set(data, key, value)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(prefix=".settings-", dir=self.path.parent)
         try:
