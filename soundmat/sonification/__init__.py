@@ -100,6 +100,7 @@ class Sonification:
                     item(now)
                 except Exception:
                     log.exception("节拍线程中的命令出错")
+        self.engine.backend.flush()
 
         events = self._events.drain()
         snap = self.perception.snapshot.get()
@@ -119,6 +120,7 @@ class Sonification:
             self._publish_status(now)
         for fn in self.after_beat:
             fn(now)
+        self.engine.backend.flush()
 
     def _tick(self, inst: ModeInstance, beat: Beat, snap, events) -> BeatOutput:
         try:
@@ -146,7 +148,7 @@ class Sonification:
             return
         previous = [i for i in self.instances if not i.retiring]
         fade = self.crossfade if previous else 0.0
-        self.engine.add_instance(inst.id, inst.plan.buses, now, fade)
+        self.engine.add_instance(inst.id, inst.plan.buses, now, fade, inst.plan.fx)
         for old in previous:
             old.retiring = True
             self.engine.retire_instance(old.id, now, fade)

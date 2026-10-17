@@ -40,6 +40,7 @@ class LoadPlan:
     control_zones: frozenset[int] = frozenset()  # 控制区
     buses: tuple[str, ...] = tuple(f"ring{r}" for r in range(8))  # 混音结构里的总线
     lookahead: float = 0.0                    # 前瞻时间窗的提前量（秒）
+    fx: str = "sm_fx_freeverb"                # 共用效果的音色
 
 
 def _no_settings(path: str, default: Any = None) -> Any:

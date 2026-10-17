@@ -325,7 +325,8 @@ system/pi/soundmat/
 │   └── control/             控制接口
 ├── config/                  配置：校准、对齐、声部预算等部署参数
 ├── arrangements/            编排（数据）：kyoto/、lofi_1/ 等
-├── instruments/             合成器服务的音色定义
+├── instruments/             合成器服务的音色定义（编译产物在 compiled/，不进仓库）
+├── scripts/                 开发用脚本：编译音色、启动开发用的合成器服务
 ├── console/                 网页控制台（独立前端工程）
 ├── system/                  系统服务配置：联网、Tailscale、音频、开机与守护
 ├── deploy/                  安装与部署脚本、素材同步

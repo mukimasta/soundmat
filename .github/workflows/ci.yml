@@ -29,3 +29,21 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+
+  # 编译音色，并用真实的 scsynth（JACK dummy 驱动，没有声卡）跑一遍
+  synth:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends supercollider-server supercollider-language jackd2
+      - run: uv sync
+      - run: uv run python scripts/compile_instruments.py
+      - run: |
+          jackd -r -d dummy -r 48000 -p 1024 &
+          sleep 2
+          scsynth -u 57110 -i 0 -o 2 &
+          sleep 3
+      - run: uv run pytest -q tests/test_scsynth.py -rs

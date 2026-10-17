@@ -27,6 +27,7 @@ from ..sonification.mode import Arrangement, LoadError, ModeContext
 from ..sound.assets import AssetLibrary
 from ..sound.backend import Backend, RecordingBackend
 from ..sound.engine import SoundEngine
+from ..sound.scsynth import ScsynthBackend
 from ..sound.spatial import SpeakerLayout
 from ..store import Store
 from ..store.settings import Settings
@@ -43,6 +44,7 @@ class Options:
     modes: dict[str, ModeFactory] = field(default_factory=lambda: dict(MODES))
     data_dir: Path = ROOT / "data"
     serial_port: str = "auto"
+    synth: str = "recording"              # recording（不发声）或 scsynth
     device: DeviceLink | None = None      # 测试时注入模拟控制器
     arrangements_dir: Path = ARRANGEMENTS_DIR
     seed: int | None = None
@@ -68,10 +70,19 @@ class Supervisor:
         self.perception = Perception(cfg.mat, source=source)
         self.virtual: VirtualMat | None = VirtualMat(self.perception.feed) if opts.virtual else None
 
-        self.backend: Backend = opts.backend or RecordingBackend()
+        if opts.backend is not None:
+            self.backend: Backend = opts.backend
+        elif opts.synth == "scsynth":
+            self.backend = ScsynthBackend(cfg.synth.host, cfg.synth.port, cfg.synth.synthdefs_path)
+        else:
+            self.backend = RecordingBackend()
         self.engine = SoundEngine(self.backend, cfg.sound, self._layout(), self.settings.get("sound.orientation", 0.0))
         self.assets = AssetLibrary(Path(self.settings.get("run.soundLibrary")), cfg.sound.asset_memory_mb, self.backend)
         self.engine.on_rebuild.append(self.assets.reload_all)
+        if isinstance(self.backend, ScsynthBackend):
+            self.backend.resolve_asset = self.assets.info
+        self.levels: Latest[dict] = Latest()
+        self._next_levels = 0.0
 
         self.light: Latest[LightIntent] = Latest(LightIntent())
         self.sonification = Sonification(
@@ -101,7 +112,7 @@ class Supervisor:
         self.control = ControlContext(
             config=cfg, store=self.store, mat=self.perception.snapshot, virtual=self.virtual,
             play=self.play, settings=self.settings,
-            streams={"leds": self.lights.preview},
+            streams={"leds": self.lights.preview, "levels": self.levels},
         )
 
     # ── 编排 ────────────────────────────────────────────────────────────
@@ -162,6 +173,11 @@ class Supervisor:
         getattr(self.events, level)(text)
 
     def _publish_link_status(self, now: float) -> None:
+        if now >= self._next_levels and isinstance(self.backend, ScsynthBackend):
+            self._next_levels = now + 0.1
+            lv = self.backend.levels(self.engine.layout.azimuths, now)
+            if lv is not None:
+                self.levels.set(lv)
         if now < self._next_link_status:
             return
         self._next_link_status = now + 0.5

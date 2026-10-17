@@ -14,7 +14,7 @@ from typing import Callable, Mapping, Sequence
 from ..config import SoundConfig
 from ..sonification.intent import Event, Position, SoundIntent, Source, Voice
 from .backend import Backend
-from .spatial import SpeakerLayout, speaker_gains
+from .spatial import SpeakerGains, SpeakerLayout, voice_gains
 
 log = logging.getLogger("soundmat.sound")
 
@@ -47,6 +47,7 @@ class VoiceRecord:
 class InstanceRecord:
     id: str
     buses: list[str]
+    fx: str | None = None
     gain: float = 1.0
     globals: dict[str, float] = field(default_factory=dict)
     voices: dict[str, int] = field(default_factory=dict)      # 持续声部标识 → 节点
@@ -85,12 +86,13 @@ class SoundEngine:
 
     # ── 混音结构与模式实例 ──────────────────────────────────────────────
 
-    def add_instance(self, instance: str, buses: Sequence[str], now: float, fade: float = 0.0) -> None:
-        """为一个模式实例建立混音结构，按 ``fade`` 秒淡入（切换编排时的交叉淡化）。"""
+    def add_instance(self, instance: str, buses: Sequence[str], now: float, fade: float = 0.0,
+                     fx: str | None = None) -> None:
+        """为一个模式实例建立混音结构，按 ``fade`` 秒淡入（切换编排时的交叉淡化）。``fx`` 是共用效果的音色。"""
         at = self._at(now)
-        rec = InstanceRecord(instance, list(buses))
+        rec = InstanceRecord(instance, list(buses), fx=fx)
         self.instances[instance] = rec
-        self.backend.create_mix(instance, rec.buses, self.layout.channels, at)
+        self.backend.create_mix(instance, rec.buses, self.layout.channels, at, fx)
         self.backend.set_mix_gain(instance, 1.0, fade, at)
 
     def retire_instance(self, instance: str, now: float, fade: float) -> None:
@@ -299,7 +301,7 @@ class SoundEngine:
         if self._master:
             self.backend.set_master(self._master, at)
         for inst in self.instances.values():
-            self.backend.create_mix(inst.id, inst.buses, self.layout.channels, at)
+            self.backend.create_mix(inst.id, inst.buses, self.layout.channels, at, inst.fx)
             self.backend.set_mix_gain(inst.id, inst.gain, 0.0, at)
             if inst.globals:
                 self.backend.set_globals(inst.id, inst.globals, at)
@@ -333,8 +335,8 @@ class SoundEngine:
         """所有声音都经过同一段固定输出延迟，相对时序不受主机计算抖动影响。"""
         return now + self.cfg.output_latency
 
-    def _gains(self, position: Position | None) -> list[float]:
-        return speaker_gains(position, self.layout, self.orientation)
+    def _gains(self, position: Position | None) -> SpeakerGains:
+        return voice_gains(position, self.layout, self.orientation)
 
     def status(self) -> dict:
         cats = {c: self.category_count(c) for c in self.cfg.voice_budget_categories}
