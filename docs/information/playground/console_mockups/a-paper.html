@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SoundMat 控制台 · A 纸本</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* 方向 A — 纸本：像美术馆的展签和一页印刷品。暖白纸面、墨色、细线，颜色只留给垫面。 */
+  :root {
+    --stage: #E6E2D8;
+    --paper: #F4F1E9;
+    --sheet: #FBF9F4;
+    --ink: #1D1A15;
+    --ink-2: #5F594D;
+    --ink-3: #9C9586;
+    --rule: rgba(29, 26, 21, .13);
+    --rule-strong: rgba(29, 26, 21, .32);
+    --ok: #3E7B57;
+    --warn: #B07A1E;
+    --rec: #B0443A;
+    --serif: "Newsreader", "Songti SC", "Noto Serif SC", "STSong", serif;
+    --sans: "Inter", -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--stage); color: var(--ink); font: 400 14px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+  body:not(.view-phone) .stage { background: var(--paper); }
+  .app { background: var(--paper); min-height: 100%; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  .num { font-family: var(--serif); font-variant-numeric: tabular-nums lining-nums; }
+
+  /* 小标签：主语言 + 另一语言的斜体 */
+  .label { display: flex; align-items: baseline; gap: 8px; font-size: 11px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-2); }
+  .label i { font: italic 300 13px var(--serif); letter-spacing: 0; text-transform: none; color: var(--ink-3); }
+  .lang-en .label { letter-spacing: .12em; }
+
+  /* 顶栏 */
+  .top { display: flex; align-items: center; gap: 20px; padding: 18px 20px; border-bottom: 1px solid var(--rule); }
+  .brand { font: 400 24px/1 var(--serif); letter-spacing: -.01em; white-space: nowrap; }
+  .brand em { font-style: italic; font-weight: 300; color: var(--ink-3); font-size: 15px; margin-left: 6px; }
+  .status { display: flex; gap: 16px; margin-left: auto; font-size: 13px; color: var(--ink-2); }
+  .st { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+  .st i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  .st.virt i { background: transparent; border: 1.5px solid var(--ink); }
+  .st .st-v { display: none; color: var(--ink-3); }
+  .top-actions { display: flex; align-items: center; gap: 14px; }
+  .rec { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px 0 12px; border: 1px solid var(--rule-strong); border-radius: 17px; font-size: 13px; white-space: nowrap; }
+  .rec i { width: 9px; height: 9px; border-radius: 50%; background: var(--rec); }
+  .rec .rt { display: none; font-family: var(--serif); font-variant-numeric: tabular-nums; }
+  .is-rec .rec { background: var(--ink); color: var(--sheet); border-color: var(--ink); }
+  .is-rec .rec .rt { display: inline; }
+  .is-rec .rec i { animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: .25; } }
+  .lang { display: flex; font-size: 12px; color: var(--ink-3); }
+  .lang button { padding: 4px 5px; }
+  .lang button.on { color: var(--ink); text-decoration: underline; text-underline-offset: 4px; }
+
+  /* 主体 */
+  .main { display: grid; grid-template-columns: 1fr; }
+  .mat-area { padding: 20px 20px 8px; }
+  .mock-banner { display: flex; gap: 12px; align-items: baseline; padding: 10px 14px; margin-bottom: 14px; border: 1px dashed var(--rule-strong); border-radius: 2px; font-size: 13px; color: var(--ink-2); }
+  .mock-banner b { font: italic 400 16px var(--serif); color: var(--ink); white-space: nowrap; }
+  .mat { width: 100%; max-width: 620px; aspect-ratio: 1; margin: 0 auto; }
+  .fig { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; flex-wrap: wrap; max-width: 620px; margin: 12px auto 0; padding-top: 10px; border-top: 1px solid var(--rule); font-size: 12px; color: var(--ink-2); }
+  .fig-cap { font: italic 300 14px var(--serif); color: var(--ink-2); }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend span::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+  .tools { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; width: 100%; }
+  .tools .btn { padding: 6px 12px; border: 1px solid var(--rule-strong); border-radius: 15px; font-size: 12px; }
+  .slider { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 200px; }
+  input[type=range] { -webkit-appearance: none; appearance: none; flex: 1; height: 18px; background: transparent; }
+  input[type=range]::-webkit-slider-runnable-track { height: 1px; background: var(--ink); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; margin-top: -6px; border-radius: 50%; background: var(--sheet); border: 1px solid var(--ink); }
+
+  .side { padding: 8px 20px 100px; }
+  .block { padding: 22px 0; border-top: 1px solid var(--rule); }
+  .block:first-child { border-top: 0; }
+  .np-title { margin-top: 10px; font: 400 38px/1.05 var(--serif); letter-spacing: -.015em; }
+  .np-sub { margin-top: 4px; font: italic 300 17px var(--serif); color: var(--ink-3); }
+  .np-meta { margin-top: 12px; display: flex; gap: 10px; font-size: 13px; color: var(--ink-2); flex-wrap: wrap; }
+  .np-meta span + span::before { content: "·"; margin-right: 10px; color: var(--ink-3); }
+  .figures { margin-top: 20px; display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--rule-strong); border-bottom: 1px solid var(--rule); }
+  .figures > div { padding: 12px 0 14px; }
+  .figures > div + div { padding-left: 14px; border-left: 1px solid var(--rule); }
+  .figures small { display: block; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+  .figures .num { display: block; margin-top: 4px; font-size: 30px; line-height: 1; }
+  .state { margin-top: 14px; font: italic 400 15px var(--serif); color: var(--ink-2); }
+  .is-playing .state { color: var(--ink); }
+  .form { margin-top: 16px; display: flex; gap: 0; }
+  .form span { flex: 1; text-align: center; padding: 6px 0 8px; font: 400 17px var(--serif); color: var(--ink-3); border-bottom: 1px solid var(--rule); }
+  .form span.done { color: var(--ink-2); border-bottom-color: var(--ink-2); }
+  .form span.on { color: var(--ink); border-bottom: 2px solid var(--ink); font-style: italic; }
+  .vol { margin-top: 18px; display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--ink-2); }
+
+  .arr { display: grid; grid-template-columns: 34px 1fr auto; gap: 4px 12px; width: 100%; text-align: left; padding: 14px 0; border-bottom: 1px solid var(--rule); }
+  .arr:first-of-type { margin-top: 8px; }
+  .arr .idx { font: italic 300 18px var(--serif); color: var(--ink-3); }
+  .arr .name { font: 400 20px/1.2 var(--serif); }
+  .arr .name i { font-weight: 300; color: var(--ink-3); margin-left: 6px; font-size: 15px; }
+  .arr .desc { grid-column: 2 / 4; font-size: 13px; color: var(--ink-2); }
+  .arr .tag { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); align-self: center; }
+  .arr.active .tag::before { content: "● "; color: var(--ok); }
+  .arr.active .idx { color: var(--ink); }
+
+  .health { margin-top: 10px; display: grid; grid-template-columns: 1fr; gap: 18px; }
+  .health h4 { display: flex; justify-content: space-between; font: 400 17px var(--serif); padding-bottom: 6px; border-bottom: 1px solid var(--rule-strong); }
+  .health h4 span { font: 500 11px var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--ok); align-self: center; }
+  .health dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; padding-top: 8px; font-size: 13px; }
+  .health dt { color: var(--ink-3); }
+  .health dd { text-align: right; font-variant-numeric: tabular-nums; }
+  .tones { display: flex; gap: 8px; margin-top: 10px; }
+  .tones button { padding: 4px 12px; border: 1px solid var(--rule-strong); border-radius: 14px; font-size: 12px; }
+  .tones button.pulse { background: var(--ink); color: var(--sheet); }
+
+  .events { list-style: none; margin-top: 10px; font-size: 13px; }
+  .events li { display: grid; grid-template-columns: 70px 48px 1fr; padding: 6px 0; border-bottom: 1px solid var(--rule); }
+  .events .ev-t { font-family: var(--serif); font-style: italic; color: var(--ink-3); }
+  .events .ev-out .ev-a { color: var(--ink-3); }
+  .events .ev-empty { display: block; color: var(--ink-3); font: italic 300 14px var(--serif); }
+
+  .tabbar { position: sticky; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr); background: rgba(244, 241, 233, .94); backdrop-filter: blur(8px); border-top: 1px solid var(--rule); padding: 10px 0 24px; }
+  .tabbar button { font-size: 12px; color: var(--ink-3); }
+  .tabbar button.on { color: var(--ink); font-weight: 500; }
+
+  @container app (max-width: 700px) {
+    .top { padding: 54px 18px 14px; flex-wrap: wrap; gap: 10px 14px; }
+    .status { order: 3; width: 100%; margin-left: 0; gap: 14px; font-size: 12px; }
+    .top-actions { margin-left: auto; }
+    .rec span:not(.rt) { display: none; }
+    .rec { width: 34px; padding: 0; justify-content: center; }
+    .is-rec .rec { width: auto; padding: 0 12px; }
+    .np-title { font-size: 32px; }
+    .mat-area { padding: 14px 14px 4px; }
+    .side { padding: 0 18px 30px; }
+  }
+  @container app (min-width: 960px) {
+    .main { grid-template-columns: minmax(0, 1fr) 420px; min-height: calc(100vh - 71px); }
+    .mat-area { position: sticky; top: 0; height: calc(100vh - 71px); padding: 28px 48px 24px; border-right: 1px solid var(--rule); display: flex; flex-direction: column; justify-content: center; }
+    .mat { width: min(100%, 640px, calc(100vh - 250px)); }
+    .fig, .mock-banner { width: min(100%, 640px, calc(100vh - 250px)); margin-left: auto; margin-right: auto; }
+    .mock-banner { flex-direction: column; gap: 2px; }
+    body.view-phone .mat-area { position: static; height: auto; }
+    .side { padding: 14px 36px 100px; }
+    .tabbar { display: none; }
+    .health { grid-template-columns: 1fr 1fr; gap: 22px 28px; }
+    .st .st-v { display: inline; }
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+<div class="app">
+  <header class="top">
+    <div class="brand">SoundMat<em data-t="brandSub"></em></div>
+    <div class="status">
+      <div class="st"><i></i><span data-t="sound"></span></div>
+      <div class="st only-real"><i></i><span data-t="mat"></span><span class="st-v" data-v="matStatus"></span></div>
+      <div class="st virt only-mock"><i></i><span data-t="virtual"></span></div>
+      <div class="st"><i></i><span data-t="network"></span><span class="st-v" data-v="netStatus"></span></div>
+    </div>
+    <div class="top-actions">
+      <button class="rec" data-act="record"><i></i><span data-t="record"></span><span class="rt" data-live="recTime"></span></button>
+      <div class="lang"><button data-act="lang" data-lang-btn="zh">中</button><button data-act="lang" data-lang-btn="en">EN</button></div>
+    </div>
+  </header>
+
+  <div class="main">
+    <section class="mat-area">
+      <div class="mock-banner only-mock"><b data-t="virtualTitle"></b><span data-t="virtualHint"></span></div>
+      <div class="mat" data-mat></div>
+      <div class="fig only-real">
+        <span class="fig-cap" data-t="fig"></span>
+        <div class="legend">
+          <span style="--c:rgb(88,72,210)" data-t="roleSub"></span>
+          <span style="--c:rgb(32,188,148)" data-t="rolePluck"></span>
+          <span style="--c:rgb(48,152,255)" data-t="rolePad"></span>
+          <span style="--c:rgb(200,72,168)" data-t="roleRhodes"></span>
+          <span style="--c:rgb(255,108,32)" data-t="roleMarimba"></span>
+        </div>
+      </div>
+      <div class="fig only-mock">
+        <div class="tools">
+          <button class="btn" data-act="clear" data-t="clear"></button>
+          <label class="slider"><span data-t="controlPressure"></span><input type="range" min="0" max="100" value="0" data-ctrl><span class="num" data-live="ctrl"></span></label>
+        </div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <div class="block">
+        <div class="label"><span data-t="nowPlaying"></span><i data-t2="nowPlaying"></i></div>
+        <h1 class="np-title" data-t="arrLofi"></h1>
+        <div class="np-sub" data-t="arrLofiEn"></div>
+        <div class="np-meta"><span data-t="jam"></span><span>120 BPM</span><span data-t="key"></span></div>
+        <div class="figures">
+          <div><small data-t="chord"></small><span class="num" data-live="chord"></span></div>
+          <div><small data-t="bar"></small><span class="num" data-live="barN"></span></div>
+          <div><small data-t="lofi"></small><span class="num" data-live="lofi"></span></div>
+        </div>
+        <div class="form" data-form>
+          <span data-i="0">A</span><span data-i="1">B</span><span data-i="2">C</span><span data-i="3">C</span><span data-i="4">A</span><span data-i="5">D</span><span data-i="6">D</span><span data-i="7">A</span>
+        </div>
+        <div class="state" data-live="state"></div>
+        <label class="vol"><span data-t="volume"></span><input type="range" min="0" max="100" value="72"><span class="num">72</span></label>
+      </div>
+
+      <div class="block">
+        <div class="label"><span data-t="arrangements"></span><i data-t2="arrangements"></i></div>
+        <button class="arr" data-act="arr">
+          <span class="idx">01</span><span class="name"><span data-t="arrKyoto"></span><i data-t="arrKyotoEn"></i></span><span class="tag" data-t="ambient"></span>
+          <span class="desc" data-t="arrKyotoDesc"></span>
+        </button>
+        <button class="arr active" data-act="arr">
+          <span class="idx">02</span><span class="name"><span data-t="arrLofi"></span><i data-t="arrLofiEn"></i></span><span class="tag" data-t="jam"></span>
+          <span class="desc" data-t="arrLofiDesc"></span>
+        </button>
+      </div>
+
+      <div class="block only-mock">
+        <div class="label"><span data-t="events"></span><i data-t2="events"></i></div>
+        <ul class="events" data-live="events"></ul>
+      </div>
+
+      <div class="block">
+        <div class="label"><span data-t="health"></span><i data-t2="health"></i></div>
+        <div class="health">
+          <div>
+            <h4><span data-t="sound" style="all:unset"></span><span data-t="ok"></span></h4>
+            <dl>
+              <dt data-t="synth"></dt><dd data-v="synthV"></dd>
+              <dt data-t="output"></dt><dd data-v="outputV"></dd>
+              <dt data-t="buffer"></dt><dd data-v="bufferV"></dd>
+              <dt data-t="xruns"></dt><dd data-v="xrunsV"></dd>
+              <dt data-t="dsp"></dt><dd data-v="dspV"></dd>
+              <dt data-t="voices"></dt><dd data-live="voices"></dd>
+            </dl>
+            <div class="tones only-real"><button data-act="tone" data-t="left"></button><button data-act="tone" data-t="right"></button></div>
+          </div>
+          <div>
+            <h4><span data-t="mat" style="all:unset"></span><span data-t="ok"></span></h4>
+            <dl>
+              <dt data-t="input"></dt><dd data-v="inputV"></dd>
+              <dt data-t="controller"></dt><dd data-v="controllerV"></dd>
+              <dt data-t="fps"></dt><dd data-v="fpsV"></dd>
+              <dt data-t="checksum"></dt><dd data-v="checksumV"></dd>
+            </dl>
+          </div>
+          <div class="only-real">
+            <h4><span data-t="machine" style="all:unset"></span><span data-t="ok"></span></h4>
+            <dl>
+              <dt data-t="machine"></dt><dd data-v="machineV"></dd>
+              <dt data-t="temp"></dt><dd data-v="tempV"></dd>
+              <dt data-t="memory"></dt><dd data-v="memV"></dd>
+              <dt data-t="disk"></dt><dd data-v="diskV"></dd>
+              <dt data-t="uptime"></dt><dd data-v="uptimeV"></dd>
+            </dl>
+          </div>
+          <div>
+            <h4><span data-t="network" style="all:unset"></span><span data-t="ok"></span></h4>
+            <dl>
+              <dt data-t="network"></dt><dd data-v="netV"></dd>
+              <dt data-t="address"></dt><dd data-v="addrV"></dd>
+              <dt>Tailscale</dt><dd data-v="tsV"></dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <nav class="tabbar">
+    <button class="on" data-t="matTab"></button><button data-t="arrangements"></button><button data-t="record"></button><button data-t="settings"></button>
+  </nav>
+</div>
+</div>
+<script>
+  window.MAT_THEME = {
+    line: 'rgba(29,26,21,.17)', lineW: .22, hub: '#FBF9F4', hover: 'rgba(29,26,21,.07)',
+    scan: 'rgba(29,26,21,.45)', scanW: .3,
+    ledOff: [226, 221, 209], white: [38, 34, 28], whiteHalo: [120, 110, 90], ledR: 1.25, haloR: 3, haloA: .28, glowBlur: 1.5,
+    pebble: ['#8a857c', '#4a4640', '#2a2824'], stoneR: 3.05, occA: .13, shadowA: .2,
+    heat: [29, 26, 21], heatA: .42, markA: .3, countdown: [176, 68, 58], idleGain: 1.6,
+    labels: true, labelColor: '#9C9586', labelFont: 'Newsreader, serif',
+    base: (ro, rl) => `
+      <circle r="${rl + 5.5}" fill="none" stroke="rgba(29,26,21,.09)" stroke-width=".22"/>
+      <circle r="${rl - 4.5}" fill="none" stroke="rgba(29,26,21,.09)" stroke-width=".22"/>
+      <circle r="${ro + .8}" fill="#F7F4EC" stroke="rgba(29,26,21,.55)" stroke-width=".3"/>`,
+  };
+</script>
+<script src="common.js"></script>
+</body>
+</html>

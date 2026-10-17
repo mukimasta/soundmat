@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SoundMat 控制台 · C 柔光</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* 方向 C — 柔光：垫子像一件放在柔和光线里的实物，界面是浮在上面的磨砂卡片。灯环是全页唯一真正发光的东西。 */
+  :root {
+    --stage: #E4E5E9;
+    --bg-a: #F7F6F3;
+    --bg-b: #EEF0F4;
+    --card: rgba(255, 255, 255, .72);
+    --card-solid: #FFFFFF;
+    --ink: #1C1C1E;
+    --ink-2: #6E6E73;
+    --ink-3: #A1A1A6;
+    --line: rgba(60, 60, 67, .1);
+    --fill: rgba(118, 118, 128, .1);
+    --accent: #5856D6;
+    --ok: #34A853;
+    --rec: #FF3B30;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", sans-serif;
+    --shadow: 0 1px 2px rgba(20, 20, 40, .04), 0 10px 34px rgba(20, 20, 50, .07);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--stage); color: var(--ink); font: 400 14px/1.45 var(--sans); -webkit-font-smoothing: antialiased; letter-spacing: -.005em; }
+  .app { min-height: 100%;
+    background: radial-gradient(80% 60% at 18% 0%, rgba(88, 86, 214, .08), transparent 60%),
+                radial-gradient(70% 60% at 100% 100%, rgba(255, 160, 90, .08), transparent 60%),
+                linear-gradient(180deg, var(--bg-a), var(--bg-b)); }
+  body:not(.view-phone) .stage { background: var(--bg-a); }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  .tnum { font-variant-numeric: tabular-nums; }
+  .card { background: var(--card); backdrop-filter: blur(24px) saturate(1.4); -webkit-backdrop-filter: blur(24px) saturate(1.4); border-radius: 22px; box-shadow: var(--shadow); border: 1px solid rgba(255, 255, 255, .7); }
+  .eyebrow { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+
+  .top { display: flex; align-items: center; gap: 12px; padding: 18px 22px; }
+  .brand { font: 700 19px/1 var(--sans); letter-spacing: -.02em; }
+  .chips { display: flex; gap: 6px; margin: 0 auto; padding: 4px; border-radius: 999px; background: var(--card); box-shadow: var(--shadow); backdrop-filter: blur(20px); }
+  .chip { display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 13px; border-radius: 999px; font-size: 13px; font-weight: 500; white-space: nowrap; }
+  .chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgba(52, 168, 83, .16); }
+  .chip.virt { background: rgba(88, 86, 214, .12); color: var(--accent); }
+  .chip.virt i { background: var(--accent); box-shadow: 0 0 0 3px rgba(88, 86, 214, .18); }
+  .top-r { display: flex; align-items: center; gap: 8px; }
+  .rec { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px 0 13px; border-radius: 999px; background: var(--card-solid); box-shadow: var(--shadow); font-weight: 600; font-size: 14px; white-space: nowrap; }
+  .rec i { width: 12px; height: 12px; border-radius: 50%; background: var(--rec); }
+  .rec .rt { display: none; }
+  .is-rec .rec { background: var(--rec); color: #fff; }
+  .is-rec .rec i { background: #fff; border-radius: 3px; width: 10px; height: 10px; }
+  .is-rec .rec .rt { display: inline; }
+  .seg { display: flex; padding: 3px; border-radius: 999px; background: var(--fill); }
+  .seg button { height: 30px; min-width: 36px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+  .seg button.on { background: var(--card-solid); color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .1); }
+
+  .main { display: grid; grid-template-columns: 1fr; gap: 16px; padding: 4px 16px 100px; }
+  .hero { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+  .mock-pill { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 16px; border-radius: 999px; background: var(--card); box-shadow: var(--shadow); font-size: 13px; color: var(--ink-2); max-width: 100%; }
+  .mock-pill b { color: var(--accent); font-weight: 600; white-space: nowrap; }
+  .mock-pill .seg button { height: 28px; }
+  .mat { width: 100%; max-width: 640px; aspect-ratio: 1; }
+
+  .np { width: 100%; padding: 18px 20px; display: grid; grid-template-columns: 1fr auto; gap: 14px 18px; align-items: center; }
+  .np-title { font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
+  .np-sub { font-size: 13px; color: var(--ink-2); margin-top: 2px; }
+  .np-state { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 999px; background: var(--fill); font-size: 12px; font-weight: 600; color: var(--ink-2); }
+  .is-playing .np-state { background: rgba(88, 86, 214, .12); color: var(--accent); }
+  .np-state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .stats { grid-column: 1 / 3; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .stat { padding: 12px 14px; border-radius: 16px; background: rgba(255, 255, 255, .7); }
+  .stat small { display: block; font-size: 12px; color: var(--ink-2); font-weight: 500; }
+  .stat b { display: block; margin-top: 4px; font-size: 26px; font-weight: 600; letter-spacing: -.03em; }
+  .progress { grid-column: 1 / 3; }
+  .bar { position: relative; height: 6px; border-radius: 3px; background: var(--fill); overflow: hidden; }
+  .bar > i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: linear-gradient(90deg, #7C7AF0, var(--accent)); }
+  .form { display: grid; grid-template-columns: repeat(8, 1fr); margin-top: 8px; font-size: 11px; font-weight: 600; color: var(--ink-3); text-align: center; }
+  .form span.done { color: var(--ink-2); }
+  .form span.on { color: var(--accent); }
+  .sliders { grid-column: 1 / 3; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .sl { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); }
+  .sl b { color: var(--ink); font-weight: 600; min-width: 36px; text-align: right; }
+  .lofi-bar { height: 6px; border-radius: 3px; background: var(--fill); position: relative; overflow: hidden; }
+  .lofi-bar i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #FFB37A, #FF8A4C); border-radius: 3px; }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 24px; background: transparent; }
+  input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: var(--fill); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; margin-top: -8px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .22), 0 0 0 .5px rgba(0, 0, 0, .06); }
+
+  .side { display: flex; flex-direction: column; gap: 16px; }
+  .side .card { padding: 18px; }
+  .card-h { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .card-h h3 { font-size: 17px; font-weight: 700; letter-spacing: -.02em; }
+  .card-h .more { font-size: 13px; color: var(--accent); font-weight: 500; }
+
+  .arr { display: flex; gap: 14px; align-items: center; width: 100%; text-align: left; padding: 10px; margin: 0 -10px; border-radius: 16px; width: calc(100% + 20px); }
+  .arr + .arr { margin-top: 4px; }
+  .arr.active { background: rgba(255, 255, 255, .85); box-shadow: 0 1px 3px rgba(0, 0, 0, .06); }
+  .thumb { flex: none; width: 52px; height: 52px; border-radius: 14px; position: relative; overflow: hidden; }
+  .thumb::after { content: ""; position: absolute; inset: 9px; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, .7); box-shadow: inset 0 0 0 7px rgba(255, 255, 255, .12); }
+  .thumb.kyoto { background: linear-gradient(140deg, #9ED8C3, #4C8F87 70%, #2E5E62); }
+  .thumb.lofi { background: linear-gradient(140deg, #FFC59A, #B48AE8 60%, #5856D6); }
+  .arr-t { flex: 1; min-width: 0; }
+  .arr-t b { display: block; font-size: 15px; font-weight: 600; }
+  .arr-t span { display: block; font-size: 12.5px; color: var(--ink-2); margin-top: 1px; }
+  .arr-m { font-size: 11px; font-weight: 600; color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }
+  .arr.active .arr-m { color: var(--accent); }
+
+  .hl { display: grid; gap: 2px; }
+  .hl-row { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .hl-row:first-child { border-top: 0; padding-top: 2px; }
+  .hl-ic { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: rgba(52, 168, 83, .12); }
+  .hl-ic i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+  .hl-t b { display: block; font-size: 14px; font-weight: 600; }
+  .hl-t span { display: block; font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hl-v { font-size: 12px; color: var(--ink-2); text-align: right; }
+  details.more-h summary { list-style: none; cursor: pointer; font-size: 13px; color: var(--accent); font-weight: 500; margin-top: 8px; }
+  details.more-h summary::-webkit-details-marker { display: none; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin-top: 10px; font-size: 12.5px; }
+  .kv dt { color: var(--ink-2); }
+  .kv dd { text-align: right; font-variant-numeric: tabular-nums; }
+  .kv h5 { grid-column: 1 / 3; margin-top: 8px; font-size: 12px; color: var(--ink-3); font-weight: 600; }
+  .tones { display: flex; gap: 6px; margin-top: 10px; }
+  .tones button { height: 30px; padding: 0 14px; border-radius: 999px; background: var(--fill); font-size: 12px; font-weight: 600; }
+  .tones button.pulse { background: var(--accent); color: #fff; }
+
+  .events { list-style: none; font-size: 13px; }
+  .events li { display: grid; grid-template-columns: 64px 44px 1fr; padding: 7px 0; border-top: 1px solid var(--line); }
+  .events li:first-child { border-top: 0; }
+  .events .ev-t { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .events .ev-in .ev-a { color: var(--accent); font-weight: 600; }
+  .events .ev-out .ev-a { color: var(--ink-3); }
+  .events .ev-empty { display: block; color: var(--ink-3); }
+  .mock-tools { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+  .pill-btn { height: 32px; padding: 0 14px; border-radius: 999px; background: var(--fill); font-size: 13px; font-weight: 600; }
+
+  .tabbar { position: sticky; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr); margin: 0 12px; padding: 8px 8px 26px; }
+  .tabbar-in { grid-column: 1 / 5; display: grid; grid-template-columns: repeat(4, 1fr); padding: 6px; border-radius: 26px; background: rgba(255, 255, 255, .78); backdrop-filter: blur(24px); box-shadow: 0 8px 30px rgba(20, 20, 50, .12); }
+  .tabbar button { height: 42px; border-radius: 20px; font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+  .tabbar button.on { background: var(--ink); color: #fff; }
+
+  @container app (max-width: 700px) {
+    .top { padding: 56px 16px 10px; flex-wrap: wrap; }
+    .chips { order: 3; width: 100%; justify-content: space-between; }
+    .chip { flex: 1; justify-content: center; padding: 0 8px; }
+    .top-r { margin-left: auto; }
+    .rec span[data-t] { display: none; }
+    .rec { padding: 0 13px; }
+    .np { padding: 16px; }
+    .sliders { grid-template-columns: 1fr; gap: 10px; }
+    .stat b { font-size: 22px; }
+    .mock-pill { border-radius: 18px; flex-wrap: wrap; }
+    .main { padding-bottom: 10px; }
+  }
+  @container app (min-width: 1000px) {
+    .main { grid-template-columns: minmax(0, 1fr) 380px; gap: 28px; padding: 8px 28px 100px; align-items: start; }
+    .hero { position: sticky; top: 12px; }
+    .mat { width: min(100%, calc(100vh - 190px), 700px); }
+    .main { grid-template-columns: minmax(0, 1fr) 420px; }
+    .stats b { font-size: 24px; }
+    .sliders { grid-template-columns: 1fr; gap: 6px; }
+    .tabbar { display: none; }
+  }
+  body.view-phone .hero { position: static; }
+</style>
+</head>
+<body>
+<div class="stage">
+<div class="app">
+  <header class="top">
+    <div class="brand">SoundMat</div>
+    <div class="chips">
+      <div class="chip"><i></i><span data-t="sound"></span></div>
+      <div class="chip only-real"><i></i><span data-t="mat"></span></div>
+      <div class="chip virt only-mock"><i></i><span data-t="virtual"></span></div>
+      <div class="chip"><i></i><span data-t="network"></span></div>
+    </div>
+    <div class="top-r">
+      <div class="seg"><button data-act="lang" data-lang-btn="zh">中</button><button data-act="lang" data-lang-btn="en">EN</button></div>
+      <button class="rec" data-act="record"><i></i><span data-t="record"></span><span class="rt tnum" data-live="recTime"></span></button>
+    </div>
+  </header>
+
+  <div class="main">
+    <section class="hero">
+      <div class="mock-pill only-mock"><b data-t="virtualTitle"></b><span data-t="virtualHint"></span></div>
+      <div class="mat" data-mat></div>
+    </section>
+
+    <aside class="side">
+      <div class="card np">
+        <div>
+          <div class="np-title" data-t="arrLofi"></div>
+          <div class="np-sub"><span data-t="jam"></span> · 120 BPM · <span data-t="key"></span></div>
+        </div>
+        <span class="np-state" data-live="state"></span>
+        <div class="stats">
+          <div class="stat"><small data-t="chord"></small><b class="tnum" data-live="chord"></b></div>
+          <div class="stat"><small data-t="bar"></small><b class="tnum" data-live="barN"></b></div>
+          <div class="stat"><small data-t="lofi"></small><b class="tnum" data-live="lofi"></b></div>
+        </div>
+        <div class="progress">
+          <div class="bar"><i data-bar-fill="form"></i></div>
+          <div class="form" data-form><span data-i="0">A</span><span data-i="1">B</span><span data-i="2">C</span><span data-i="3">C</span><span data-i="4">A</span><span data-i="5">D</span><span data-i="6">D</span><span data-i="7">A</span></div>
+        </div>
+        <div class="sliders">
+          <label class="sl"><span data-t="volume"></span><input type="range" min="0" max="100" value="72"><b class="tnum">72</b></label>
+          <label class="sl only-mock"><span data-t="controlPressure"></span><input type="range" min="0" max="100" value="0" data-ctrl><b class="tnum" data-live="ctrl"></b></label>
+          <div class="sl only-real"><span data-t="lofi"></span><div class="lofi-bar"><i data-bar-fill="lofi"></i></div><b class="tnum" data-live="lofi"></b></div>
+        </div>
+      </div>
+      <section class="card">
+        <div class="card-h"><h3 data-t="arrangements"></h3></div>
+        <button class="arr" data-act="arr"><span class="thumb kyoto"></span><span class="arr-t"><b data-t="arrKyoto"></b><span data-t="arrKyotoDesc"></span></span><span class="arr-m" data-t="ambient"></span></button>
+        <button class="arr active" data-act="arr"><span class="thumb lofi"></span><span class="arr-t"><b data-t="arrLofi"></b><span data-t="arrLofiDesc"></span></span><span class="arr-m" data-t="jam"></span></button>
+      </section>
+
+      <section class="card only-mock">
+        <div class="card-h"><h3 data-t="events"></h3><span class="more" data-t="virtual"></span></div>
+        <ul class="events" data-live="events"></ul>
+        <div class="mock-tools"><button class="pill-btn" data-act="clear" data-t="clear"></button></div>
+      </section>
+
+      <section class="card">
+        <div class="card-h"><h3 data-t="health"></h3><span class="more" data-t="allOk"></span></div>
+        <div class="hl">
+          <div class="hl-row"><span class="hl-ic"><i></i></span><span class="hl-t"><b data-t="sound"></b><span data-v="outputV"></span></span><span class="hl-v"><span data-v="dspV"></span></span></div>
+          <div class="hl-row"><span class="hl-ic"><i></i></span><span class="hl-t"><b data-t="mat"></b><span data-v="inputV"></span></span><span class="hl-v" data-v="fpsV"></span></div>
+          <div class="hl-row only-real"><span class="hl-ic"><i></i></span><span class="hl-t"><b data-t="machine"></b><span data-v="machineV"></span></span><span class="hl-v" data-v="tempV"></span></div>
+          <div class="hl-row"><span class="hl-ic"><i></i></span><span class="hl-t"><b data-t="network"></b><span data-v="addrV"></span></span><span class="hl-v" data-v="netV"></span></div>
+        </div>
+        <details class="more-h">
+          <summary data-t="health"></summary>
+          <dl class="kv">
+            <h5 data-t="sound"></h5>
+            <dt data-t="synth"></dt><dd data-v="synthV"></dd>
+            <dt data-t="buffer"></dt><dd data-v="bufferV"></dd>
+            <dt data-t="xruns"></dt><dd data-v="xrunsV"></dd>
+            <dt data-t="voices"></dt><dd data-live="voices"></dd>
+            <h5 data-t="mat"></h5>
+            <dt data-t="controller"></dt><dd data-v="controllerV"></dd>
+            <dt data-t="checksum"></dt><dd data-v="checksumV"></dd>
+            <h5 class="only-real" data-t="machine"></h5>
+            <dt class="only-real" data-t="memory"></dt><dd class="only-real" data-v="memV"></dd>
+            <dt class="only-real" data-t="disk"></dt><dd class="only-real" data-v="diskV"></dd>
+            <dt class="only-real" data-t="uptime"></dt><dd class="only-real" data-v="uptimeV"></dd>
+            <h5>Tailscale</h5>
+            <dt>Tailscale</dt><dd data-v="tsV"></dd>
+          </dl>
+          <div class="tones only-real"><button data-act="tone" data-t="left"></button><button data-act="tone" data-t="right"></button></div>
+        </details>
+      </section>
+    </aside>
+  </div>
+
+  <nav class="tabbar"><div class="tabbar-in">
+    <button class="on" data-t="matTab"></button><button data-t="arrangements"></button><button data-t="record"></button><button data-t="settings"></button>
+  </div></nav>
+</div>
+</div>
+<script>
+  window.MAT_THEME = {
+    line: 'rgba(40,40,50,.075)', lineW: .3, hub: 'url(#hubG)', hover: 'rgba(88,86,214,.1)',
+    scan: 'rgba(60,60,90,.28)', scanW: .5,
+    ledOff: [64, 66, 74], white: [255, 248, 236], whiteHalo: [255, 230, 190], ledR: 1.35, haloR: 4.2, haloA: .95, glowBlur: 2.4,
+    pebble: ['#d6d3cc', '#9b978f', '#625e58'], stoneR: 3.4, occA: .1, shadowA: .3,
+    heatByRing: true, heatA: .5, markA: .5, countdown: [255, 59, 48], idleGain: 1.4,
+    defs: `
+      <radialGradient id="feltG" cx="45%" cy="38%" r="70%"><stop offset="0" stop-color="#F6F5F2"/><stop offset=".8" stop-color="#E9E7E2"/><stop offset="1" stop-color="#DEDBD5"/></radialGradient>
+      <radialGradient id="hubG" cx="45%" cy="40%" r="70%"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#F0EEEA"/></radialGradient>
+      <filter id="drop" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="5"/></filter>`,
+    base: (ro, rl) => `
+      <ellipse cx="0" cy="7" rx="${rl + 4}" ry="${rl + 2}" fill="rgba(30,30,60,.22)" filter="url(#drop)"/>
+      <circle r="${rl + 4.6}" fill="#34363D"/>
+      <circle r="${rl + 4.6}" fill="none" stroke="rgba(255,255,255,.12)" stroke-width=".4"/>
+      <circle r="${rl - 4.2}" fill="#2B2D33"/>
+      <circle r="${ro + 1.4}" fill="url(#feltG)"/>`,
+  };
+</script>
+<script src="common.js"></script>
+</body>
+</html>

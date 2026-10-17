@@ -12,27 +12,27 @@
 
 **密钥文件**是开发机上的 `deploy/secrets.env`，必须列入 `.gitignore`，永远不提交。仓库里的 `deploy/secrets.example.env` 列出需要填写的项：
 
-1. 手机热点的名称和密码。
-2. 自建热点的名称和密码。
-3. UW MPSK 的名称和为这台设备登记得到的密码。
-4. Tailscale 的授权密钥。
+1. UW MPSK 为这台设备登记得到的密码。
+2. Tailscale 的授权密钥（可选；没有时用浏览器登录授权）。
+
+手机热点和自建热点的名称和密码是固定的，直接写在下面的「网络」一节，不放进密钥文件（见 `DECISION.md` 第 6 条）。
 
 ## 第一步：烧录系统
 
 用 Raspberry Pi Imager 烧录 Raspberry Pi OS Lite（64 位），并在烧录设置里预先填好：
 
-1. 主机名 `soundmat`，用户名 `soundmat`。
+1. 主机名 `soundmat-pi`，用户名 `soundmat`。
 2. 只允许 SSH 密钥登录，填入开发机的公钥。
 3. Wi-Fi 填手机热点，保证第一次开机就能连上网络。
 4. 时区设为 America/Los_Angeles，录制信息里的时间依赖它。
 
-插卡通电，等一两分钟，在开发机上确认能用 `ssh soundmat@soundmat.local` 登录。
+插卡通电，等一两分钟，在开发机上确认能用 `ssh soundmat@soundmat-pi.local` 登录。
 
 在 UW 使用 UW MPSK 前，需要用这台设备无线网卡的固定 MAC 地址登记（地址可以在 `/sys/class/net/wlan0/address` 查到）。部署脚本会让这个连接始终使用固定地址，不做随机化，否则登记会失效。
 
 ## 第二步：运行部署脚本
 
-在开发机上运行部署脚本，参数是树莓派的地址（`soundmat.local`，或它在 Tailscale 里的名字）。脚本通过 SSH 依次完成下面的工作。
+在开发机上运行部署脚本，参数是树莓派的地址（`soundmat-pi.local`，或它在 Tailscale 里的名字 `soundmat-pi`）。脚本通过 SSH 依次完成下面的工作。
 
 1. **系统软件包**：安装 SuperCollider 的合成器服务（scsynth）、JACK2、avahi、rsync 等。树莓派上不需要 sclang。
 2. **实时音频权限**：把 `soundmat` 用户加入 `audio` 组，并允许它以实时优先级运行音频服务。
@@ -40,8 +40,8 @@
 4. **Python 环境**：安装 uv，由它安装 Python 和依赖，不使用系统自带的 Python。
 5. **程序与数据**：用 rsync 把主机程序、编排、编译好的音色同步到树莓派；把开发机的 `SoundMat/sound/` 同步到树莓派的声音素材目录。
 6. **系统服务**：安装 `system/systemd/` 下的三个服务，依次是 JACK、scsynth、主机程序，后一个依赖前一个，任何一个异常退出都会自动重启，并设为开机启动。
-7. **网络**：按密钥文件建立 NetworkManager 连接：手机热点优先级最高，UW MPSK 次之；自建热点默认不自动连接，由一个开机后等待一段时间仍未联网就启用它的服务兜底。同时设置主机名并启用 avahi，使局域网内可以用 `soundmat.local` 访问。
-8. **Tailscale**：安装 Tailscale，用密钥文件里的授权密钥加入网络，设备名 `soundmat`。
+7. **网络**：按下面「网络」一节建立 NetworkManager 连接，安装 `system/network/` 下的网络选择与兜底定时任务。avahi 随系统启用，局域网内可以用 `soundmat-pi.local` 访问。
+8. **Tailscale**：从 Tailscale 官方 apt 源安装，用密钥文件里的授权密钥加入网络；没有授权密钥时由 `tailscale up` 打印登录链接，在浏览器里授权。设备名 `soundmat-pi`。
 9. **设置**：树莓派上还没有设置文件时，写入一份默认设置；已有时保持不动。
 10. **收尾**：重启有变化的服务，打印各服务状态和控制台地址。
 
@@ -50,12 +50,12 @@
 部署完成后逐项确认，全部通过才算这台主机可以交付：
 
 1. 三个系统服务都在运行。
-2. 在局域网里用 `http://soundmat.local:8000` 能打开控制台；在别处通过 Tailscale 也能打开。
+2. 在局域网里用 `http://soundmat-pi.local:8000` 能打开控制台；在别处通过 Tailscale 也能打开。
 3. 看板上声音、垫子、网络三项都正常；合成器服务实际使用的是 USB 声卡，采样率和声道数与设置一致；垫子一栏显示实测传感帧率。
 4. 逐声道测试音从对应的音箱发出。
 5. 在垫子上放一颗石头，听到声音、看到灯光反馈。
 6. 断电后重新上电，装置自己进入默认编排，看板恢复正常。
-7. 关掉手机热点后重启，等待超时后自建热点出现，手机连上它能打开控制台。
+7. 关掉手机热点后重启，等待超时后自建热点出现，手机连上它能打开控制台；再打开手机热点，一分钟左右树莓派切回手机热点。
 
 ## 日常更新
 
@@ -78,3 +78,29 @@
 采样率使用 48 kHz，与声音素材库一致，避免实时重采样。
 
 JACK 先使用在 Pi 3B 上验证过的设置：每块 2048 帧、两块缓冲。Pi 5 性能更强，应在看板上观察音频卡顿次数，逐步降到 1024 或 512 以减少延迟。scsynth 的内部块大小保持默认的 64：调大会让包络和鼓的起音变得阶梯化，省下的计算很少（见系列文档第 16 篇）。CPU 紧张时优先降低声部预算，最后才加大 JACK 缓冲。
+
+## 网络
+
+树莓派按优先级选择网络：先连手机热点，再按外部网络列表连接场地或开发用的 Wi-Fi，都没有时自建热点。插网线时有线网络始终可用。
+
+| 连接名 | SSID | 密码 | 自动连接 / 优先级 | 用途 |
+|---|---|---|---|---|
+| `phone-hotspot` | `soundmat` | `soundmat` | 是 / 100 | 手机热点，展出时的主网络 |
+| `uw-mpsk` | `UW MPSK` | 登记得到，放在密钥文件 | 是 / 50 | 外部网络：UW 实验室。固定使用网卡出厂 MAC（`cloned-mac-address=permanent`），避免登记失效 |
+| `netplan-wlan0-Avocado` | `Avocado` | 烧录时写入 | 是 / 40 | 外部网络：开发用的家庭 Wi-Fi，由 Raspberry Pi Imager 写入，netplan 管理 |
+| `netplan-eth0` | — | — | 是 | 有线网络 |
+| `soundmat-ap` | `SoundMat-AP` | `soundmat` | 否 | 自建热点，2.4 GHz 信道 6，树莓派地址 `10.42.0.1`，为连上的设备分配地址 |
+
+外部网络列表就是这些开启自动连接的 Wi-Fi 配置，增删一个外部网络只需要增删一个 NetworkManager 连接，并设好优先级。自建热点用 `SoundMat-AP`，不用只差大小写的 `SoundMat`，避免现场和手机热点 `soundmat` 混淆。
+
+**网络选择与兜底**由 `system/network/` 下的脚本 `soundmat-net-fallback` 和它的 systemd 定时任务完成：开机 60 秒后第一次运行，之后每 60 秒运行一次。每次运行：
+
+1. 自建热点开着时扫描 Wi-Fi，看到任一已知网络就关掉热点，连优先级最高的那个。
+2. 已连着 Wi-Fi 时，看到优先级更高的已知网络（例如手机热点刚打开）就切过去。NetworkManager 自己只在建立连接时比较优先级，已连上后不会主动切换。
+3. Wi-Fi 和有线都没有连接、也不在连接中时，开启自建热点。
+
+安装：脚本放到 `/usr/local/sbin/soundmat-net-fallback`，`.service` 和 `.timer` 放到 `/etc/systemd/system/`，启用 `soundmat-net-fallback.timer`。建立连接时可以先不填密码，再用 `nmcli con modify <连接名> wifi-sec.psk <密码>` 补上。自建热点需要 `wifi-sec.proto rsn`、`pairwise ccmp`、`group ccmp`、`pmf disable`，以适配树莓派的无线芯片。
+
+**实测耗时**（2026-10-17，Pi 5）：已连 Avocado 时打开手机热点，下一次运行即切换，连接用时约 4 秒。关掉手机热点后，NetworkManager 先重试约 80 秒（两次各 25 秒的关联超时），之后下一次运行开启自建热点，1 秒内就绪；按 60 秒间隔，从断网到热点出现最多约 2 分 20 秒。自建热点开着时可以正常扫描，已知网络回来后下一次运行即切回。开机时周围没有已知网络，NetworkManager 不会尝试连接，60 秒后热点出现。
+
+改网络配置可能让 SSH 断开。不插网线时，切换前先用 `sudo systemd-run --on-active=8m nmcli con modify ...` 预约一次回滚。

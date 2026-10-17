@@ -1,0 +1,8 @@
+[Unit]
+Description=SoundMat network selection and fallback (prefer higher-priority Wi-Fi, self-hosted AP when no network)
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/soundmat-net-fallback

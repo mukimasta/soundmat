@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SoundMat 控制台 · B 仪器</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* 方向 B — 仪器：像一台精密的硬件面板。浅灰机身、模块化分区、等宽数字，唯一的信号色是橙色。
+     垫面页看装置本身；看板页看机器是否健康。 */
+  :root {
+    --stage: #DCDCD7;
+    --body: #E9E9E5;
+    --panel: #F6F6F3;
+    --well: #EDEDE9;
+    --ink: #141414;
+    --ink-2: #5E5E5A;
+    --ink-3: #9A9A95;
+    --line: #D4D4CF;
+    --line-2: #BDBDB7;
+    --signal: #FF4F12;
+    --ok: #17A05A;
+    --warn: #E5A100;
+    --sans: "Inter Tight", -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", "PingFang SC", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--stage); color: var(--ink); font: 400 14px/1.45 var(--sans); -webkit-font-smoothing: antialiased; }
+  body:not(.view-phone) .stage { background: var(--body); }
+  .app { background: var(--body); min-height: 100%; display: flex; flex-direction: column; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .cap { font: 500 10.5px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); }
+  .cap b { color: var(--ink-3); font-weight: 400; margin-right: 8px; }
+  .lang-en .cap { letter-spacing: .1em; }
+
+  /* 页面切换 */
+  [data-sec] { display: none; }
+  body[data-page="mat"] [data-sec="mat"], body[data-page="dash"] [data-sec="dash"] { display: grid; }
+
+  /* 顶栏 */
+  .top { display: flex; align-items: center; gap: 14px; padding: 14px 16px; }
+  .brand { display: flex; align-items: center; gap: 10px; font: 600 17px/1 var(--sans); letter-spacing: -.01em; }
+  .brand .logo { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--ink); position: relative; flex: none; }
+  .brand .logo::after { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: var(--signal); }
+  .nav { display: flex; height: 32px; padding: 2px; margin-left: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 9px; }
+  .nav button { padding: 0 14px; border-radius: 7px; font: 500 13px var(--sans); color: var(--ink-2); }
+  .nav button.on { background: var(--ink); color: #fff; }
+  .nav button.soon { color: var(--ink-3); cursor: default; }
+  .status { display: flex; gap: 6px; margin-left: auto; }
+  .st { display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; font: 500 12px var(--sans); white-space: nowrap; cursor: pointer; }
+  .st i { width: 6px; height: 6px; border-radius: 1px; background: var(--ok); box-shadow: 0 0 0 2px rgba(23,160,90,.15); }
+  .st.virt { background: var(--signal); border-color: var(--signal); color: #fff; }
+  .st.virt i { background: #fff; box-shadow: none; }
+  .top-r { display: flex; gap: 6px; }
+  .rec { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border-radius: 8px; background: var(--ink); color: #fff; font: 500 12px var(--sans); white-space: nowrap; }
+  .rec i { width: 8px; height: 8px; border-radius: 50%; background: var(--signal); }
+  .rec .rt { display: none; font-family: var(--mono); }
+  .is-rec .rec { background: var(--signal); }
+  .is-rec .rec i { background: #fff; animation: blink 1s infinite; }
+  .is-rec .rec .rt { display: inline; }
+  @keyframes blink { 50% { opacity: .3; } }
+  .lang { display: flex; height: 30px; padding: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; font: 500 11px var(--mono); }
+  .lang button { padding: 0 8px; border-radius: 6px; color: var(--ink-3); }
+  .lang button.on { background: var(--ink); color: #fff; }
+
+  .mod { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; position: relative; min-width: 0; }
+  .mod-h { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .tag { font: 500 10px var(--mono); letter-spacing: .08em; color: var(--ok); text-transform: uppercase; }
+  .k-btn { height: 30px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: 7px; background: var(--body); font: 500 12px var(--sans); box-shadow: inset 0 -2px 0 rgba(0,0,0,.06); }
+  .k-btn:active { transform: translateY(1px); }
+  .k-btn.pulse { background: var(--signal); color: #fff; border-color: var(--signal); }
+  input[type=range] { -webkit-appearance: none; appearance: none; flex: 1; min-width: 0; height: 22px; background: transparent; }
+  input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: repeating-linear-gradient(90deg, var(--line-2) 0 1px, transparent 1px 8px), var(--line); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 22px; margin-top: -9px; border-radius: 3px; background: var(--ink); box-shadow: inset 0 0 0 4px var(--ink), inset 0 0 0 5px #555; }
+
+  /* ── 垫面页 ── */
+  .page-mat { gap: 8px; padding: 0 12px 100px; grid-template-columns: 1fr; align-items: start; }
+  .mat-mod { padding: 14px; }
+  .mat { width: 100%; aspect-ratio: 1; margin: 0 auto; }
+  .mat-foot { display: flex; align-items: center; gap: 14px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+  .mat-foot .hint { font-size: 12px; color: var(--ink-2); flex: 1 1 260px; }
+  .ctrl { display: flex; align-items: center; gap: 10px; flex: 1 1 260px; }
+  .scale { display: flex; gap: 14px; flex-wrap: wrap; font: 400 11px var(--mono); color: var(--ink-3); }
+  .scale span::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; vertical-align: -1px; background: var(--c); border-radius: 1px; }
+  .side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .np-name { font: 600 22px/1.15 var(--sans); letter-spacing: -.01em; }
+  .np-sub { margin-top: 3px; font: 400 12px var(--mono); color: var(--ink-3); }
+  .readout { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 14px; }
+  .readout > div { background: var(--well); border-radius: 7px; padding: 10px; }
+  .readout .v { display: block; margin-top: 8px; font: 500 26px/1 var(--mono); letter-spacing: -.02em; }
+  .is-playing .readout .v.hot { color: var(--signal); }
+  .seq { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; margin-top: 12px; }
+  .seq span { height: 34px; display: grid; place-items: center; border-radius: 5px; background: var(--well); font: 500 12px var(--mono); color: var(--ink-3); }
+  .seq span.done { background: #DCDCD7; color: var(--ink-2); }
+  .seq span.on { background: var(--signal); color: #fff; }
+  .row { display: flex; align-items: center; gap: 12px; margin-top: 14px; font-size: 12px; color: var(--ink-2); }
+  .row > .cap:first-child { min-width: 52px; }
+  .row .mono { color: var(--ink); min-width: 34px; text-align: right; }
+  .ticks { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; flex: 1; height: 14px; }
+  .ticks i { background: var(--line); border-radius: 1px; }
+  .ticks i.on { background: var(--ink); }
+  .ticks i.on:nth-child(n+18) { background: var(--signal); }
+  .state-line { display: flex; justify-content: space-between; margin-top: 12px; font: 400 12px var(--mono); color: var(--ink-2); }
+  .arr { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 12px; align-items: center; width: 100%; text-align: left; padding: 11px; border-radius: 8px; border: 1px solid var(--line); background: var(--well); }
+  .arr + .arr { margin-top: 6px; }
+  .arr .no { font: 500 11px var(--mono); color: var(--ink-3); grid-row: span 2; align-self: start; padding-top: 3px; }
+  .arr .nm { font: 600 15px var(--sans); }
+  .arr .nm i { font: 400 11px var(--mono); color: var(--ink-3); margin-left: 6px; font-style: normal; }
+  .arr .md { font: 500 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; padding: 3px 6px; border-radius: 4px; border: 1px solid var(--line-2); color: var(--ink-2); }
+  .arr .ds { grid-column: 2 / 4; font-size: 12px; color: var(--ink-2); }
+  .arr.active { background: var(--panel); border-color: var(--ink); box-shadow: inset 3px 0 0 var(--signal); }
+  .arr.active .md { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .events { list-style: none; font: 400 12px var(--mono); }
+  .events li { display: grid; grid-template-columns: 72px 44px 1fr; padding: 6px 0; border-top: 1px solid var(--line); }
+  .events li:first-child { border-top: 0; }
+  .events .ev-in .ev-a { color: var(--signal); }
+  .events .ev-out .ev-a { color: var(--ink-3); }
+  .events .ev-empty { display: block; color: var(--ink-3); font-family: var(--sans); }
+
+  /* ── 看板页 ── */
+  .page-dash { gap: 8px; padding: 0 12px 100px; grid-template-columns: repeat(12, 1fr); align-items: stretch; }
+  .page-dash > .mod { grid-column: span 12; }
+  .big-st { display: flex; flex-direction: column; gap: 10px; min-height: 128px; }
+  .big-st .state { display: flex; align-items: center; gap: 10px; font: 600 26px/1 var(--sans); letter-spacing: -.02em; }
+  .big-st .state i { width: 12px; height: 12px; border-radius: 3px; background: var(--ok); box-shadow: 0 0 0 4px rgba(23,160,90,.14); }
+  .big-st .state.virt i { background: var(--signal); box-shadow: 0 0 0 4px rgba(255,79,18,.16); }
+  .big-st .line { margin-top: auto; font: 400 12px var(--mono); color: var(--ink-2); }
+  .big-st .now-name { font: 600 19px/1.2 var(--sans); }
+  .big-st .now-rec { display: flex; align-items: center; gap: 8px; font: 500 12px var(--mono); color: var(--ink-2); }
+  .big-st .now-rec i { width: 8px; height: 8px; border-radius: 50%; background: var(--line-2); }
+  .is-rec .big-st .now-rec i { background: var(--signal); animation: blink 1s infinite; }
+
+  .audio { display: grid; grid-template-columns: auto 1fr 1.25fr; gap: 14px; }
+  .well { background: var(--well); border-radius: 8px; padding: 12px; min-width: 0; }
+  .meters { display: flex; gap: 14px; align-items: stretch; padding: 12px 14px; }
+  .meter { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .meter .bars { display: flex; flex-direction: column-reverse; gap: 2px; width: 22px; height: 170px; }
+  .meter .bars i { flex: 1; border-radius: 1px; background: #DCDCD7; }
+  .meter .bars i.on { background: var(--ink); }
+  .meter .bars i.on.hot { background: var(--signal); }
+  .meter .bars i.pk { background: var(--ink-2); }
+  .meter .db { font: 500 10.5px var(--mono); color: var(--ink-2); }
+  .meter-scale { display: flex; flex-direction: column; justify-content: space-between; height: 170px; font: 400 9.5px var(--mono); color: var(--ink-3); text-align: right; }
+  .gauge-box { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+  .gauge { width: 100%; max-width: 190px; }
+  .gauge-v { font: 500 30px/1 var(--mono); margin-top: -46px; }
+  .gauge-l { font: 400 11px var(--mono); color: var(--ink-3); }
+  .spark { width: 100%; height: 34px; margin-top: 10px; }
+  .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .fact { background: var(--well); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+  .fact .v { display: flex; align-items: baseline; gap: 6px; margin-top: 7px; font: 500 22px/1 var(--mono); letter-spacing: -.02em; }
+  .fact .v small { font-size: 12px; color: var(--ink-3); letter-spacing: 0; }
+  .fact .ok { font: 500 10px var(--mono); color: var(--ok); letter-spacing: .06em; margin-left: auto; align-self: center; }
+  .fact .ok::before { content: "✓ "; }
+  .budget-bar { height: 6px; border-radius: 3px; background: #DCDCD7; margin-top: 8px; overflow: hidden; }
+  .budget-bar i { display: block; height: 100%; background: var(--ink); border-radius: 3px; transition: width .3s; }
+  .audio-foot { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .audio-foot .cap { margin-right: auto; }
+
+  .bignum { display: flex; align-items: baseline; gap: 8px; font: 500 44px/1 var(--mono); letter-spacing: -.03em; }
+  .bignum small { font-size: 14px; color: var(--ink-3); letter-spacing: 0; }
+  .mini-kv { display: grid; grid-template-columns: 1fr auto; gap: 7px 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 12px; }
+  .mini-kv dt { color: var(--ink-2); }
+  .mini-kv dd { font: 400 11.5px var(--mono); text-align: right; }
+  .note { font-size: 12px; color: var(--ink-2); margin-top: 10px; }
+
+  .temp-row { display: grid; grid-template-columns: 130px 1fr; gap: 14px; align-items: center; }
+  .hbar { margin-top: 10px; }
+  .hbar .lbl { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-2); }
+  .hbar .lbl .mono { color: var(--ink); font-size: 11.5px; }
+  .hbar .track { height: 8px; margin-top: 5px; border-radius: 2px; background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 2px), var(--panel) calc(10% - 2px) 10%), #DCDCD7; overflow: hidden; }
+  .hbar .track i { display: block; height: 100%; background: var(--ink); }
+  .signal { display: flex; align-items: flex-end; gap: 3px; height: 26px; }
+  .signal i { width: 6px; background: var(--ink); border-radius: 1px; }
+  .signal i.off { background: #DCDCD7; }
+  .net-name { font: 600 19px/1.2 var(--sans); }
+
+  .log { list-style: none; }
+  .log li { display: grid; grid-template-columns: 52px 12px 1fr; gap: 8px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--line); font-size: 12.5px; }
+  .log li:first-child { border-top: 0; padding-top: 0; }
+  .log .t { font: 400 11px var(--mono); color: var(--ink-3); }
+  .log .lv { width: 8px; height: 8px; border-radius: 2px; align-self: center; }
+  .log .lv.warn { background: var(--warn); }
+  .log .lv.info { background: var(--line-2); }
+  .log .empty { display: block; color: var(--ink-3); }
+
+  .tabbar { position: sticky; bottom: 0; margin-top: auto; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 8px 10px 26px; background: rgba(233,233,229,.92); backdrop-filter: blur(10px); border-top: 1px solid var(--line); }
+  .tabbar button { height: 38px; border-radius: 8px; font: 500 12px var(--sans); color: var(--ink-2); }
+  .tabbar button.on { background: var(--ink); color: #fff; }
+
+  @container app (max-width: 760px) {
+    .top { padding: 54px 14px 12px; flex-wrap: wrap; gap: 8px; }
+    .nav { display: none; }
+    .status { order: 3; width: 100%; margin-left: 0; }
+    .st { flex: 1; justify-content: center; padding: 0 6px; }
+    .top-r { margin-left: auto; }
+    .rec span[data-t] { display: none; }
+    .page-mat, .page-dash { padding-bottom: 20px; }
+    .page-dash > .t-st { grid-column: span 6; }
+    .big-st { min-height: 112px; padding: 12px; }
+    .big-st .state { font-size: 20px; }
+    .audio { grid-template-columns: auto 1fr; }
+    .facts { grid-column: 1 / -1; }
+    .temp-row { grid-template-columns: 110px 1fr; }
+  }
+  @container app (min-width: 761px) {
+    .tabbar { display: none; }
+    .page-dash > .t-st { grid-column: span 3; }
+    .page-dash > .t-audio { grid-column: span 8; }
+    .page-dash > .t-mat { grid-column: span 4; }
+    .page-dash > .t-mach, .page-dash > .t-net, .page-dash > .t-log { grid-column: span 4; }
+    .mode-mock .page-dash > .t-net, .mode-mock .page-dash > .t-log { grid-column: span 6; }
+  }
+  @container app (min-width: 1000px) {
+    .page-mat { grid-template-columns: minmax(0, 1fr) 400px; }
+    .mat-mod { position: sticky; top: 12px; }
+    .mat { width: min(100%, calc(100vh - 190px)); }
+  }
+  body.view-phone .mat-mod { position: static; }
+</style>
+</head>
+<body>
+<div class="stage">
+<div class="app">
+  <header class="top">
+    <div class="brand"><span class="logo"></span>SoundMat</div>
+    <nav class="nav">
+      <button data-act="nav" data-page="mat" data-t="matTab"></button>
+      <button data-act="nav" data-page="dash" data-t="dashboard"></button>
+      <button class="soon" data-t="record"></button>
+      <button class="soon" data-t="settings"></button>
+    </nav>
+    <div class="status">
+      <div class="st" data-act="nav" data-page="dash"><i></i><span data-t="sound"></span></div>
+      <div class="st only-real" data-act="nav" data-page="dash"><i></i><span data-t="mat"></span></div>
+      <div class="st virt only-mock" data-act="nav" data-page="dash"><i></i><span data-t="virtual"></span></div>
+      <div class="st" data-act="nav" data-page="dash"><i></i><span data-t="network"></span></div>
+    </div>
+    <div class="top-r">
+      <button class="rec" data-act="record"><i></i><span data-t="record"></span><span class="rt" data-live="recTime"></span></button>
+      <div class="lang"><button data-act="lang" data-lang-btn="zh">中</button><button data-act="lang" data-lang-btn="en">EN</button></div>
+    </div>
+  </header>
+
+  <!-- ═══ 垫面 ═══ -->
+  <main class="page-mat" data-sec="mat">
+    <section class="mod mat-mod">
+      <div class="mod-h">
+        <span class="cap only-real"><b>00</b><span data-t="liveMat"></span></span>
+        <span class="cap only-mock"><b>00</b><span data-t="virtualTitle"></span></span>
+        <span class="cap mono only-real" data-v="fpsV"></span>
+        <span class="cap mono only-mock">localhost:8000</span>
+      </div>
+      <div class="mat" data-mat></div>
+      <div class="mat-foot only-real">
+        <div class="scale">
+          <span style="--c:rgb(88,72,210)">R2</span><span style="--c:rgb(32,188,148)">R3</span><span style="--c:rgb(48,152,255)">R4</span>
+          <span style="--c:rgb(200,72,168)">R5</span><span style="--c:rgb(218,158,48)">R6</span><span style="--c:rgb(255,108,32)">R7</span>
+        </div>
+      </div>
+      <div class="mat-foot only-mock">
+        <span class="hint" data-t="virtualHint"></span>
+        <button class="k-btn" data-act="clear" data-t="clear"></button>
+        <label class="ctrl"><span class="cap" data-t="controlPressure"></span><input type="range" min="0" max="100" value="0" data-ctrl><span class="mono" data-live="ctrl"></span></label>
+      </div>
+    </section>
+
+    <div class="side">
+      <section class="mod">
+        <div class="mod-h"><span class="cap"><b>01</b><span data-t="nowPlaying"></span></span><span class="tag" data-live="state"></span></div>
+        <div class="np-name" data-t="arrLofi"></div>
+        <div class="np-sub"><span data-t="jam"></span> · 120 BPM · <span data-t="key"></span></div>
+        <div class="readout">
+          <div><span class="cap" data-t="chord"></span><span class="v hot" data-live="chord"></span></div>
+          <div><span class="cap" data-t="bar"></span><span class="v" data-live="barN"></span></div>
+          <div><span class="cap" data-t="section"></span><span class="v" data-live="section"></span></div>
+        </div>
+        <div class="seq" data-form>
+          <span data-i="0">A</span><span data-i="1">B</span><span data-i="2">C</span><span data-i="3">C</span><span data-i="4">A</span><span data-i="5">D</span><span data-i="6">D</span><span data-i="7">A</span>
+        </div>
+        <div class="row"><span class="cap" data-t="lofi"></span><div class="ticks" data-ticks="lofi"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><span class="mono" data-live="lofi"></span></div>
+        <div class="row"><span class="cap" data-t="volume"></span><input type="range" min="0" max="100" value="72"><span class="mono">72</span></div>
+        <div class="state-line"><span><span data-t="elapsed"></span> <span data-live="elapsed"></span></span><span><span data-t="voices"></span> <span data-live="voices"></span></span></div>
+      </section>
+
+      <section class="mod">
+        <div class="mod-h"><span class="cap"><b>02</b><span data-t="arrangements"></span></span></div>
+        <button class="arr" data-act="arr"><span class="no">01</span><span class="nm"><span data-t="arrKyoto"></span><i data-t="arrKyotoEn"></i></span><span class="md" data-t="ambient"></span><span class="ds" data-t="arrKyotoDesc"></span></button>
+        <button class="arr active" data-act="arr"><span class="no">02</span><span class="nm"><span data-t="arrLofi"></span><i data-t="arrLofiEn"></i></span><span class="md" data-t="jam"></span><span class="ds" data-t="arrLofiDesc"></span></button>
+      </section>
+
+      <section class="mod only-mock">
+        <div class="mod-h"><span class="cap"><b>03</b><span data-t="events"></span></span></div>
+        <ul class="events" data-live="events"></ul>
+      </section>
+    </div>
+  </main>
+
+  <!-- ═══ 看板 ═══ -->
+  <main class="page-dash" data-sec="dash">
+    <section class="mod big-st t-st">
+      <span class="cap" data-t="sound"></span>
+      <div class="state"><i></i><span data-t="ok"></span></div>
+      <div class="line" data-v="soundLine"></div>
+    </section>
+    <section class="mod big-st t-st">
+      <span class="cap" data-t="mat"></span>
+      <div class="state only-real"><i></i><span data-t="ok"></span></div>
+      <div class="state virt only-mock"><i></i><span data-t="virtual"></span></div>
+      <div class="line" data-v="matLine"></div>
+    </section>
+    <section class="mod big-st t-st">
+      <span class="cap" data-t="network"></span>
+      <div class="state"><i></i><span data-t="ok"></span></div>
+      <div class="line" data-v="netLine"></div>
+    </section>
+    <section class="mod big-st t-st">
+      <span class="cap" data-t="now"></span>
+      <div class="now-name" data-t="arrLofi"></div>
+      <div class="now-rec"><i></i><span class="is-rec-hide" data-live="recLabel"></span></div>
+      <div class="line"><span data-t="jam"></span> · <span data-live="state"></span></div>
+    </section>
+
+    <section class="mod t-audio">
+      <div class="mod-h"><span class="cap"><b>01</b><span data-t="sound"></span></span><span class="tag" data-t="ok"></span></div>
+      <div class="audio">
+        <div class="well meters">
+          <div class="meter-scale"><span>0</span><span>-12</span><span>-24</span><span>-36</span><span>-48</span><span>-60</span></div>
+          <div class="meter"><div class="bars" data-meter="0"></div><span class="db" data-db="0">-∞</span><span class="cap" data-t="left"></span></div>
+          <div class="meter"><div class="bars" data-meter="1"></div><span class="db" data-db="1">-∞</span><span class="cap" data-t="right"></span></div>
+        </div>
+        <div class="well gauge-box">
+          <span class="cap" data-t="dsp"></span>
+          <svg class="gauge" viewBox="0 0 120 74" data-gauge="dsp"></svg>
+          <span class="gauge-v" data-num="dsp">—</span>
+          <svg class="spark" viewBox="0 0 120 34" preserveAspectRatio="none" data-spark="dsp"></svg>
+          <span class="gauge-l" data-t="lastMinute"></span>
+        </div>
+        <div class="facts">
+          <div class="fact"><span class="cap" data-t="xruns"></span><div class="v" data-v="xrunsV"></div></div>
+          <div class="fact"><span class="cap" data-t="voices"></span><div class="v"><span data-live="voices"></span><small>/ 48</small></div><div class="budget-bar"><i data-budget></i></div></div>
+          <div class="fact"><span class="cap" data-t="sampleRate"></span><div class="v">48<small>kHz</small><span class="ok" data-t="expected"></span></div></div>
+          <div class="fact"><span class="cap" data-t="channels"></span><div class="v">2<small>ch</small><span class="ok" data-t="expected"></span></div></div>
+          <div class="fact"><span class="cap" data-t="buffer"></span><div class="v" style="font-size:15px" data-v="bufferV"></div></div>
+          <div class="fact"><span class="cap" data-t="assets"></span><div class="v"><span data-v="assetsV"></span><span class="ok" data-t="loadedAll"></span></div></div>
+        </div>
+        <div class="audio-foot">
+          <span class="cap"><span data-t="output"></span> · <span data-v="deviceV"></span></span>
+          <span class="cap only-real" data-t="testTone"></span>
+          <button class="k-btn only-real" data-act="tone" data-t="left"></button>
+          <button class="k-btn only-real" data-act="tone" data-t="right"></button>
+        </div>
+      </div>
+    </section>
+
+    <section class="mod t-mat">
+      <div class="mod-h"><span class="cap"><b>02</b><span data-t="mat"></span></span><span class="tag" data-t="ok"></span></div>
+      <div class="only-real">
+        <span class="cap" data-t="fps"></span>
+        <div class="bignum" style="margin-top:10px"><span data-num="fps">62.4</span><small>fps</small></div>
+        <svg class="spark" viewBox="0 0 120 34" preserveAspectRatio="none" data-spark="fps"></svg>
+        <span class="gauge-l" data-t="fpsHistory"></span>
+      </div>
+      <div class="only-mock">
+        <div class="bignum" style="font-size:30px;color:var(--signal)" data-t="virtual"></div>
+        <p class="note" data-t="mockMatNote"></p>
+      </div>
+      <dl class="mini-kv">
+        <dt data-t="input"></dt><dd data-v="inputV"></dd>
+        <dt data-t="controller"></dt><dd data-v="controllerV"></dd>
+        <dt data-t="checksum"></dt><dd data-v="checksumV"></dd>
+      </dl>
+    </section>
+
+    <section class="mod t-mach only-real">
+      <div class="mod-h"><span class="cap"><b>03</b><span data-t="machine"></span></span><span class="tag" data-t="ok"></span></div>
+      <div class="temp-row">
+        <div>
+          <svg class="gauge" viewBox="0 0 120 74" data-gauge="temp"></svg>
+          <div class="gauge-v" style="text-align:center;font-size:24px;margin-top:-40px" data-num="temp">51°</div>
+        </div>
+        <div>
+          <div class="hbar"><div class="lbl"><span data-t="memory"></span><span class="mono" data-v="memV"></span></div><div class="track"><i style="width:8%"></i></div></div>
+          <div class="hbar"><div class="lbl"><span data-t="disk"></span><span class="mono" data-v="diskV"></span></div><div class="track"><i style="width:36%"></i></div></div>
+        </div>
+      </div>
+      <dl class="mini-kv">
+        <dt data-t="machine"></dt><dd data-v="machineV"></dd>
+        <dt data-t="throttle"></dt><dd data-t="none"></dd>
+        <dt data-t="uptime"></dt><dd data-v="uptimeV"></dd>
+      </dl>
+    </section>
+
+    <section class="mod t-net">
+      <div class="mod-h"><span class="cap"><b>04</b><span data-t="network"></span></span><span class="tag" data-t="ok"></span></div>
+      <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px">
+        <div class="net-name" data-v="netV"></div>
+        <div class="signal only-real"><i style="height:30%"></i><i style="height:55%"></i><i style="height:80%"></i><i class="off" style="height:100%"></i></div>
+      </div>
+      <dl class="mini-kv">
+        <dt data-t="address"></dt><dd data-v="addrV"></dd>
+        <dt>Tailscale</dt><dd data-v="tsV"></dd>
+      </dl>
+    </section>
+
+    <section class="mod t-log">
+      <div class="mod-h"><span class="cap"><b>05</b><span data-t="warnings"></span></span></div>
+      <ul class="log only-real">
+        <li><span class="t">14:02</span><span class="lv warn"></span><span data-t="w1"></span></li>
+        <li><span class="t">13:41</span><span class="lv warn"></span><span data-t="w2"></span></li>
+        <li><span class="t">10:50</span><span class="lv info"></span><span data-t="w3"></span></li>
+      </ul>
+      <ul class="log only-mock"><li><span class="empty" data-t="noWarnings"></span></li></ul>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <button data-act="nav" data-page="mat" data-t="matTab"></button>
+    <button data-act="nav" data-page="dash" data-t="dashboard"></button>
+    <button data-t="record"></button>
+    <button data-t="settings"></button>
+  </nav>
+</div>
+</div>
+<script>
+  window.MAT_THEME = {
+    line: 'rgba(20,20,20,.13)', lineW: .25, hub: '#F6F6F3', hover: 'rgba(255,79,18,.14)',
+    ledOff: [214, 214, 209], white: [20, 20, 20], ledR: 1.15, haloA: 0,
+    stone: 'dot', stoneR: 2.5, stoneFill: '#141414', occA: .16,
+    heat: [255, 79, 18], heatA: .7, markA: .55, countdown: [255, 79, 18], idleGain: 2.2,
+    base: (ro, rl) => {
+      let t = '';
+      for (let i = 0; i < 32; i++) {
+        const a = (i / 32 * 360 - 90) * Math.PI / 180, big = i % 8 === 0, r1 = rl + 3.6, r2 = r1 + (big ? 3 : 1.4);
+        t += `<line x1="${(r1 * Math.cos(a)).toFixed(2)}" y1="${(r1 * Math.sin(a)).toFixed(2)}" x2="${(r2 * Math.cos(a)).toFixed(2)}" y2="${(r2 * Math.sin(a)).toFixed(2)}" stroke="${big ? '#141414' : '#9A9A95'}" stroke-width="${big ? .4 : .25}"/>`;
+      }
+      const lab = (txt, x, y, anchor) => `<text x="${x}" y="${y}" font-size="2.7" fill="#9A9A95" text-anchor="${anchor}" dominant-baseline="middle" style="font-family:'JetBrains Mono',monospace">${txt}</text>`;
+      return `<circle r="${ro + .6}" fill="#EFEFEB" stroke="#141414" stroke-width=".35"/>${t}` +
+        lab('0°', 0, -(rl + 10), 'middle') + lab('90°', rl + 9, 0, 'start') + lab('180°', 0, rl + 10, 'middle') + lab('270°', -(rl + 9), 0, 'end');
+    },
+    hubDeco: () => `<circle r="1" fill="#141414"/><line x1="-4" y1="0" x2="4" y2="0" stroke="#141414" stroke-width=".25"/><line x1="0" y1="-4" x2="0" y2="4" stroke="#141414" stroke-width=".25"/>`,
+  };
+</script>
+<script src="common.js"></script>
+<script>
+  // 看板的模拟数据：电平表、运算负载、传感帧率、温度
+  (() => {
+    const { S, tr } = window.SM;
+    const SEG = 30;
+    document.querySelectorAll('[data-meter]').forEach(m => { m.innerHTML = '<i></i>'.repeat(SEG); });
+    const hist = { dsp: Array(60).fill(0).map(() => 20 + Math.random() * 6), fps: Array(60).fill(0).map(() => 62 + Math.random() - .5) };
+    const level = [-60, -60], peak = [-60, -60], peakT = [0, 0];
+
+    function arcPath(f) {
+      const a0 = Math.PI, a1 = Math.PI + Math.PI * Math.max(0, Math.min(1, f)), r = 50, cx = 60, cy = 62;
+      const p = a => `${(cx + r * Math.cos(a)).toFixed(2)} ${(cy + r * Math.sin(a)).toFixed(2)}`;
+      return `M${p(a0)} A${r} ${r} 0 ${f > 1 ? 1 : 0} 1 ${p(a1)}`;
+    }
+    function gauge(el, f, limit) {
+      let ticks = '';
+      for (let i = 0; i <= 20; i++) {
+        const a = Math.PI + Math.PI * i / 20, big = i % 5 === 0;
+        const r1 = 41, r2 = big ? 36 : 38.5;
+        ticks += `<line x1="${60 + r1 * Math.cos(a)}" y1="${62 + r1 * Math.sin(a)}" x2="${60 + r2 * Math.cos(a)}" y2="${62 + r2 * Math.sin(a)}" stroke="${big ? '#5E5E5A' : '#BDBDB7'}" stroke-width="${big ? 1 : .7}"/>`;
+      }
+      const lim = limit != null ? (() => { const a = Math.PI + Math.PI * limit; return `<line x1="${60 + 44 * Math.cos(a)}" y1="${62 + 44 * Math.sin(a)}" x2="${60 + 56 * Math.cos(a)}" y2="${62 + 56 * Math.sin(a)}" stroke="#FF4F12" stroke-width="1.6"/>`; })() : '';
+      el.innerHTML = `<path d="${arcPath(1)}" fill="none" stroke="#DCDCD7" stroke-width="8"/>
+        <path d="${arcPath(f)}" fill="none" stroke="${limit != null && f > limit ? '#FF4F12' : '#141414'}" stroke-width="8"/>${ticks}${lim}`;
+    }
+    function spark(el, arr, lo, hi) {
+      const pts = arr.map((v, i) => `${(i / (arr.length - 1) * 120).toFixed(1)},${(32 - (v - lo) / (hi - lo) * 30).toFixed(1)}`).join(' ');
+      el.innerHTML = `<polyline points="0,34 ${pts} 120,34" fill="rgba(20,20,20,.06)" stroke="none"/><polyline points="${pts}" fill="none" stroke="#141414" stroke-width="1.2" vector-effect="non-scaling-stroke"/>`;
+    }
+    const meters = [...document.querySelectorAll('[data-meter]')];
+    function meterFrame() {
+      const playing = document.body.classList.contains('is-playing');
+      const now = performance.now() / 1000;
+      for (let c = 0; c < 2; c++) {
+        const target = playing ? -16 + 7 * Math.sin(now * 2.3 + c) * Math.sin(now * .7) + (Math.random() - .5) * 8 : -54 + Math.random() * 4;
+        level[c] += (target - level[c]) * .35;
+        if (level[c] > peak[c] || now - peakT[c] > 1.4) { peak[c] = level[c]; peakT[c] = now; }
+        const on = Math.round((level[c] + 60) / 60 * SEG), pk = Math.round((peak[c] + 60) / 60 * SEG) - 1;
+        [...meters[c].children].forEach((seg, i) => {
+          seg.className = i < on ? (i >= SEG - 4 ? 'on hot' : 'on') : (i === pk && pk >= on ? 'pk' : '');
+        });
+        document.querySelector(`[data-db="${c}"]`).textContent = playing ? level[c].toFixed(0) : '-∞';
+      }
+      requestAnimationFrame(meterFrame);
+    }
+    function slowFrame() {
+      const mock = S.mode === 'mock';
+      const dsp = (mock ? 9 : 23) + (Math.random() - .5) * (mock ? 3 : 6);
+      hist.dsp.push(dsp); hist.dsp.shift();
+      hist.fps.push(62.4 + (Math.random() - .5) * 1.2); hist.fps.shift();
+      gauge(document.querySelector('[data-gauge="dsp"]'), dsp / 100, .85);
+      document.querySelector('[data-num="dsp"]').textContent = `${Math.round(dsp)}%`;
+      spark(document.querySelector('[data-spark="dsp"]'), hist.dsp, 0, 60);
+      spark(document.querySelector('[data-spark="fps"]'), hist.fps, 58, 66);
+      document.querySelector('[data-num="fps"]').textContent = hist.fps[59].toFixed(1);
+      const temp = 51 + (Math.random() - .5) * .6;
+      gauge(document.querySelector('[data-gauge="temp"]'), (temp - 20) / 70, (80 - 20) / 70);
+      document.querySelector('[data-num="temp"]').textContent = `${Math.round(temp)}°`;
+      const v = parseInt(document.querySelector('[data-live="voices"]').textContent || '0', 10);
+      document.querySelector('[data-budget]').style.width = `${Math.min(100, v / 48 * 100)}%`;
+      document.querySelectorAll('[data-live="recLabel"]').forEach(el => { el.textContent = document.body.classList.contains('is-rec') ? tr('recording') : tr('notRecording'); });
+    }
+    meterFrame();
+    slowFrame();
+    setInterval(slowFrame, 500);
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+#!/bin/bash
+# SoundMat 网络选择与兜底，由 soundmat-net-fallback.timer 定期运行。
+#
+# 已知网络 = NetworkManager 中开启自动连接的 Wi-Fi 客户端配置，按 autoconnect-priority 排序
+# （手机热点 100 > UW MPSK 50 > Avocado 40），不在这里写死。
+#
+# 1. 自建热点开着：扫描到任一已知网络，就关掉热点，连优先级最高的那个。
+# 2. 已连着 Wi-Fi：扫描到优先级更高的已知网络（例如手机热点刚打开），就切过去。
+#    NetworkManager 自己只在建立连接时比较优先级，已连上后不会主动切换。
+# 3. Wi-Fi 和有线都没有连接、也不在连接中：开启自建热点 soundmat-ap。
+set -u
+
+AP=soundmat-ap
+IFACE=wlan0
+
+active_wifi() {
+  nmcli -t -f NAME,TYPE,DEVICE con show --active |
+    awk -F: -v dev="$IFACE" '$2 == "802-11-wireless" && $3 == dev { print $1; exit }'
+}
+
+wired_up() {
+  nmcli -t -f TYPE con show --active | grep -qx 802-3-ethernet
+}
+
+# 输出 "优先级:名称:SSID"，每个已知网络一行
+known() {
+  nmcli -t -f NAME,TYPE,AUTOCONNECT,AUTOCONNECT-PRIORITY con show |
+    while IFS=: read -r name type auto prio; do
+      [ "$type" = 802-11-wireless ] && [ "$auto" = yes ] || continue
+      [ "$(nmcli -g 802-11-wireless.mode con show "$name")" = ap ] && continue
+      echo "$prio:$name:$(nmcli -g 802-11-wireless.ssid con show "$name")"
+    done
+}
+
+# 输出当前可见的、优先级最高的已知网络 "优先级:名称"
+best_visible() {
+  local visible
+  visible=$(nmcli -t -f SSID dev wifi list ifname "$IFACE" --rescan yes 2>/dev/null)
+  known | sort -t: -k1,1nr | while IFS=: read -r prio name ssid; do
+    if grep -qxF "$ssid" <<<"$visible"; then
+      echo "$prio:$name"
+      break
+    fi
+  done
+}
+
+prio_of() {
+  nmcli -g connection.autoconnect-priority con show "$1"
+}
+
+current=$(active_wifi)
+
+if [ "$current" = "$AP" ]; then
+  best=$(best_visible)
+  if [ -n "$best" ]; then
+    echo "发现已知网络 ${best#*:}，关闭自建热点"
+    nmcli con down "$AP"
+    nmcli con up "${best#*:}" || echo "连接失败，下一轮若仍无网络会重新开启自建热点"
+  else
+    echo "自建热点运行中，未发现已知网络"
+  fi
+  exit 0
+fi
+
+if [ -n "$current" ]; then
+  best=$(best_visible)
+  if [ -n "$best" ] && [ "${best%%:*}" -gt "$(prio_of "$current")" ]; then
+    echo "发现优先级更高的网络 ${best#*:}，从 $current 切换"
+    nmcli con up "${best#*:}" || echo "切换失败，NetworkManager 会自动连回可用网络"
+  fi
+  exit 0
+fi
+
+wired_up && exit 0
+
+state=$(nmcli -g GENERAL.STATE dev show "$IFACE")
+case "$state" in
+  [4-9]0\ *) echo "$IFACE 正在连接（$state），本轮跳过"; exit 0 ;;
+esac
+
+echo "没有可用网络，开启自建热点"
+nmcli con up "$AP"
