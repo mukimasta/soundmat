@@ -16,18 +16,24 @@ uv run pytest                   # 测试
 
 | 模块 | 位置 | 当前状态 |
 |---|---|---|
-| 运行管理 | `soundmat/supervisor/` | 建立各模块并连接；启动、停止虚拟垫子 |
+| 运行管理 | `soundmat/supervisor/` | 建立各模块并连接；启动与停止；切换编排（加载失败保持当前编排） |
 | 感知 · 垫面解读 | `soundmat/perception/interpret/` | 占用判定与去抖、每环数量、控制区压力、事件、可插拔特征 |
 | 感知 · 虚拟垫子 | `soundmat/perception/virtual/` | 已实现 |
 | 感知 · 区域几何 | `soundmat/perception/zones.py` | 224 区的几何描述 |
 | 感知 · 标准输出 | `soundmat/perception/model.py`、`perception/__init__.py` | 压力图、垫面状态、事件、快照；`Perception` 负责发布 |
-| 时钟 | `soundmat/clock/` | 系统时间 |
+| 时钟 | `soundmat/clock/` | 系统时间；`BeatClock` 固定节拍线程 |
+| 声音化 · 意图 | `soundmat/sonification/intent.py` | 持续声部、定时事件、全局参数、灯光层、模式状态 |
+| 声音化 · 模式框架 | `soundmat/sonification/mode.py`、`sonification/__init__.py` | 模式生命周期、编排头部、每拍调度、交叉淡化切换、出错时保持上一拍 |
+| 声音引擎 | `soundmat/sound/engine.py` | 对账、声部预算、定时与去重、混音结构与交叉淡化、重启后重建 |
+| 声音引擎 · 空间化 | `soundmat/sound/spatial.py` | 音箱布局预设与分配公式 |
+| 声音引擎 · 合成器接口 | `soundmat/sound/backend.py` | 抽象指令接口；`RecordingBackend` 只记录指令 |
+| 系统监测 · 日志 | `soundmat/monitor/log.py` | 最近的警告和错误 |
 | 状态中心 | `soundmat/store/` | 状态树、按路径修改、变化通知（尚无持久化） |
 | 控制接口 | `soundmat/control/` | FastAPI：WebSocket 推送、虚拟垫子命令、提供控制台 |
 | 配置 | `soundmat/config.py` + `config/soundmat.toml` | 已实现 |
 | 线程间容器 | `soundmat/exchange.py` | `Latest`、`EventQueue`、`EventHub` |
 
-垫面信号、设备连接、声音化、声音引擎、灯光引擎、录制、系统监测尚未实现。
+垫面信号、设备连接、具体模式（Ambient、Jam）、编排文件、素材库、scsynth 实现、灯光引擎、录制、系统监测的其余部分尚未实现。没有 scsynth 实现之前，主机程序总是使用 `RecordingBackend`，不发声。
 
 ## 线程与数据交换
 
@@ -36,7 +42,8 @@ uv run pytest                   # 测试
 当前的线程：
 
 1. **虚拟垫子**（`virtual-mat`）：每秒 60 次产生压力图，在本线程里调用 `Perception.feed` 完成垫面解读，发布快照和事件。以后真机上由设备连接的读取线程调用同一个入口。
-2. **主线程**：uvicorn 与控制接口。
+2. **声音化**（`sonification`）：`BeatClock` 每秒 60 拍（配置 `sound.tick_hz`）。每拍取走垫面事件、读取最新快照、调用所有模式实例（切换期间新旧两个），把声音意图交给声音引擎，再处理合成器服务的通知、释放淡出完毕的实例。声音引擎不是线程安全的，只在这个线程里调用；切换编排的请求从其他线程放进队列，在下一拍开始时执行。某一拍的计算超过节拍间隔时不补拍，直接跳到当前时刻，并计入 `BeatClock.overruns`。
+3. **主线程**：uvicorn 与控制接口。
 
 状态中心的订阅回调在修改者的线程里执行；控制接口在回调里只用 `loop.call_soon_threadsafe` 把变化交给事件循环，再由每个 WebSocket 连接自己的推送任务发出。
 
@@ -55,3 +62,13 @@ uv run pytest                   # 测试
 去抖按压力图到达的时刻计算：每个区记住"读数开始与当前状态不同"的时刻，持续达到 `occupy_hold`（放下）或 `release_hold`（拿起）才翻转状态并产生事件，事件时刻是确认的那一帧的时刻。中途读数回到原状态，计时清零。没有新压力图时状态不变，所以控制器断线不会让石头"被拿起"。当前初值是放下 40 ms、拿起 80 ms，尚未在真机上调过（见 `TODO.md`）。
 
 虚拟垫子同样经过去抖。它像控制器一样持续产生压力图，所以点击之后约 40 ms 才出现"放下"，与真机一致。虚拟石头的压力固定为 0.5（约等于读数 2048）。
+
+## 声音引擎的实现
+
+引擎通过 `sound/backend.py` 的 `Backend` 接口发出抽象指令：建立和释放一个模式实例的混音结构、设置它的交叉淡化增益和全局参数、开始/修改/淡出/强制释放一个声部、加载和释放素材、设置总输出。声部编号由引擎从 1000 开始分配，正好可以直接用作 scsynth 的节点号。每条指令都带执行时刻：意图里的时刻加上配置的输出延迟 `sound.output_latency`（30 ms）；定时事件晚于 `sound.late_tolerance`（50 ms）就丢弃。
+
+`RecordingBackend` 是不发声的实现：照单记录指令，并模拟合成器服务的通知——淡出的声部在淡出时长之后结束，单次声音在固定的 2 秒后结束，`simulate_restart()` 模拟合成器服务重启。测试用它检查对账和调度的结果。
+
+已发出的定时事件标识保留 30 秒用于去重。合成器服务重启后引擎调用 `rebuild`：清空声部表，重新设置总输出、建立各实例的混音结构、恢复全局参数，并调用 `on_rebuild` 回调（例如素材库重新加载素材）；下一拍的对账把所有持续声部重新开始。
+
+空间化公式见 `sound/spatial.py` 的说明：方向上在相邻两只音箱之间等功率分配，再按半径与均匀分布混合，最后归一到等功率。预设布局有立体声（左 330°、右 30°）、四声道（左前 315°、右前 45°、右后 135°、左后 225°）和八声道（0° 起每 45°）。

@@ -21,6 +21,11 @@
 | 路径 | 含义 |
 |---|---|
 | `status.current.virtual` | 是否使用虚拟垫子 |
+| `status.current.arrangement`、`status.current.mode` | 当前编排标识与模式名 |
+| `status.current.modeStatus` | 模式状态 `{text, reading, transport}` |
+| `status.current.switching` | 切换中为 `{to, progress}`，否则 `null` |
+| `status.audio.engine` | 声音引擎：在响声部数 `voices`、预算 `budget`、各类别在响数 `categories`、让位 `yields`、放弃 `rejected`、迟到 `late`、去重 `duplicates`、合成器服务重启 `restarts` |
+| `status.log` | 最近的警告和错误：`[{at, level, text, count?}]`，最新在前 |
 
 ## HTTP
 
