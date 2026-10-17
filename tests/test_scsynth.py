@@ -179,3 +179,33 @@ def test_live_scsynth_plays_jam(make_sup, tmp_path, monkeypatch):
         time.sleep(0.2)
     assert sup.backend.status()["state"] == "ready"
     assert lv and max(lv["output"]) > -60
+
+
+@pytest.mark.skipif(not _scsynth_running(), reason="本机没有运行 scsynth")
+def test_live_recording_slate_at_three_seconds(make_sup, tmp_path, monkeypatch):
+    """真实的 scsynth 录下总输出和分轨；没有石头时总输出里只有打板提示音，正好在 3 秒处。"""
+    import numpy as np
+    import soundfile
+
+    from soundmat.config import load_config
+
+    if not load_config().synth.synthdefs_path.is_dir():
+        pytest.skip("音色没有编译")
+    monkeypatch.setenv("SOUNDMAT_SOUND", str(tmp_path / "no-sound"))
+    sup = make_sup(synth="scsynth", monitor=False)
+    sup.start()
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and not (sup.backend.online and sup.backend.mixes):
+        time.sleep(0.1)
+    time.sleep(0.5)
+    sup.recorder.request_start()
+    time.sleep(4.5)
+    sup.recorder.request_stop()
+    time.sleep(1.0)
+    item = sup.store.get("catalog.recordings")[0]
+    folder = sup.recorder.folder_of(item["name"])
+    assert item["audio"] is True and (folder / "stems" / "fx.wav").exists()
+    x, sr = soundfile.read(folder / "master.wav")
+    env = np.abs(x).max(axis=1)
+    onset = np.argmax(env > 0.01) / sr
+    assert onset == pytest.approx(3.0, abs=0.03)

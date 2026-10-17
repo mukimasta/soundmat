@@ -43,6 +43,11 @@ class Backend(Protocol):
 
     def set_master(self, params: Mapping[str, float], at: float) -> None: ...
     def test_tone(self, channel: int, at: float) -> None: ...
+    def recordable_stems(self) -> list[str]: ...
+    def start_recording(self, files: Mapping[str, str], at: float) -> list[str]: ...
+    def stop_recording(self, at: float) -> None: ...
+    def recording_active(self) -> bool: ...
+    def slate(self, at: float) -> None: ...
 
     def poll(self, now: float) -> BackendEvents: ...
     def flush(self) -> None: ...
@@ -133,6 +138,22 @@ class RecordingBackend:
 
     def test_tone(self, channel, at):
         self._rec("test_tone", at, channel=channel)
+
+    def recordable_stems(self):
+        return []
+
+    def start_recording(self, files, at):
+        self._rec("start_recording", at, files=dict(files))
+        return []
+
+    def stop_recording(self, at):
+        self._rec("stop_recording", at)
+
+    def recording_active(self):
+        return False
+
+    def slate(self, at):
+        self._rec("slate", at)
 
     def flush(self):
         pass

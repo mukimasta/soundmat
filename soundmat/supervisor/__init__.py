@@ -18,6 +18,7 @@ from ..monitor import Monitor, Probes
 from ..monitor.log import EventLog
 from ..perception import Perception
 from ..perception.signal import Signal
+from ..recorder import Recorder
 from ..perception.virtual import VirtualMat
 from ..sonification import ModeFactory, ModeInstance, Sonification
 from ..sonification.ambient import AmbientMode
@@ -112,6 +113,19 @@ class Supervisor:
         self.store.subscribe(self._on_change)
         self.sonification.run_in_beat(self._apply_sound_settings)
 
+        self.recorder = Recorder(
+            self.store, self.events, self.backend, self.settings.get, self.sonification.run_in_beat,
+            cfg.light.led_count, self.lights.set_system_layer, self.perception.snapshot, self.perception.events,
+            self.lights.preview,
+            active_output=lambda: (self.sonification.active.last if self.sonification.active else None),
+            current_arrangement=self._current_arrangement,
+            channels=lambda: self.engine.layout.channels,
+            output_latency=cfg.sound.output_latency,
+            audio_backend=isinstance(self.backend, ScsynthBackend),
+            sample_rate=cfg.sound.expected_sample_rate,
+        )
+        self.sonification.after_beat.append(self.recorder.on_beat)
+
         self.monitor = Monitor(
             cfg, self.store, self.events, opts.data_dir,
             synth_status=self.backend.status if isinstance(self.backend, ScsynthBackend) else (lambda: None),
@@ -120,7 +134,7 @@ class Supervisor:
 
         self.control = ControlContext(
             config=cfg, store=self.store, mat=self.perception.snapshot, virtual=self.virtual,
-            play=self.play, settings=self.settings, test_tone=self.test_tone,
+            play=self.play, settings=self.settings, test_tone=self.test_tone, recorder=self.recorder,
             streams={"leds": self.lights.preview, "levels": self.levels},
         )
 
@@ -198,6 +212,12 @@ class Supervisor:
                   "problem": None, "source": "virtual"}
         self.store.update({"status.mat": st})
 
+    def _current_arrangement(self) -> dict:
+        a = self.sonification.active
+        if a is None:
+            return {}
+        return {"id": a.arrangement.id, "title": a.arrangement.title, "mode": a.arrangement.mode}
+
     def test_tone(self, channel: int) -> None:
         """在某个声道上放 1 秒测试音，确认每只音箱接对了位置。"""
         if not 0 <= channel < self.engine.layout.channels:
@@ -214,6 +234,8 @@ class Supervisor:
         paths = [p for p, _ in changes]
         if any(p.startswith("settings.sound") for p in paths):
             self.sonification.run_in_beat(self._apply_sound_settings)
+        if "settings.recording.path" in paths:
+            self.recorder.refresh_list()
         if "settings.run.soundLibrary" in paths:
             self.assets.set_root(Path(self.settings.get("run.soundLibrary")))
             self.refresh_catalog()

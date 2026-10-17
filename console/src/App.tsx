@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useClient } from './api/context';
 import { useConsole } from './api/context';
 import * as sel from './api/selectors';
 import { BottomNav } from './components/BottomNav';
@@ -7,18 +8,46 @@ import { ArrangementSheet } from './pages/ArrangementSheet';
 import { DashboardPage } from './pages/DashboardPage';
 import { MatPage } from './pages/MatPage';
 import { MenuSheet } from './pages/MenuSheet';
+import { RecordingsSheet } from './pages/RecordingsSheet';
 import { SettingsSheet } from './pages/SettingsSheet';
 
 type Page = 'mat' | 'dash';
-type SheetKind = 'none' | 'arr' | 'menu' | 'set';
+type SheetKind = 'none' | 'arr' | 'menu' | 'set' | 'recs';
 
 export function App() {
   const s = useConsole();
+  const client = useClient();
+  const [toast, setToast] = useState<string | null>(null);
   const [page, setPage] = useState<Page>('mat');
   const [sheet, setSheet] = useState<SheetKind>('none');
   const virtual = sel.isVirtual(s);
   const close = () => setSheet('none');
   const alert = s.connected ? sel.alertOf(sel.health(s)) : null;
+  const rec = s.connected ? sel.recording(s) : { state: 'idle' as const };
+  const counting = rec.state === 'countdown';
+  const flashing = rec.state === 'recording' && !!rec.flash;
+  const recording = rec.state === 'recording';
+  const startStop = async () => {
+    setToast(null);
+    try {
+      await client.post(recording ? '/api/recording/stop' : '/api/recording/start');
+    } catch (e) {
+      setToast(recording ? '无法停止录制' : `无法开始录制：${(e as Error).message}`);
+      setTimeout(() => setToast(null), 5000);
+    }
+  };
+  const record = {
+    label: counting ? `倒计时 ${rec.count ?? ''}` : flashing ? '打板' : recording ? sel.clockText(rec.elapsed ?? 0) : '录制',
+    aria: counting ? '正在倒计时' : recording ? '停止录制' : '开始录制',
+    disabled: !s.connected || counting,
+    onPress: () => void startStop(),
+    inner: (counting ? rec.count ?? 3 : recording ? 'stop' : 'idle') as 'idle' | 'stop' | number,
+  };
+  const segments = counting
+    ? [0, 1, 2].map((i) => ({ d: arcPath(i), color: i < (rec.count ?? 3) ? '#FFF6E6' : '#2E2C27' }))
+    : recording ? [0, 1, 2].map((i) => ({ d: arcPath(i), color: 'var(--red)' })) : [];
+  const overlay = counting ? <div className="count-overlay" aria-live="assertive">{rec.count}</div>
+    : flashing ? <div className="slate-overlay">打板</div> : null;
 
   return (
     <div className="app">
@@ -40,21 +69,35 @@ export function App() {
       )}
       {page === 'mat' ? (
         <>
-          <MatPage onOpenArrangements={() => setSheet('arr')} />
+          <MatPage onOpenArrangements={() => setSheet('arr')} overlay={overlay} />
+          {toast && <div className="toast" role="alert">{toast}</div>}
           <BottomNav
             onDash={() => setPage('dash')}
             onMenu={() => setSheet('menu')}
             dot={alert ? sel.LOOK[alert.level].sq : null}
             dashLabel={alert ? '看板，有 1 项需要处理' : '看板'}
-            record={{ label: '录制', aria: '录制（尚未实现）', disabled: true, onPress: () => {}, inner: 'idle' }}
+            record={record}
+            segments={segments}
           />
         </>
       ) : (
         <DashboardPage onBack={() => setPage('mat')} />
       )}
       {sheet === 'arr' && <ArrangementSheet onClose={close} />}
-      {sheet === 'menu' && <MenuSheet onClose={close} onOpen={(k) => k === 'set' && setSheet('set')} />}
+      {sheet === 'menu' && (
+        <MenuSheet onClose={close} onOpen={(k) => setSheet(k)}
+          recordingsText={sel.recordings(s).length ? `${sel.recordings(s).length} 段` : '还没有'} />
+      )}
+      {sheet === 'recs' && <RecordingsSheet onClose={close} onBack={() => setSheet('menu')} />}
       {sheet === 'set' && <SettingsSheet onClose={close} onBack={() => setSheet('menu')} />}
     </div>
   );
+}
+
+/** 录制按钮外圈的三段弧（倒计时每秒熄灭一段） */
+function arcPath(i: number): string {
+  const a0 = ((i * 120 + 6 - 90) * Math.PI) / 180;
+  const a1 = (((i + 1) * 120 - 6 - 90) * Math.PI) / 180;
+  const r = 45;
+  return `M${(r * Math.cos(a0)).toFixed(2)} ${(r * Math.sin(a0)).toFixed(2)} A${r} ${r} 0 0 1 ${(r * Math.cos(a1)).toFixed(2)} ${(r * Math.sin(a1)).toFixed(2)}`;
 }

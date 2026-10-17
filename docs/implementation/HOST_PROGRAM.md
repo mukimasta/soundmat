@@ -16,37 +16,36 @@ uv run pytest                   # 测试
 
 ## 模块与文件
 
-| 模块 | 位置 | 当前状态 |
+| 模块 | 位置 | 内容 |
 |---|---|---|
-| 运行管理 | `soundmat/supervisor/` | 建立各模块并连接；启动与停止；切换编排（加载失败保持当前编排） |
-| 感知 · 垫面解读 | `soundmat/perception/interpret/` | 占用判定与去抖、每环数量、控制区压力、事件、可插拔特征 |
-| 感知 · 虚拟垫子 | `soundmat/perception/virtual/` | 已实现 |
+| 运行管理 | `soundmat/supervisor/` | 建立各模块并连接；启动与停止；切换编排（加载失败保持当前编排）；应用设置 |
+| 设备连接 | `soundmat/device/` | 串口选择、S/L 帧、等待就绪、断线重连、实测帧率与校验错误 |
 | 感知 · 区域几何 | `soundmat/perception/zones.py` | 224 区的几何描述 |
 | 感知 · 垫面信号 | `soundmat/perception/signal/` | 校准与坐标对齐（第一版规则） |
-| 设备连接 | `soundmat/device/` | 串口选择、S/L 帧、等待就绪、断线重连、实测帧率与校验错误 |
-| 灯光引擎 | `soundmat/light/` | 60 Hz 分层合成、系统提示层、灯带偏移、控制台预览 |
+| 感知 · 垫面解读 | `soundmat/perception/interpret/` | 占用判定与去抖、每环数量、控制区压力、事件、可插拔特征 |
+| 感知 · 虚拟垫子 | `soundmat/perception/virtual/` | 点按放下 / 拿起，60 Hz 产生压力图 |
 | 感知 · 标准输出 | `soundmat/perception/model.py`、`perception/__init__.py` | 压力图、垫面状态、事件、快照；`Perception` 负责发布 |
 | 时钟 | `soundmat/clock/` | 系统时间；`BeatClock` 固定节拍线程 |
 | 声音化 · 意图 | `soundmat/sonification/intent.py` | 持续声部、定时事件、全局参数、灯光层、模式状态 |
 | 声音化 · 模式框架 | `soundmat/sonification/mode.py`、`sonification/__init__.py` | 模式生命周期、编排头部、每拍调度、交叉淡化切换、出错时保持上一拍 |
-| 声音引擎 | `soundmat/sound/engine.py` | 对账、声部预算、定时与去重、混音结构与交叉淡化、重启后重建 |
-| 声音引擎 · 空间化 | `soundmat/sound/spatial.py` | 音箱布局预设与分配公式 |
-| 声音引擎 · 合成器接口 | `soundmat/sound/backend.py` | 抽象指令接口；`RecordingBackend` 只记录指令 |
-| 声音引擎 · scsynth | `soundmat/sound/scsynth.py` + `instruments/` | 带时间戳的 OSC bundle、节点树与总线、重启检测、电平；见 `SYNTH.md` |
-| 系统监测 · 日志 | `soundmat/monitor/log.py` | 最近的警告和错误 |
-| 系统监测 | `soundmat/monitor/__init__.py`、`monitor/probes.py` | 每秒采集音频链路、控制器、机器、网络；状态指示与原因 |
 | 声音化 · 编排文件 | `soundmat/sonification/arrangements.py` + `arrangements/` | 读取与校验，格式见 `ARRANGEMENTS.md` |
 | 声音化 · Ambient | `soundmat/sonification/ambient/` | 持续 / 间歇 / 触发、分档、条件、位置策略、灯光 |
-| 声音化 · 灯光工具 | `soundmat/sonification/lights.py` | 逐像素绘制灯光层 |
 | 声音化 · Jam | `soundmat/sonification/jam/` | 走带、Lo-Fi、和声 / 鼓 / 扫描命中的精确时刻、预听、灯光；理论与时间方案移植自第一版 |
+| 声音化 · 灯光工具 | `soundmat/sonification/lights.py` | 逐像素绘制灯光层 |
+| 声音引擎 | `soundmat/sound/engine.py` | 对账、声部预算、定时与去重、混音结构与交叉淡化、重启后重建 |
+| 声音引擎 · 空间化 | `soundmat/sound/spatial.py` | 音箱布局预设与分配公式 |
 | 声音引擎 · 素材库 | `soundmat/sound/assets.py` | 读文件头估算内存、预算检查、引用计数、重启后重载 |
-| 状态中心 · 设置 | `soundmat/store/settings.py` | 默认值、校验、原子写入 `settings.json` |
-| 状态中心 | `soundmat/store/` | 状态树、按路径修改、变化通知（尚无持久化） |
-| 控制接口 | `soundmat/control/` | FastAPI：WebSocket 推送、虚拟垫子命令、提供控制台 |
-| 配置 | `soundmat/config.py` + `config/soundmat.toml` | 已实现 |
+| 声音引擎 · 合成器接口 | `soundmat/sound/backend.py` | 抽象指令接口；`RecordingBackend` 只记录指令 |
+| 声音引擎 · scsynth | `soundmat/sound/scsynth.py` + `instruments/` | 带时间戳的 OSC bundle、节点树与总线、重启检测、电平、录音；见 `SYNTH.md` |
+| 灯光引擎 | `soundmat/light/` | 60 Hz 分层合成、系统提示层、灯带偏移、控制台预览 |
+| 录制 | `soundmat/recorder/` | 空间检查、倒计时与打板、合成器服务内部录音、会话数据、录制信息、打包下载 |
+| 系统监测 | `soundmat/monitor/` | 每秒采集音频链路、控制器、机器、网络；状态指示与原因；最近的警告和错误（`log.py`） |
+| 状态中心 | `soundmat/store/` | 状态树、按路径修改、变化通知；设置的默认值、校验与原子写入（`settings.py`） |
+| 控制接口 | `soundmat/control/` | FastAPI：WebSocket 推送、命令与设置、提供控制台 |
+| 配置 | `soundmat/config.py` + `config/soundmat.toml` | 启动时读取，未知键报错 |
 | 线程间容器 | `soundmat/exchange.py` | `Latest`、`EventQueue`、`EventHub` |
 
-录制尚未实现。
+所有模块都已实现；部署脚本（`deploy/`）和系统服务配置（`system/systemd/`）尚未编写。
 
 ## 线程与数据交换
 
@@ -54,12 +53,13 @@ uv run pytest                   # 测试
 
 当前的线程：
 
-1. **虚拟垫子**（`virtual-mat`）：每秒 60 次产生压力图，在本线程里调用 `Perception.feed` 完成垫面解读，发布快照和事件。以后真机上由设备连接的读取线程调用同一个入口。
+1. **虚拟垫子**（`virtual-mat`）：每秒 60 次产生压力图，在本线程里调用 `Perception.feed` 完成垫面解读，发布快照和事件。真机上由设备连接的读取线程调用同一个入口。
 2. **声音化**（`sonification`）：`BeatClock` 每秒 60 拍（配置 `sound.tick_hz`）。每拍取走垫面事件、读取最新快照、调用所有模式实例（切换期间新旧两个），把声音意图交给声音引擎，再处理合成器服务的通知、释放淡出完毕的实例。声音引擎不是线程安全的，只在这个线程里调用；切换编排的请求从其他线程放进队列，在下一拍开始时执行。某一拍的计算超过节拍间隔时不补拍，直接跳到当前时刻，并计入 `BeatClock.overruns`。
 3. **设备连接**（`device`）：真机上读串口，每收到一帧 S 帧就在本线程里完成垫面信号和垫面解读（代替虚拟垫子线程）。灯光帧由灯光线程直接写串口，写入加锁。
 4. **灯光**（`light`）：每秒 60 次（配置 `light.refresh_hz`）读取最新的灯光意图和系统提示层，合成后写给设备连接，并以 30 次/秒更新控制台的灯环预览。
 5. **系统监测**（`monitor`）：每秒采集一次并写入状态中心，较慢的探针（journal、nmcli、tailscale）每 10 秒一次。
-6. **主线程**：uvicorn 与控制接口。
+6. **会话数据写入**（`session-writer`）：录制期间把会话数据逐行写进文件，不阻塞节拍线程。
+7. **主线程**：uvicorn 与控制接口。
 
 状态中心的订阅回调在修改者的线程里执行；控制接口在回调里只用 `loop.call_soon_threadsafe` 把变化交给事件循环，再由每个 WebSocket 连接自己的推送任务发出。
 
@@ -125,3 +125,18 @@ uv run pytest                   # 测试
 3. 网络：没有任何出口地址 → 需要注意（装置离线也能演奏，所以不算异常）。
 
 逐声道测试音由 `POST /api/audio/test-tone` 触发：在节拍线程里让合成器服务在指定的硬件声道上放 1 秒 440 Hz 的正弦波，绕过混音结构和系统音量。
+
+## 录制
+
+录制的状态机在声音化的节拍线程里推进（`Recorder.on_beat` 挂在每拍末尾）。按下录制后：检查剩余空间（按总输出 24 位、分轨 32 位浮点估算，需要能录 10 分钟另加 200 MB 余量，否则拒绝并说明原因）；在 0.2 秒后开始录音（给合成器服务打开文件的时间），同一时刻开始 3 秒倒计时；打板在录音开始后正好 3 秒，提示音由合成器服务按时间戳播放，灯光是录制系统层（优先级最高）。录制中每 0.5 秒检查一次空间，少于 1 分钟时自动停止；合成器服务中断时也停止。停止后写好录制信息，刷新录制列表（`catalog.recordings`）。
+
+一次录制的文件夹 `<录音保存位置>/<YYYY-MM-DD_HHMMSS>_<编排标识>/`：
+
+| 文件 | 内容 |
+|---|---|
+| `master.wav` | 总输出（硬件输出总线 0…N−1，经过系统音量和限幅），24 位整数 WAV |
+| `stems/<总线>.wav` | 各环总线、分组总线和效果返回 `fx`，在模式总处理之前、乘过交叉淡化增益；可能超过 0 dBFS，所以是 32 位浮点 WAV |
+| `session.jsonl` | 每行一条，带系统时间 `t`：`start`、`pressure`（最多 30 次/秒，压力 × 1000 和有石头的区域）、`event`（放下、拿起）、`sound`（持续声部与全局参数，变化时）、`events`（交出的定时事件）、`light`（灯环颜色，最多 10 次/秒）、`slate`、`stop` |
+| `info.json` | `startedAt`（带时区的开始时间）、`startSystemTime`、`slateOffsetSeconds`（打板在录音中的位置，固定 3 秒）、`slateSystemTime`、编排、声道数、采样率、格式、开始时的设置、文件清单、`duration`、`endedAt`、`stopReason` |
+
+没有连接合成器服务（`--no-synth`）时也能录制，只产生会话数据和录制信息，`audio` 为 false，不建 `stems/` 目录；文件清单只列实际开始录制的文件。下载接口把整个文件夹边打包边输出为不压缩的 zip，不需要临时文件。

@@ -298,7 +298,7 @@ sequenceDiagram
 
 ## 文件结构
 
-以下是计划中的结构，对应上面的逻辑架构。
+以下是当前的结构，对应上面的逻辑架构。部署脚本 `deploy/` 和 `system/` 下的系统服务配置尚未编写（`system/` 目前只有网络脚本）。
 
 ```text
 system/pi/soundmat/
@@ -314,7 +314,8 @@ system/pi/soundmat/
 │   │   └── virtual/         虚拟垫子
 │   ├── clock/               时钟
 │   ├── sonification/        声音化
-│   │   ├── intent           意图的定义（所有模式共用）
+│   │   ├── intent.py        意图的定义（所有模式共用）
+│   │   ├── mode.py          模式的生命周期；arrangements.py 读取编排
 │   │   ├── ambient/         Ambient 模式
 │   │   └── jam/             Jam 模式
 │   ├── sound/               声音引擎

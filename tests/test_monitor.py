@@ -89,7 +89,8 @@ def test_hdmi_output_is_an_error_with_reason_and_logged_once(rig):
 
 
 @pytest.mark.parametrize("change, level, text", [
-    (lambda f, s, st: s.update(online=False), "error", "没有响应"),
+    (lambda f, s, st: s.update(online=False, everOnline=True), "error", "没有响应"),
+    (lambda f, s, st: s.update(online=False), "unknown", "正在连接"),
     (lambda f, s, st: s.update(synthdefsLoaded=False), "error", "没有加载音色"),
     (lambda f, s, st: f.jack.update(running=False), "error", "JACK"),
     (lambda f, s, st: s.update(nominalSampleRate=44100.0), "warn", "44.1 kHz，期望 48 kHz"),

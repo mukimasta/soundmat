@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -40,6 +40,7 @@ class ControlContext:
     play: Callable[[str], None] | None = None        # 切换到一份编排；失败抛出 LoadError
     settings: Settings | None = None
     test_tone: Callable[[int], None] | None = None   # 逐声道测试音
+    recorder: Any = None                             # 录制（soundmat.recorder.Recorder）
     # 额外的高频数据源，例如灯环预览：消息类型 → 保存可 JSON 化 dict 的最新值容器
     streams: dict[str, Latest[dict]] = field(default_factory=dict)
 
@@ -129,6 +130,39 @@ def create_app(ctx: ControlContext, console_dist: Path | None = CONSOLE_DIST) ->
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e)) from e
         return {"ok": True}
+
+    def require_recorder():
+        if ctx.recorder is None:
+            raise HTTPException(status_code=503, detail="录制不可用")
+        return ctx.recorder
+
+    @app.post("/api/recording/start")
+    def recording_start() -> dict:
+        from ..recorder import RecordingError
+        try:
+            require_recorder().request_start()
+        except RecordingError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
+        return {"ok": True}
+
+    @app.post("/api/recording/stop")
+    def recording_stop() -> dict:
+        require_recorder().request_stop()
+        return {"ok": True}
+
+    @app.get("/api/recordings")
+    def recordings() -> list[dict]:
+        return require_recorder().list()
+
+    @app.get("/api/recordings/{name}/download")
+    def recording_download(name: str):
+        from ..recorder import zip_stream
+        try:
+            folder = require_recorder().folder_of(name)
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=404, detail="没有这段录制") from e
+        return StreamingResponse(zip_stream(folder), media_type="application/zip",
+                                 headers={"Content-Disposition": f"attachment; filename*=UTF-8''{folder.name}.zip"})
 
     @app.websocket("/ws")
     async def ws(socket: WebSocket) -> None:
