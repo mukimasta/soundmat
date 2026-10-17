@@ -96,6 +96,7 @@ class Monitor:
             "usbCard": None if cards is None else any("usb" in (c["name"] + c["description"]).lower() for c in cards),
             "synth": {
                 "online": bool(online) if synth else None,
+                "everOnline": synth.get("everOnline"),
                 "synthdefsLoaded": synth.get("synthdefsLoaded"),
                 "sampleRate": synth.get("nominalSampleRate"),
                 "avgLoad": synth.get("avgCPU"),
@@ -131,6 +132,8 @@ class Monitor:
     def _assess_sound(self, a: dict) -> Indicator:
         cfg = self.config.sound
         s = a["synth"]
+        if s["online"] is False and not s.get("everOnline") and time.time() - self.started < 15:
+            return Indicator(UNKNOWN, "正在连接合成器服务")
         if s["online"] is False:
             return Indicator(ERROR, "合成器服务没有响应，音箱不会发声")
         if s["online"] is None:

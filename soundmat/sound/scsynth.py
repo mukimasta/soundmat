@@ -117,6 +117,7 @@ class ScsynthBackend:
         self.state = "offline"           # offline / loading / ready
         self.info: dict = {}
         self.defs_loaded = False
+        self.ever_online = False
         self._last_reply = -1e9
         self._next_status = 0.0
         self._restarted = False
@@ -137,6 +138,9 @@ class ScsynthBackend:
         self.master_channels = 0
         self.main_bus: int | None = None
         self.silent_bus: int | None = None
+        self.trash_bus: int | None = None
+        self.stem_buses: dict[str, int] = {}          # 全局分轨总线：总线名 → 编号
+        self.recording: list[tuple[int, int]] = []     # 正在录制：(节点, 缓冲区)
         self._master_params: dict[str, float] = {}
         self._deferred: list[tuple[float, int, int]] = []
 
@@ -272,6 +276,7 @@ class ScsynthBackend:
         self._send_now(_msg("/g_new", ROOT_GROUP, HEAD, 0, MASTER_GROUP, TAIL, 0))
         self.state = "ready"
         self.online = True
+        self.ever_online = True
         self._restarted = True
         log.info("合成器服务已连接")
 
@@ -281,12 +286,15 @@ class ScsynthBackend:
         if self.master_node is not None and self.master_channels == channels:
             return
         if self.master_node is not None:
+            self.stop_recording(at)
             self._queue(at, _msg("/n_free", self.master_node))
-            self._deferred.append((at + 1.0, self.main_bus, self.master_channels))
-            self._deferred.append((at + 1.0, self.silent_bus, self.master_channels))
+            for b in [self.main_bus, self.silent_bus, self.trash_bus, *self.stem_buses.values()]:
+                self._deferred.append((at + 1.0, b, self.master_channels))
+            self.stem_buses = {}
         self.master_channels = channels
         self.main_bus = self.bus_alloc.alloc(channels)
         self.silent_bus = self.bus_alloc.alloc(channels)
+        self.trash_bus = self.bus_alloc.alloc(channels)
         self.master_node = self._node()
         args = ["in", self.main_bus]
         for k, v in self._master_params.items():
@@ -330,10 +338,17 @@ class ScsynthBackend:
         self._queue(at, _msg("/g_new", mix.group, TAIL, ROOT_GROUP))
         self._queue(at, _msg("/s_new", f"{fx or 'sm_fx_freeverb'}_{channels}", mix.fx_node, TAIL, mix.group,
                              "in", fx_bus, "out", fx_return))
-        args: list = ["out", self.main_bus, "fxIn", fx_return, "mixGain", 0.0]
+        args: list = ["out", self.main_bus, "fxIn", fx_return, "mixGain", 0.0, "stemFx", self._stem("fx", channels)]
         for i in range(MAX_MIX_INPUTS):
-            args += [f"in{i}", bus_map[names[i]] if i < len(names) else self.silent_bus]
+            used = i < len(names)
+            args += [f"in{i}", bus_map[names[i]] if used else self.silent_bus,
+                     f"stem{i}", self._stem(names[i], channels) if used else self.trash_bus]
         self._queue(at, _msg("/s_new", f"sm_mode_{channels}", mix.mode_node, TAIL, mix.group, *args))
+
+    def _stem(self, name: str, channels: int) -> int:
+        if name not in self.stem_buses:
+            self.stem_buses[name] = self.bus_alloc.alloc(channels)
+        return self.stem_buses[name]
 
     def set_mix_gain(self, instance: str, gain: float, fade: float, at: float) -> None:
         mix = self.mixes.get(instance)
@@ -448,10 +463,54 @@ class ScsynthBackend:
             self._queue(at + 1.0, _msg("/b_free", loaded[0]))
             self.buf_alloc.release(loaded[0], 1)
 
+    # ── 录制 ────────────────────────────────────────────────────────────
+
+    def recordable_stems(self) -> list[str]:
+        return list(self.stem_buses)
+
+    def start_recording(self, files: Mapping[str, str], at: float) -> list[str]:
+        """``files``：``"master"`` 或分轨总线名 → 文件路径。返回实际开始录制的项。"""
+        if self.state != "ready" or self.master_node is None or self.recording:
+            return []
+        n = self.master_channels
+        started = []
+        for name, path in files.items():
+            src = 0 if name == "master" else self.stem_buses.get(name)
+            if src is None:
+                continue
+            buf = self.buf_alloc.alloc(1)
+            node = self._node()
+            # 异步命令按顺序执行：先分配、再打开文件；录制节点在稍后的时刻开始
+            self._send_now(_msg("/b_alloc", buf, 65536, n))
+            # 总输出经过限幅，用 24 位；分轨在总处理之前，可能超过 0 dBFS，用 32 位浮点避免削波
+            fmt = "int24" if name == "master" else "float"
+            self._send_now(_msg("/b_write", buf, str(path), "wav", fmt, 0, 0, 1))
+            self._queue(at, _msg("/s_new", f"sm_rec_{n}", node, TAIL, MASTER_GROUP, "buf", buf, "in", src))
+            self.recording.append((node, buf))
+            started.append(name)
+        return started
+
+    def stop_recording(self, at: float) -> None:
+        for node, buf in self.recording:
+            self._queue(at, _msg("/n_free", node))
+            self._queue(at, _msg("/b_close", buf))
+            self._queue(at, _msg("/b_free", buf))
+            self.buf_alloc.release(buf, 1)
+        self.recording = []
+
+    def recording_active(self) -> bool:
+        return bool(self.recording)
+
+    def slate(self, at: float) -> None:
+        if self.master_node is not None:
+            self._queue(at, _msg("/s_new", f"sm_slate_{self.master_channels}", -1, HEAD, MASTER_GROUP,
+                                 "out", self.main_bus))
+
     # ── 监测 ────────────────────────────────────────────────────────────
 
     def status(self) -> dict:
-        return {"online": self.online, "state": self.state, "synthdefsLoaded": self.defs_loaded, **self.info}
+        return {"online": self.online, "everOnline": self.ever_online, "state": self.state,
+                "synthdefsLoaded": self.defs_loaded, **self.info}
 
     def levels(self, azimuths: Sequence[float], now: float | None = None) -> dict | None:
         """总输出各声道和每环左右两侧的峰值电平（dBFS）；超过 1 秒没有更新的值不算。"""

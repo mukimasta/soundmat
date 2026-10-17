@@ -38,6 +38,8 @@
 | `status.matHistory` | 最近 60 秒的实测传感帧率 |
 | `status.machine` | `host`、`model`、`tempC`、`throttled`、`memUsedMB`、`memTotalMB`、`diskFreeGB`、`diskTotalGB`、`uptime`、`programUptime` |
 | `status.network` | `name`、`type`、`address`、`tailscale`、`tailscaleAddress`、`line`（垫面页顶部显示的一行） |
+| `status.recording` | `{state}`，`state` 为 `idle` / `countdown` / `recording`；录制中另有 `count`（倒计时数字）、`flash`（打板的一瞬）、`elapsed`、`folder`、`audio`、`freeGB` |
+| `catalog.recordings` | `[{name, startedAt, title, duration, audio}]`，最新在前 |
 | `catalog.arrangements` | `[{id, title, mode, modeLabel, description, ringLabels, missing, error}]` |
 | `settings.sound.layout` | 音箱布局 `{azimuths, names}` |
 | `settings.sound.orientation` | 垫面朝向偏移（度，0–360） |
@@ -55,4 +57,8 @@
 | `POST /api/virtual/clear` | — | 清空虚拟垫子 |
 | `POST /api/arrangements/{id}/play` | — | 切换到这份编排；加载失败返回 422 和原因 |
 | `POST /api/audio/test-tone` | `{"channel": 声道序号}` | 在该硬件声道放 1 秒测试音；超出当前音箱布局返回 422 |
+| `POST /api/recording/start` | — | 开始录制；空间不足、已在录制或合成器服务没有响应时返回 409 和原因 |
+| `POST /api/recording/stop` | — | 停止录制 |
+| `GET /api/recordings` | — | 录制列表 |
+| `GET /api/recordings/{name}/download` | — | 整个录制文件夹打包成 zip 下载 |
 | `POST /api/settings` | `{"changes": {"sound.volume": 0.7, ...}}` | 修改设置（键是 `settings` 下的路径；`sound.layout` 也可以是预设名 `stereo` / `quad` / `octo`）；任一项非法返回 422，整批不生效 |

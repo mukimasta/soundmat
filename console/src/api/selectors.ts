@@ -91,3 +91,35 @@ export function alertOf(h: Health | null): { level: Level; text: string } | null
   if (!h || (h.overall !== 'warn' && h.overall !== 'error') || !h.issues.length) return null;
   return { level: h.overall, text: h.issues[0] };
 }
+
+export interface RecordingStatus {
+  state: 'idle' | 'countdown' | 'recording';
+  count?: number | null;
+  flash?: boolean;
+  elapsed?: number;
+  folder?: string;
+  audio?: boolean;
+  freeGB?: number;
+}
+
+export interface RecordingItem {
+  name: string;
+  startedAt: string | null;
+  title: string;
+  duration: number | null;
+  audio: boolean;
+}
+
+export const recording = (s: ConsoleState) =>
+  getPath<RecordingStatus>(s.state, 'status.recording') ?? { state: 'idle' as const };
+
+export const recordings = (s: ConsoleState) => getPath<RecordingItem[]>(s.state, 'catalog.recordings') ?? [];
+
+export function clockText(sec: number): string {
+  const t = Math.max(0, Math.floor(sec));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const ss = t % 60;
+  const p = (n: number) => String(n).padStart(2, '0');
+  return (h ? `${p(h)}:` : '') + `${p(m)}:${p(ss)}`;
+}

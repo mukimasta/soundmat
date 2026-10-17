@@ -4,6 +4,8 @@
 // gain0..gain11 相加，加上共用效果的返回（fxIn × fxGain），经过模式总处理（Lo-Fi：cutoff、drive、
 // lofiGain），再乘交叉淡化增益（mixGain，按 mixFade 秒过渡），写到总输出总线。
 // 各输入的电平以 10 次/秒用 /sm_peak 回报（replyID = 输入序号），供控制台的每环电平使用。
+// 录制分轨：每条输入（乘过总线增益和交叉淡化增益、未经模式总处理）另外加到 stem0..stem11 指定的
+// 全局分轨总线上，效果返回加到 stemFx；切换编排时新旧两个实例一起汇入，分轨不中断。未用的指向一条废弃总线。
 (
 var maxIn = 12;
 ~smDef.("sm_mode", {
@@ -11,16 +13,20 @@ var maxIn = 12;
     var cutoffIn = \cutoff.kr(20000);
     var cutoff = cutoffIn.clip(60, 18000).lag(0.02);     // 与第一版相同上限 18 kHz，更高会接近奈奎斯特而失稳
     var drive = \drive.kr(0);
+    var xfade = VarLag.kr(\mixGain.kr(0), \mixFade.kr(0));
+    var fx = In.ar(\fxIn.kr(0), n) * \fxGain.kr(1);
     var sig = maxIn.collect { |i|
         var s = In.ar(NamedControl.kr(("in" ++ i).asSymbol, 0), n) * NamedControl.kr(("gain" ++ i).asSymbol, 1, 0.05);
         SendPeakRMS.kr(s, 10, 3, '/sm_peak', i);
+        Out.ar(NamedControl.kr(("stem" ++ i).asSymbol, 0), s * xfade);
         s
     }.sum;
-    sig = sig + (In.ar(\fxIn.kr(0), n) * \fxGain.kr(1));
+    Out.ar(\stemFx.kr(0), fx * xfade);
+    sig = sig + fx;
     // cutoff ≥ 18 kHz（默认值）时不经过低通
     sig = Select.ar(cutoffIn >= 18000, [RLPF.ar(RLPF.ar(sig, cutoff, 1.389), cutoff, 1.389), sig]);
     sig = ~jamDistWet.value(sig, drive, (drive / 0.025).clip(0, 1));
-    sig = sig * \lofiGain.kr(1).lag(0.02) * VarLag.kr(\mixGain.kr(0), \mixFade.kr(0));
+    sig = sig * \lofiGain.kr(1).lag(0.02) * xfade;
     Out.ar(\out.kr(0), sig);
 });
 
