@@ -63,7 +63,7 @@ function MatViewImpl({ geometry, pressure, occupied, ledCount, leds, onZone }: P
       })}
       {ledPos.map(([x, y], i) => {
         const c = leds?.[i];
-        if (!c) return <circle key={i} cx={x} cy={y} r="0.34" fill="#2E2B26" />;
+        if (!c || Math.max(c[0], c[1], c[2]) < 24) return <circle key={i} cx={x} cy={y} r="0.34" fill="#2E2B26" />;
         const rgb = `${c[0]},${c[1]},${c[2]}`;
         return (
           <g key={i} pointerEvents="none">

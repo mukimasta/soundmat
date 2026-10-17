@@ -33,3 +33,38 @@ def test_default_arrangement_plays_and_api(make_sup, tmp_path, monkeypatch):
     son.on_beat(Beat(2, 1.2, 1 / 60))
     assert sup.backend.of_kind("create_mix")[-1].args["channels"] == 4
     assert client.post("/api/arrangements/kyoto/play").json() == {"ok": True}
+
+
+def test_controller_end_to_end_with_fake_esp32(make_sup, tmp_path, monkeypatch):
+    import time
+
+    from soundmat.device import DeviceLink
+    from soundmat.perception.zones import zone
+
+    from fake_esp32 import FakeESP32
+
+    monkeypatch.setenv("SOUNDMAT_SOUND", str(tmp_path / "no-sound"))
+    esp = FakeESP32(boot_lines=1)
+    holder = {}
+    link = DeviceLink(lambda f: holder["sup"]._on_raw_frame(f), opener=lambda p: esp,
+                      picker=lambda s: "/dev/fake")
+    sup = make_sup(virtual=False, device=link)
+    holder["sup"] = sup
+    link._on_event = sup._device_event
+    sup.start()
+    try:
+        esp.press(7 * 32 + 10, 3000)         # 接线 [7, 10] → 第 7 环第 25 区
+        target = zone(7, 25).index
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline and target not in sup.perception.snapshot.get().state.occupied:
+            time.sleep(0.02)
+        assert target in sup.perception.snapshot.get().state.occupied
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline and not esp.received:
+            time.sleep(0.02)
+        assert esp.received and esp.received[0].startswith(b"L:")
+        time.sleep(0.6)
+        st = sup.store.get("status.mat")
+        assert st["connected"] and st["source"] == "controller" and st["fps"] > 0
+    finally:
+        sup.stop()

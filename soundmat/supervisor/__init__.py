@@ -11,9 +11,12 @@ from pathlib import Path
 from ..clock import BeatClock, system_time
 from ..config import ROOT, Config
 from ..control import ControlContext
+from ..device import DeviceLink, RawFrame
+from ..light import LightEngine
 from ..exchange import Latest
 from ..monitor.log import EventLog
 from ..perception import Perception
+from ..perception.signal import Signal
 from ..perception.virtual import VirtualMat
 from ..sonification import ModeFactory, ModeInstance, Sonification
 from ..sonification.ambient import AmbientMode
@@ -39,6 +42,8 @@ class Options:
     backend: Backend | None = None        # 默认使用不发声的记录型引擎
     modes: dict[str, ModeFactory] = field(default_factory=lambda: dict(MODES))
     data_dir: Path = ROOT / "data"
+    serial_port: str = "auto"
+    device: DeviceLink | None = None      # 测试时注入模拟控制器
     arrangements_dir: Path = ARRANGEMENTS_DIR
     seed: int | None = None
 
@@ -79,6 +84,15 @@ class Supervisor:
         self.sonification.after_retire.append(lambda inst, now: self.assets.release(inst.id, now))
         self.clock = BeatClock(cfg.sound.tick_hz, self.sonification.on_beat, name="sonification")
 
+        self.signal = Signal(cfg.mat)
+        self.device: DeviceLink | None = None
+        if not opts.virtual:
+            self.device = opts.device or DeviceLink(self._on_raw_frame, port=opts.serial_port,
+                                                    on_event=self._device_event)
+        self.lights = LightEngine(cfg.light, self.light, send=self.device.send_leds if self.device else None)
+        self.sonification.after_beat.append(self._publish_link_status)
+        self._next_link_status = 0.0
+
         self.arrangements: dict[str, Arrangement] = {}
         self.refresh_catalog()
         self.store.subscribe(self._on_change)
@@ -87,6 +101,7 @@ class Supervisor:
         self.control = ControlContext(
             config=cfg, store=self.store, mat=self.perception.snapshot, virtual=self.virtual,
             play=self.play, settings=self.settings,
+            streams={"leds": self.lights.preview},
         )
 
     # ── 编排 ────────────────────────────────────────────────────────────
@@ -138,6 +153,26 @@ class Supervisor:
         if missing:
             self.events.warning(f"{inst.arrangement.title}：缺少 {len(missing)} 个声音素材，用到它们的声音不会发声")
 
+    # ── 设备与灯光 ──────────────────────────────────────────────────────
+
+    def _on_raw_frame(self, frame: RawFrame) -> None:
+        self.perception.feed(self.signal.pressure(frame.t, frame.seq, frame.values))
+
+    def _device_event(self, level: str, text: str) -> None:
+        getattr(self.events, level)(text)
+
+    def _publish_link_status(self, now: float) -> None:
+        if now < self._next_link_status:
+            return
+        self._next_link_status = now + 0.5
+        if self.device is not None:
+            st = self.device.status()
+            st["source"] = "controller"
+        else:
+            st = {"connected": None, "port": None, "fps": None, "checksumErrors": None,
+                  "problem": None, "source": "virtual"}
+        self.store.update({"status.mat": st})
+
     # ── 设置 ────────────────────────────────────────────────────────────
 
     def _layout(self) -> SpeakerLayout:
@@ -164,8 +199,8 @@ class Supervisor:
         if self.virtual:
             self.virtual.start()
             log.info("使用虚拟垫子")
-        else:
-            self.events.warning("控制器连接尚未实现，请用 --virtual 运行")
+        elif self.device is not None:
+            self.device.start()
         default = self.settings.get("run.defaultArrangement")
         first = default if default in self.arrangements else next(iter(self.arrangements), None)
         if first is None:
@@ -178,11 +213,15 @@ class Supervisor:
             except LoadError:
                 pass
         self.clock.start()
+        self.lights.start()
 
     def stop(self) -> None:
+        self.lights.stop()
         self.clock.stop()
         if self.virtual:
             self.virtual.stop()
+        if self.device is not None:
+            self.device.stop()
 
     def now(self) -> float:
         return system_time()

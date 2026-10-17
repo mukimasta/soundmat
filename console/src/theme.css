@@ -128,7 +128,7 @@ button { font: inherit; color: inherit; }
 .meters .lr { position: absolute; top: 55px; font-family: var(--mono); font-size: 10px; color: var(--text-3); }
 .meters .bar { position: absolute; width: 6px; border-radius: 1px; background: rgba(245, 240, 230, 0.85); transition: top 0.12s linear, height 0.12s linear; }
 .meters .cap { position: absolute; width: 6px; height: 2px; border-radius: 1px; transition: top 0.12s linear; }
-.meters .label { position: absolute; top: 56px; writing-mode: vertical-rl; text-orientation: upright; font-size: 10.5px; line-height: 1; letter-spacing: 0.04em; }
+.meters .label { position: absolute; top: 56px; width: 12px; display: flex; flex-direction: column; align-items: center; font-size: 10.5px; line-height: 1.08; }
 
 .spacer { flex: 1 1 auto; min-height: 6px; }
 

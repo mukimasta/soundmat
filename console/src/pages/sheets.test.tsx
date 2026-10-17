@@ -15,7 +15,7 @@ test('mat page shows mode status, ring labels and now-playing card', () => {
   connect(client);
   expect(screen.getByText('每环一层 · 左右两只音箱')).toBeInTheDocument();
   expect(screen.getByText('输出 — dB')).toBeInTheDocument();
-  expect(screen.getByText('竹林')).toBeInTheDocument();
+  expect(document.querySelector('.meters')!.textContent).toContain('竹林');
   expect(screen.getByText('Ambient · 氛围 · 演奏中')).toBeInTheDocument();
 });
 
@@ -84,7 +84,7 @@ test('jam status line shows section progress and Lo-Fi reading', () => {
   expect(screen.getByText('第 3 段 C · 0:44 / 2:08')).toBeInTheDocument();
   expect(screen.getByText('Lo-Fi 45%')).toBeInTheDocument();
   expect(screen.getByText('Jam · 合奏 · 120 BPM · 演奏中')).toBeInTheDocument();
-  expect(screen.getByText('暗电钢')).toBeInTheDocument();
+  expect(document.querySelector('.meters')!.textContent).toContain('暗电钢');
   act(() => client.handle({ type: 'patch', changes: [
     ['status.current.modeStatus', { text: '曲终 · 清空中间两环，再压一次重新开始', reading: '', transport: 'ended' }],
   ] }));

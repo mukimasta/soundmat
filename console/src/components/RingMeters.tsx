@@ -33,7 +33,9 @@ export function RingMeters({ labels, levels }: { labels: string[]; levels: Level
         const on = height(rings[ring]?.[0]) + height(rings[ring]?.[1]) > 2;
         return (
           <span key={ring} className="label" aria-hidden="true"
-            style={{ left: `calc(50% + ${5 + ring * 20}px)`, color: on ? 'var(--text)' : 'var(--text-3)' }}>{name}</span>
+            style={{ left: `calc(50% + ${5 + ring * 20}px)`, color: on ? 'var(--text)' : 'var(--text-3)' }}>
+            {Array.from(name).map((ch, i) => <span key={i}>{ch}</span>)}
+          </span>
         );
       })}
     </div>

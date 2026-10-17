@@ -60,6 +60,8 @@ class Sonification:
         self.before_activate: list[Callable[[ModeInstance, float], None]] = []
         # 实例释放之后调用，例如素材库释放只被它使用的素材
         self.after_retire: list[Callable[[ModeInstance, float], None]] = []
+        # 每拍结束时调用，例如把其他模块的状态按节奏写入状态中心
+        self.after_beat: list[Callable[[float], None]] = []
 
     @property
     def active(self) -> ModeInstance | None:
@@ -115,6 +117,8 @@ class Sonification:
         if now >= self._next_status:
             self._next_status = now + STATUS_PERIOD
             self._publish_status(now)
+        for fn in self.after_beat:
+            fn(now)
 
     def _tick(self, inst: ModeInstance, beat: Beat, snap, events) -> BeatOutput:
         try:
