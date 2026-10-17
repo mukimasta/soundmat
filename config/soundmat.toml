@@ -1,0 +1,58 @@
+# SoundMat 主机程序配置
+#
+# 这里是描述硬件和系统本身的固定参数（DATA_MODEL「配置与设置」、DECISION 第 5 条）：
+# 部署前测定，随仓库分发，程序启动时读取，运行中不变，控制台只读显示。
+# 改参数 = 改这个文件并重新部署。随场地变化的参数（音箱布局、总音量、默认编排等）
+# 是设置，由状态中心保存在 data/settings.json，不写在这里。
+#
+# 压力相关数值沿用 12 位 ADC 原始读数（满量程 4095），载入时换算成归一化压力。
+
+[mat]
+# 压力满量程（ADC 原始读数），换算：归一化压力 = 读数 / full_scale
+full_scale = 4095
+# 单区占用阈值（ADC 原始读数），第一版部署时测定
+occupancy_threshold = 500
+# 去抖：一个区需稳定高于阈值 occupy_hold 秒才算放下，稳定低于阈值 release_hold 秒才算拿起。
+# 这是真机上要重点调的参数，当前值是上真机之前的初值，待实测确认。
+occupy_hold = 0.04
+release_hold = 0.08
+# 接线到区域的对应关系（第一版部署时校准）：扇区镜像开启，整体顺时针旋转 4 个扇区
+sector_mirror = true
+sector_offset = 4
+# 压力大时 ADC 读数变小的传感器需要反相；当前传感器不需要
+invert = false
+
+[light]
+# 灯珠数量；逻辑位置 0 在 12 点方向（0°），顺时针编号
+led_count = 108
+# 物理对齐偏移：逻辑位置 k 的颜色写到物理灯珠 (k + led_offset) % led_count
+led_offset = 101
+# 灯光引擎刷新率（次/秒）；实际刷新率还受控制器循环限制
+refresh_hz = 60
+
+[sound]
+# 声音化节拍（次/秒）
+tick_hz = 60
+# 同时发声的声部上限：total 是总数，categories 按声部类别再分别限制
+voice_budget_total = 48
+voice_budget_categories = { melodic = 12 }
+# 立即发生的声音也带时间戳：当前时间 + output_latency 秒
+output_latency = 0.03
+# 定时事件时刻已过多久以内仍立即发出，超过则丢弃并计为迟到（秒）
+late_tolerance = 0.05
+# 声音素材的内存预算（MB）；Pi 5 内存 2 GB
+asset_memory_mb = 768
+# 交叉淡化时长（秒）：切换编排、重建混音结构时使用
+crossfade_seconds = 3.0
+# 期望的合成器服务状态，系统监测据此判断是否一致
+expected_sample_rate = 48000
+expected_output_device = "USB"
+
+[synth]
+# 合成器服务（scsynth）地址
+host = "127.0.0.1"
+port = 57110
+
+[control]
+host = "0.0.0.0"
+port = 8000

@@ -1,6 +1,8 @@
 # TODO
 
 - [ ] 按新架构重写主机程序（第一版已打 git 标签 `v1-ece546`；可沿用与不沿用的部分见 `implementation/MIGRATION.md`）
+- [ ] 把本地标签 `v1-ece546`（提交 `3803932`）推送到 GitHub：云端会话的 git 代理拒绝推送标签，需要在开发机上执行 `git tag -a v1-ece546 3803932 -m v1 && git push origin v1-ece546`
+- [ ] 上真机调整去抖时间（`config/soundmat.toml` 的 `occupy_hold`、`release_hold`，当前是未经实测的初值）
 - [ ] 确定 SoundMat 系列文档正本的存放位置，更新 `design/SOUNDMAT_SERIES.md`
 - [ ] 实测当前传感帧率（固件 `tools/plot_sensors.py`）
 - [ ] 备份 Pi 3B 上的开机自启配置，迁移到仓库 `system/`

@@ -4,7 +4,7 @@
 
 ### 第一版的结构
 
-第一版的代码仍在本仓库中：
+第一版的代码保存在 git 标签 `v1-ece546`（提交 `3803932`）。重写开始后，Python 包、测试和脚本已从工作区移除，需要时用 `git show v1-ece546:<路径>` 查看；`sc/`、`manifest/` 和 `SETUP.md` 在对应内容迁移完成后移除。第一版的结构：
 
 1. `soundmat/`：Python 包。`core/` 是串口、传感器、灯光、OSC 与 scsynth 管理；`jam/` 是 Jam 的五层实现；`ambient/` 是从 `sonification` 项目迁入的 Ambient；`web/` 是 FastAPI 控制台和静态网页。
 2. `sc/`：SuperCollider 音色源码 `synthdefs/{core,ambient,jam}`、编译脚本 `compile.scd`、编译产物 `compiled/`；`sc/assets/samples` 是指向 `SoundMat/sound/samples` 的符号链接。
@@ -38,5 +38,5 @@
 
 1. **校准与控制区参数以第一版代码为准**（2026-10-16 与 Human 确认）：单区阈值 500、控制区启动阈值 250、Lo-Fi 在控制区压力和 1000 到 8000 之间映射、旋律声部上限 12、扇区偏移 4、灯带偏移 101、扇区镜像开启。这些都是原始 ADC 读数（12 位，满量程 4095），新版作为固定值写进配置文件和 Jam 编排，不再在控制台调整。系列文档第 8 篇写的"压力和达到 1000 时 Lo-Fi 最大"已过时。
 2. **声音素材格式**：`SoundMat/sound/samples` 中是 48 kHz、24 位的 WAV（扩展格式），Python 标准库的 `wave` 读不了，需要用 soundfile 一类的库。
-3. **主机名不一致**：第一版的样本同步脚本 `scripts/sync_samples_to_pi.sh`（未提交）连接 `soundmat-pi.local`，而网络脚本把主机名设为 `soundmat`。新部署统一使用 `soundmat`。
+3. **主机名不一致**：第一版的样本同步脚本 `scripts/sync_samples_to_pi.sh`（未提交）连接 `soundmat-pi.local`，而旧网络脚本把主机名设为 `soundmat`。新部署统一使用 `soundmat-pi`（见 `DEPLOYMENT.md`，Pi 5 已按此部署）。控制台显示运行时的实际主机名。
 4. **固件开机灯效**：当前固件开机先半亮白光 5 秒，再全亮白光，直到收到第一帧灯光数据。架构要求改为低亮度等待，固件尚未修改。

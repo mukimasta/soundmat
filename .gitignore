@@ -1,2 +1,17 @@
+# 第一版的素材符号链接（素材不进仓库）
 sc/assets/samples
 .claude/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# 控制台
+console/node_modules/
+console/dist/
+
+# 本机运行数据（设置、录音）
+data/
+console/*.tsbuildinfo

@@ -1,0 +1,111 @@
+/* 颜色与字体取自控制台设计稿（docs/design/SoundMat 控制台.html）。 */
+@import '@fontsource/hanken-grotesk/400.css';
+@import '@fontsource/hanken-grotesk/500.css';
+@import '@fontsource/hanken-grotesk/600.css';
+@import '@fontsource/hanken-grotesk/700.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/600.css';
+
+:root {
+  --bg: #100f0d;
+  --bg-deep: #0b0a09;
+  --sheet: #1a1916;
+  --card: #181715;
+  --card-border: #262420;
+  --tile: #201e1b;
+  --track: #34312c;
+  --line: #2b2925;
+  --text: #ede8df;
+  --text-2: #a49d91;
+  --text-3: #8f887c;
+  --green: #3f9d67;
+  --green-t: #6cc08f;
+  --amber: #e0a037;
+  --amber-t: #f2b755;
+  --amber-bg: #2b2210;
+  --amber-line: #f2c77a;
+  --red: #e5553a;
+  --red-t: #f4806a;
+  --red-bg: #2e1712;
+  --red-line: #f4a08e;
+  --virtual: #e9a23b;
+  --font: 'Hanken Grotesk', 'Noto Sans SC', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --mono: 'JetBrains Mono', 'Noto Sans SC', 'PingFang SC', monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); }
+body { min-height: 100dvh; }
+button { font: inherit; color: inherit; }
+#root { min-height: 100dvh; }
+
+.app {
+  position: relative;
+  max-width: 560px;
+  min-height: 100dvh;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.banner {
+  flex: none;
+  min-height: 40px;
+  padding: 9px 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.banner strong { font-size: 14px; font-weight: 700; }
+.banner span { font-size: 12.5px; }
+.banner-virtual { background: var(--virtual); color: #241603; }
+.banner-virtual span { font-weight: 500; }
+.banner-off { background: #1a1916; border-bottom: 1px dashed #5a554c; }
+.banner-off span { color: var(--text-2); }
+
+.mat-header {
+  flex: none;
+  height: 60px;
+  padding: 0 16px 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.brand { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.brand-name { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+.mono-sub { font-family: var(--mono); font-size: 11px; color: var(--text-2); white-space: nowrap; }
+.header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.header-right .strong { color: var(--text); }
+.btn-clear {
+  flex: none;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--virtual);
+  background: rgba(233, 162, 59, 0.12);
+  color: var(--amber-t);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mat-wrap { position: relative; width: min(356px, calc(100vw - 34px)); aspect-ratio: 1; margin: 0 auto; }
+.mat-wrap svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.mat-overlay {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 0 22px;
+  height: 48px;
+  border-radius: 24px;
+  background: var(--bg);
+  border: 1px dashed #6e685e;
+  display: flex;
+  align-items: center;
+  font-size: 13.5px;
+  color: #b8b2a6;
+  white-space: nowrap;
+  pointer-events: none;
+}
