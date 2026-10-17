@@ -77,7 +77,7 @@ def build_console() -> None:
         step("安装控制台依赖")
         run("npm", "ci", cwd=console)
     step("构建控制台")
-    run("npm", "run", "build", "--silent", cwd=console)
+    run("npm", "run", "build", "--silent", cwd=console, capture=True)
 
 
 def upload(repo: str, info: BuildInfo, archive: Path, sha256: str) -> None:
