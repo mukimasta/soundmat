@@ -23,7 +23,7 @@ scsynth 是独立的系统服务，主机程序不启动它，只通过 UDP 5711
 | `jam/` | Jam 的和声铺底、旋律、贝斯、鼓 |
 | `system/` | 混音结构：模式总处理、共用效果、总输出、测试音 |
 
-SynthDef 的声道数在编译时固定，所以每个音色按 2、4、8 声道各编译一份，名字后缀声道数（`marimbaNote_2`）。主机程序按当前音箱布局的声道数选用。编译：`uv run python scripts/compile_instruments.py`（等价于 `sclang instruments/build.scd`），产物在 `instruments/compiled/`，不进仓库，部署时随程序同步。树莓派上不需要 sclang。
+SynthDef 的声道数在编译时固定，所以每个音色按 2、4、8 声道各编译一份，名字后缀声道数（`marimbaNote_2`）。主机程序按当前音箱布局的声道数选用。编译：`uv run python scripts/compile_instruments.py`（等价于 `sclang instruments/build.scd`），产物在 `instruments/compiled/`，不进仓库，部署时随程序同步。树莓派上不需要 sclang。脚本按 `SOUNDMAT_SCLANG`、`PATH`、`/Applications/SuperCollider.app/Contents/MacOS/sclang` 的顺序找 sclang；只在 Linux 上默认设置 `QT_QPA_PLATFORM=offscreen`（无桌面也能运行），macOS 版 SuperCollider.app 只带 cocoa 平台插件，不能设置 offscreen。
 
 ### 音色的约定
 
