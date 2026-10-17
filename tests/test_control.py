@@ -2,14 +2,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from soundmat.control import create_app
-from soundmat.supervisor import Options, Supervisor
+
 
 
 @pytest.fixture
-def sup(config):
-    s = Supervisor(config, Options(virtual=True))
-    yield s
-    s.stop()
+def sup(make_sup):
+    return make_sup()
 
 
 def test_hello_then_mat_and_patch(sup):
@@ -52,8 +50,8 @@ def test_virtual_endpoints(sup):
     assert len(client.get("/api/geometry").json()) == 224
 
 
-def test_virtual_endpoints_refused_without_virtual_mat(config):
-    s = Supervisor(config, Options(virtual=False))
+def test_virtual_endpoints_refused_without_virtual_mat(make_sup):
+    s = make_sup(virtual=False)
     client = TestClient(create_app(s.control, console_dist=None))
     assert client.post("/api/virtual/toggle", json={"zone": 1}).status_code == 409
     assert "控制台还没有构建" in client.get("/").text

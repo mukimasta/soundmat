@@ -10,7 +10,7 @@ uv run soundmat --virtual       # 用虚拟垫子运行，控制台在 http://lo
 uv run pytest                   # 测试
 ```
 
-`--virtual` 用虚拟垫子代替控制器；`--config` 指定其他配置文件；`--host`、`--port` 覆盖控制接口的监听地址。控制台需要先在 `console/` 下构建（`npm ci && npm run build`），构建产物由控制接口直接提供；开发控制台时用 `npm run dev`，Vite 把 `/api` 和 `/ws` 转发到 8000 端口。
+`--virtual` 用虚拟垫子代替控制器；`--config` 指定其他配置文件；`--data-dir` 指定本机数据目录（设置文件 `settings.json` 和录音，默认是程序目录下的 `data/`，树莓派上是 `/home/soundmat/data`）；`--host`、`--port` 覆盖控制接口的监听地址。控制台需要先在 `console/` 下构建（`npm ci && npm run build`），构建产物由控制接口直接提供；开发控制台时用 `npm run dev`，Vite 把 `/api` 和 `/ws` 转发到 8000 端口。
 
 ## 模块与文件
 
@@ -28,12 +28,17 @@ uv run pytest                   # 测试
 | 声音引擎 · 空间化 | `soundmat/sound/spatial.py` | 音箱布局预设与分配公式 |
 | 声音引擎 · 合成器接口 | `soundmat/sound/backend.py` | 抽象指令接口；`RecordingBackend` 只记录指令 |
 | 系统监测 · 日志 | `soundmat/monitor/log.py` | 最近的警告和错误 |
+| 声音化 · 编排文件 | `soundmat/sonification/arrangements.py` + `arrangements/` | 读取与校验，格式见 `ARRANGEMENTS.md` |
+| 声音化 · Ambient | `soundmat/sonification/ambient/` | 持续 / 间歇 / 触发、分档、条件、位置策略、灯光 |
+| 声音化 · 灯光工具 | `soundmat/sonification/lights.py` | 逐像素绘制灯光层 |
+| 声音引擎 · 素材库 | `soundmat/sound/assets.py` | 读文件头估算内存、预算检查、引用计数、重启后重载 |
+| 状态中心 · 设置 | `soundmat/store/settings.py` | 默认值、校验、原子写入 `settings.json` |
 | 状态中心 | `soundmat/store/` | 状态树、按路径修改、变化通知（尚无持久化） |
 | 控制接口 | `soundmat/control/` | FastAPI：WebSocket 推送、虚拟垫子命令、提供控制台 |
 | 配置 | `soundmat/config.py` + `config/soundmat.toml` | 已实现 |
 | 线程间容器 | `soundmat/exchange.py` | `Latest`、`EventQueue`、`EventHub` |
 
-垫面信号、设备连接、具体模式（Ambient、Jam）、编排文件、素材库、scsynth 实现、灯光引擎、录制、系统监测的其余部分尚未实现。没有 scsynth 实现之前，主机程序总是使用 `RecordingBackend`，不发声。
+垫面信号、设备连接、Jam 模式、scsynth 实现、灯光引擎、录制、系统监测的其余部分尚未实现。没有 scsynth 实现之前，主机程序总是使用 `RecordingBackend`，不发声。
 
 ## 线程与数据交换
 
@@ -72,3 +77,9 @@ uv run pytest                   # 测试
 已发出的定时事件标识保留 30 秒用于去重。合成器服务重启后引擎调用 `rebuild`：清空声部表，重新设置总输出、建立各实例的混音结构、恢复全局参数，并调用 `on_rebuild` 回调（例如素材库重新加载素材）；下一拍的对账把所有持续声部重新开始。
 
 空间化公式见 `sound/spatial.py` 的说明：方向上在相邻两只音箱之间等功率分配，再按半径与均匀分布混合，最后归一到等功率。预设布局有立体声（左 330°、右 30°）、四声道（左前 315°、右前 45°、右后 135°、左后 225°）和八声道（0° 起每 45°）。
+
+## 设置与启动
+
+设置保存在数据目录的 `settings.json`，结构与状态树的 `settings` 一致，但只写入改过的项：没改过的项每次启动时取默认值，声音素材库的默认位置因此跟随环境变量 `SOUNDMAT_SOUND` 和程序目录。读取时逐项校验，非法或无法读取的项回到默认值并写一条警告；修改经过 `Settings.update` 逐项校验，任何一项非法就整批拒绝。写入先写同目录的临时文件、`fsync` 后再 `os.replace`，断电时要么是旧文件、要么是新文件。
+
+声音相关的设置（总音量、音箱布局、朝向）变化时，运行管理把应用动作放进声音化的命令队列，在下一拍由节拍线程交给声音引擎。素材库位置变化时重新检查所有编排的素材。启动时播放设置里的默认编排；它不存在时改用第一份能找到的编排，并写一条警告。

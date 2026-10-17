@@ -4,14 +4,14 @@ import pytest
 from soundmat.perception.model import PressureMap
 from soundmat.perception.zones import NUM_ZONES
 from soundmat.sonification.mode import LoadError
-from soundmat.supervisor import Options, Supervisor
+
 
 from helpers import EchoMode, arrangement, beat
 
 
 @pytest.fixture
-def sup(config):
-    return Supervisor(config, Options(virtual=True, modes={"echo": EchoMode}))
+def sup(make_sup, tmp_path):
+    return make_sup(modes={"echo": EchoMode}, arrangements_dir=tmp_path / "none")
 
 
 def press(sup, t, zones):

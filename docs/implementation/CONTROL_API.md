@@ -16,16 +16,23 @@
 
 ## 状态树
 
-状态中心的树分为 `status`（运行状态，由各模块写入）和 `settings`（持久设置，后续阶段加入）。当前已有的路径：
+状态中心的树分为 `status`（运行状态，由各模块写入）、`settings`（持久设置，结构见下）和 `catalog`（可用的编排）。当前已有的路径：
 
 | 路径 | 含义 |
 |---|---|
 | `status.current.virtual` | 是否使用虚拟垫子 |
 | `status.current.arrangement`、`status.current.mode` | 当前编排标识与模式名 |
 | `status.current.modeStatus` | 模式状态 `{text, reading, transport}` |
-| `status.current.switching` | 切换中为 `{to, progress}`，否则 `null` |
+| `status.current.switching` | 切换中为 `{from, to, progress}`，否则 `null` |
 | `status.audio.engine` | 声音引擎：在响声部数 `voices`、预算 `budget`、各类别在响数 `categories`、让位 `yields`、放弃 `rejected`、迟到 `late`、去重 `duplicates`、合成器服务重启 `restarts` |
 | `status.log` | 最近的警告和错误：`[{at, level, text, count?}]`，最新在前 |
+| `status.audio.assets` | `missing`（当前编排缺失的素材）、`needed`（引用总数）、`state`（`loaded`、`memoryMB`、`budgetMB`、`library`） |
+| `catalog.arrangements` | `[{id, title, mode, modeLabel, description, ringLabels, missing, error}]` |
+| `settings.sound.layout` | 音箱布局 `{azimuths, names}` |
+| `settings.sound.orientation` | 垫面朝向偏移（度，0–360） |
+| `settings.sound.volume` | 总音量 0–1 |
+| `settings.run.defaultArrangement`、`settings.run.soundLibrary` | 默认编排、声音素材库位置 |
+| `settings.recording.path`、`settings.recording.stems` | 录音保存位置、是否录制分轨 |
 
 ## HTTP
 
@@ -35,3 +42,5 @@
 | `GET /api/geometry` | — | 区域几何 |
 | `POST /api/virtual/toggle` | `{"zone": 序号}` | 切换一个区的虚拟石头，返回 `{"zone", "stone"}`；不在虚拟垫子模式时返回 409，序号越界返回 422 |
 | `POST /api/virtual/clear` | — | 清空虚拟垫子 |
+| `POST /api/arrangements/{id}/play` | — | 切换到这份编排；加载失败返回 422 和原因 |
+| `POST /api/settings` | `{"changes": {"sound.volume": 0.7, ...}}` | 修改设置（键是 `settings` 下的路径；`sound.layout` 也可以是预设名 `stereo` / `quad` / `octo`）；任一项非法返回 422，整批不生效 |
