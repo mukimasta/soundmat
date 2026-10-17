@@ -60,6 +60,8 @@ def test_full_recording_cycle(sup):
     assert info["slateOffsetSeconds"] == 3.0 and info["stopReason"] == "user"
     assert info["duration"] == pytest.approx(5.0 - 1.3, abs=0.05)
     assert info["settings"]["sound"]["volume"] == 0.8
+    assert info["files"] == ["session.jsonl", "info.json"]
+    assert not (folder / "stems").exists()                        # 没有音频时不建分轨目录
     types = [json.loads(l)["type"] for l in (folder / "session.jsonl").read_text().splitlines()]
     assert types[0] == "start" and types[-1] == "stop"
     assert {"pressure", "sound", "slate", "event"} <= set(types)

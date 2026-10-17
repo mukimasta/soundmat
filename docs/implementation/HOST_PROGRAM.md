@@ -139,4 +139,4 @@ uv run pytest                   # 测试
 | `session.jsonl` | 每行一条，带系统时间 `t`：`start`、`pressure`（最多 30 次/秒，压力 × 1000 和有石头的区域）、`event`（放下、拿起）、`sound`（持续声部与全局参数，变化时）、`events`（交出的定时事件）、`light`（灯环颜色，最多 10 次/秒）、`slate`、`stop` |
 | `info.json` | `startedAt`（带时区的开始时间）、`startSystemTime`、`slateOffsetSeconds`（打板在录音中的位置，固定 3 秒）、`slateSystemTime`、编排、声道数、采样率、格式、开始时的设置、文件清单、`duration`、`endedAt`、`stopReason` |
 
-没有连接合成器服务（`--no-synth`）时也能录制，只产生会话数据和录制信息，`audio` 为 false。下载接口把整个文件夹边打包边输出为不压缩的 zip，不需要临时文件。
+没有连接合成器服务（`--no-synth`）时也能录制，只产生会话数据和录制信息，`audio` 为 false，不建 `stems/` 目录；文件清单只列实际开始录制的文件。下载接口把整个文件夹边打包边输出为不压缩的 zip，不需要临时文件。

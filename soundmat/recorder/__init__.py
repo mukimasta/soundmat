@@ -187,11 +187,15 @@ class Recorder:
         folder = self.root / f"{wall:%Y-%m-%d_%H%M%S}_{arr.get('id') or 'none'}"
         folder.mkdir(parents=True, exist_ok=True)
         files = {"master": str(folder / "master.wav")}
-        if self.setting("recording.stems", True):
-            (folder / "stems").mkdir(exist_ok=True)
-            for name in self.backend.recordable_stems():
-                files[name] = str(folder / "stems" / f"{name}.wav")
+        stems_dir = folder / "stems"
+        stems = self.backend.recordable_stems() if self.setting("recording.stems", True) else []
+        if stems:                              # scsynth 不建目录，要先建好；没有音频时不建
+            stems_dir.mkdir(exist_ok=True)
+            for name in stems:
+                files[name] = str(stems_dir / f"{name}.wav")
         started = self.backend.start_recording(files, start_t)
+        if stems and not set(stems) & set(started):
+            stems_dir.rmdir()                  # 合成器服务离线，一个分轨也没开始
         rel = [str(Path(files[k]).relative_to(folder)) for k in started]
         self.session = Session(folder=folder, start_t=start_t, started_wall=wall, arrangement=arr,
                                settings=self.store.get("settings", {}), channels=self.channels(),
