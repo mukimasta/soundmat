@@ -171,14 +171,13 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
   }
 
   function NetSection({ h }: { h: sel.Health | null }) {
-    const n = g<{ name: string | null; address: string | null; tailscale: string | null; tailscaleAddress: string | null }>('status.network');
-    const host = g<string>('status.machine.host');
+    const n = g<{ name: string | null; address: string | null; tailscale: string | null; tailscaleAddress: string | null; localName: string | null }>('status.network');
     return (
       <section className="card" aria-label="网络">
         <SecHead no="03" name="网络" ind={h?.net.level} />
         <span style={{ fontSize: 16, fontWeight: 600 }}>{n?.name ?? (n?.address ? '已联网' : '未连接网络')}</span>
         <div>
-          <KV k="地址" v={[host ? `${host}.local` : null, n?.address].filter(Boolean).join(' · ') || '—'} />
+          <KV k="地址" v={[n?.localName, n?.address].filter(Boolean).join(' · ') || '—'} />
           <KV k="Tailscale" v={n?.tailscale ? `${n.tailscale === 'Running' ? '已连接' : n.tailscale}${n.tailscaleAddress ? ` · ${n.tailscaleAddress}` : ''}` : '未知'} />
         </div>
       </section>
