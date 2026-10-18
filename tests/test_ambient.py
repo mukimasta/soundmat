@@ -136,3 +136,60 @@ def test_lights_breath_and_stone_marks():
     base, marks = out.light.layers
     assert base.alpha.min() > 0
     assert marks.alpha[0] > 0 and marks.alpha[54] == 0
+
+
+class _ReferenceCanvas:
+    """第一版逐灯珠的画法（0–1 颜色），作对照。"""
+
+    def __init__(self, n):
+        self.n = n
+        self.rgb = np.zeros((n, 3), dtype=np.float32)
+        self.alpha = np.zeros(n, dtype=np.float32)
+
+    def fill(self, color, alpha):
+        self.rgb[:] = np.asarray(color, dtype=np.float32) / 255.0
+        self.alpha[:] = alpha
+        return self
+
+    def put(self, index, color, alpha):
+        i = index % self.n
+        a0 = self.alpha[i]
+        a = max(a0, alpha)
+        if a <= 0:
+            return
+        c = np.asarray(color, dtype=np.float32) / 255.0
+        w = alpha / (a0 + alpha) if (a0 + alpha) > 0 else 1.0
+        self.rgb[i] = self.rgb[i] * (1 - w) + c * w
+        self.alpha[i] = a
+
+    def span(self, center, width, color, alpha):
+        half = max(0, width // 2)
+        for d in range(-half, half + 1):
+            self.put(center + d, color, alpha * (1.0 - abs(d) / (half + 1)))
+
+
+@pytest.mark.parametrize("seed", range(20))
+def test_lights_match_per_led_reference(seed):
+    """Ambient 灯光改用共用的向量化画布后，与原来逐灯珠的画法一致（相邻石头的标记叠加也一样）。"""
+    import math
+    import random
+
+    from soundmat.sonification.ambient import WARM
+    from soundmat.sonification.lights import RING_COLORS, led_for_angle
+
+    rnd = random.Random(seed)
+    n = 108
+    t = rnd.uniform(0, 100)
+    s = snap(t, {rnd.randrange(NUM_ZONES) for _ in range(rnd.randint(0, 80))})
+    mode = AmbientMode(Arrangement("a", "A", "ambient", content={}), ModeContext(led_count=n))
+    base, marks = mode._light(t, s).layers
+
+    breath = 0.25 + 0.2 * (0.5 + 0.5 * math.sin(t * 0.9))
+    ref_base = _ReferenceCanvas(n).fill(WARM, breath)
+    ref_marks = _ReferenceCanvas(n)
+    for z in s.state.occupied:
+        ref_marks.span(led_for_angle(ZONES[z].center_deg, n), 3, RING_COLORS[ZONES[z].ring], 0.55)
+    np.testing.assert_allclose(base.rgb, ref_base.rgb, atol=1e-5)
+    np.testing.assert_allclose(base.alpha, ref_base.alpha, atol=1e-6)
+    np.testing.assert_allclose(marks.rgb, ref_marks.rgb, atol=1e-5)
+    np.testing.assert_allclose(marks.alpha, ref_marks.alpha, atol=1e-6)

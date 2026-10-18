@@ -10,7 +10,8 @@ from typing import Callable
 
 import numpy as np
 
-from ...clock import system_time
+from ...errors import InvalidRequest
+from ...timebase import system_time
 from ..model import PressureMap
 from ..zones import NUM_ZONES
 
@@ -38,7 +39,7 @@ class VirtualMat:
     def toggle(self, zone: int) -> bool:
         """切换一个区；返回切换后这个区是否有石头。"""
         if not 0 <= zone < NUM_ZONES:
-            raise ValueError(f"区域序号超出范围：{zone}")
+            raise InvalidRequest(f"区域序号超出范围：{zone}")
         with self._lock:
             if zone in self._stones:
                 self._stones.discard(zone)
@@ -48,7 +49,7 @@ class VirtualMat:
 
     def set(self, zone: int, present: bool) -> None:
         if not 0 <= zone < NUM_ZONES:
-            raise ValueError(f"区域序号超出范围：{zone}")
+            raise InvalidRequest(f"区域序号超出范围：{zone}")
         with self._lock:
             (self._stones.add if present else self._stones.discard)(zone)
 

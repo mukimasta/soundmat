@@ -60,4 +60,3 @@ def test_beat_lag_and_stalls_are_measured():
     clk.stop()
     assert clk.stalls >= 1
     assert clk.max_lag() >= 0.05
-    assert clk.overruns >= 1

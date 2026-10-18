@@ -15,23 +15,22 @@
 from __future__ import annotations
 
 import datetime as dt
-import io
 import json
 import logging
 import queue
 import shutil
 import threading
-import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any, Callable
 
 import numpy as np
 
-from ..clock import system_time
+from ..timebase import system_time
+from ..errors import Conflict, NotFound
 from ..exchange import Latest
 from ..monitor.log import EventLog
-from ..sonification.intent import LightLayer, SoundIntent
+from ..intent import LightLayer, SoundIntent
 from ..store import Store
 
 log = logging.getLogger("soundmat.recorder")
@@ -46,7 +45,7 @@ BYTES_PER_SAMPLE = {"master": 3, "stem": 4}   # 总输出 24 位，分轨 32 位
 SLATE_COLOR = (255, 246, 230)
 
 
-class RecordingError(Exception):
+class RecordingError(Conflict):
     """无法开始录制；消息直接显示给人看。"""
 
 
@@ -355,40 +354,5 @@ class Recorder:
     def folder_of(self, name: str) -> Path:
         d = (self.root / name).resolve()
         if d.parent != self.root.resolve() or not (d / "info.json").is_file():
-            raise FileNotFoundError(name)
+            raise NotFound("没有这段录制")
         return d
-
-
-class _Sink(io.RawIOBase):
-    """zipfile 写入的不可回退流：写进去的字节由生成器取走。"""
-
-    def __init__(self):
-        self.chunks: list[bytes] = []
-
-    def writable(self) -> bool:
-        return True
-
-    def write(self, b) -> int:
-        self.chunks.append(bytes(b))
-        return len(b)
-
-    def take(self) -> bytes:
-        out, self.chunks = b"".join(self.chunks), []
-        return out
-
-
-def zip_stream(folder: Path, chunk: int = 1 << 20) -> Iterator[bytes]:
-    """把一次录制的文件夹边打包边输出（不压缩，不需要临时文件）。"""
-    sink = _Sink()
-    with zipfile.ZipFile(sink, "w", zipfile.ZIP_STORED, allowZip64=True) as zf:
-        for path in sorted(p for p in folder.rglob("*") if p.is_file()):
-            arc = f"{folder.name}/{path.relative_to(folder)}"
-            with open(path, "rb") as src, zf.open(arc, "w", force_zip64=True) as dst:
-                while True:
-                    data = src.read(chunk)
-                    if not data:
-                        break
-                    dst.write(data)
-                    yield sink.take()
-            yield sink.take()
-    yield sink.take()

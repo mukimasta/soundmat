@@ -274,7 +274,7 @@ const RATE_ROWS: { key: string; label: string; upTo?: boolean }[] = [
 function RhythmSection() {
   const s = useConsole();
   const rates = getPath<Record<string, Rate | null>>(s.state, 'status.rates') ?? {};
-  const t = getPath<{ overruns: number | null; overrunsRecent: number | null; stalls: number | null; stallsRecent: number | null;
+  const t = getPath<{ stalls: number | null; stallsRecent: number | null;
     maxLagMs: number | null; late: number | null; lateRecent: number | null; yields: number | null; rejected: number | null;
     stallsAttention?: boolean; lateAttention?: boolean }>(s.state, 'status.timing');
   const display = useDisplayFps();
@@ -307,7 +307,7 @@ function RhythmSection() {
       <div className="grid2">
         <Tile label="节拍延迟" value={t?.maxLagMs == null ? '—' : Math.round(t.maxLagMs)} unit={t?.maxLagMs == null ? '' : 'ms · 最近 1 分钟最大'}
           sub={t?.stallsRecent == null ? undefined
-            : `超过 50 ms ${t.stallsRecent} 次 · 小幅超时 ${t.overrunsRecent ?? 0} 次（不影响声音）`}
+            : `超过 50 ms ${t.stallsRecent} 次`}
           tone={t?.stallsAttention ? 'warn' : t ? 'ok' : undefined} />
         <Tile label="迟到丢弃" value={t?.lateRecent ?? '—'} unit={t?.lateRecent == null ? '' : '次 · 最近 1 分钟'}
           sub={t?.late == null ? undefined : `启动以来 ${t.late} 次`} tone={t?.lateAttention ? 'warn' : t ? 'ok' : undefined} />

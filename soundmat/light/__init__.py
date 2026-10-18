@@ -13,11 +13,11 @@ from typing import Callable
 
 import numpy as np
 
-from ..clock import system_time
+from ..timebase import system_time
 from ..config import LightConfig
 from ..exchange import Latest
 from ..rates import RateMeter
-from ..sonification.intent import LightIntent, LightLayer
+from ..intent import LightIntent, LightLayer
 
 
 def composite(layers, led_count: int) -> np.ndarray:

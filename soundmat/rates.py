@@ -5,11 +5,9 @@
 from __future__ import annotations
 
 import threading
-import time
 from collections import deque
 
-# 与 clock.system_time 相同的单调时钟；这里不从 clock 导入，因为时钟本身也使用速率计
-system_time = time.monotonic
+from .timebase import system_time
 
 WINDOW = 1.0  # 秒
 

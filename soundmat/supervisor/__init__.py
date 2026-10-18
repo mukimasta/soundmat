@@ -14,6 +14,7 @@ from ..config import ROOT, Config
 from ..control import MAT_PUSH_HZ, ControlContext
 from ..device import DeviceLink, RawFrame
 from ..light import LightEngine
+from ..errors import InvalidRequest
 from ..exchange import Latest
 from ..monitor import Monitor, Probes
 from ..monitor import probes
@@ -27,7 +28,7 @@ from ..sonification import ModeFactory, ModeInstance, Sonification
 from ..sonification.ambient import AmbientMode
 from ..sonification.jam import JamMode
 from ..sonification.arrangements import ARRANGEMENTS_DIR, discover
-from ..sonification.intent import LightIntent
+from ..intent import LightIntent
 from ..sonification.mode import Arrangement, LoadError, ModeContext
 from ..sound.assets import AssetLibrary
 from ..sound.backend import Backend, RecordingBackend
@@ -258,7 +259,7 @@ class Supervisor:
             "pushLeds": {"actual": ctl.push_rate("leds"), "expected": cfg.light.refresh_hz},
         }
         st = self.engine.stats
-        counters = {"overruns": self.clock.overruns, "stalls": self.clock.stalls, "late": st.late,
+        counters = {"stalls": self.clock.stalls, "late": st.late,
                     "yields": st.yields, "rejected": st.rejected}
         stems = len(self.backend.recordable_stems())
         return {"rates": rates, "counters": counters, "maxLagMs": round(self.clock.max_lag() * 1000, 1),
@@ -273,7 +274,7 @@ class Supervisor:
     def test_tone(self, channel: int) -> None:
         """在某个声道上放 1 秒测试音，确认每只音箱接对了位置。"""
         if not 0 <= channel < self.engine.layout.channels:
-            raise ValueError(f"声道 {channel} 超出当前音箱布局（共 {self.engine.layout.channels} 只）")
+            raise InvalidRequest(f"声道 {channel} 超出当前音箱布局（共 {self.engine.layout.channels} 只）")
         self.sonification.run_in_beat(
             lambda now: self.backend.test_tone(channel, now + self.config.sound.output_latency))
 

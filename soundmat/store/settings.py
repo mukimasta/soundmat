@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ..config import ROOT
+from ..errors import InvalidRequest
 from ..sound.spatial import PRESETS, SpeakerLayout
 from . import Store
 
@@ -133,16 +134,16 @@ class Settings:
         return self.store.get(f"settings.{key}", default)
 
     def update(self, changes: dict[str, Any]) -> dict[str, Any]:
-        """校验并应用修改，立即保存。任何一项非法时抛出 ``ValueError``，什么都不改。"""
+        """校验并应用修改，立即保存。任何一项非法时抛出 ``InvalidRequest``，什么都不改。"""
         clean = {}
         for key, value in changes.items():
             check = VALIDATORS.get(key)
             if check is None:
-                raise ValueError(f"未知的设置项：{key}")
+                raise InvalidRequest(f"未知的设置项：{key}")
             try:
                 clean[key] = check(value)
             except ValueError as e:
-                raise ValueError(f"{key}：{e}") from e
+                raise InvalidRequest(f"{key}：{e}") from e
         with self._lock:
             self.store.update({f"settings.{k}": v for k, v in clean.items()})
             self._changed.update(clean)

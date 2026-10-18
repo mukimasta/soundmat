@@ -22,8 +22,8 @@ from typing import Any
 from ...clock import Beat
 from ...perception.model import MatEvent, MatSnapshot
 from ...perception.zones import RING_CENTERS, MAT_RADIUS, ZONES, zones_in_ring
-from ..intent import BeatOutput, Event, LightIntent, ModeStatus, Position, SoundIntent, Source, Voice
-from ..lights import RING_COLORS, Canvas, led_for_angle
+from ...intent import BeatOutput, Event, LightIntent, ModeStatus, Position, SoundIntent, Source, Voice
+from ..lights import RING_COLORS, Canvas, led_for_angle, span
 from ..mode import LoadError, LoadPlan, Mode
 
 BEHAVIORS = ("sustained", "intermittent", "trigger")
@@ -273,12 +273,11 @@ class AmbientMode(Mode):
     def _light(self, t: float, snapshot: MatSnapshot) -> LightIntent:
         n = self.ctx.led_count
         breath = 0.25 + 0.2 * (0.5 + 0.5 * math.sin(t * 0.9))
-        base = Canvas("base", 0, n).fill(WARM, breath)
-        marks = Canvas("stones", 10, n)
-        for z in snapshot.state.occupied:
-            zone = ZONES[z]
-            marks.span(led_for_angle(zone.center_deg, n), 3, RING_COLORS[zone.ring], 0.55)
-        return LightIntent((base.layer(), marks.layer()))
+        base = Canvas(n, WARM, breath)
+        marks = Canvas(n)
+        marks.add(m for z in snapshot.state.occupied
+                  for m in span(led_for_angle(ZONES[z].center_deg, n), 3, RING_COLORS[ZONES[z].ring], 0.55, n))
+        return LightIntent((base.layer("base", 0), marks.layer("stones", 10)))
 
 
 def _numeric(params: dict) -> dict[str, float]:

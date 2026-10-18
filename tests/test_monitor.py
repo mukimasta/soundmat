@@ -162,9 +162,9 @@ def test_restarts_unknown_outside_systemd(monkeypatch):
     assert P.systemd_restarts("soundmat.service") is None
 
 
-def runtime(overruns=0, late=0, rate=0, root=None):
+def runtime(late=0, rate=0, root=None):
     return lambda: {"rates": {"beat": {"actual": 60.0, "expected": 60.0}},
-                    "counters": {"overruns": overruns, "late": late, "yields": 0, "rejected": 0},
+                    "counters": {"late": late, "yields": 0, "rejected": 0},
                     "recordBytesPerSecond": rate, "recordRoot": root}
 
 
@@ -186,15 +186,14 @@ def test_program_network_storage_and_rates_published(rig, tmp_path):
 
 
 def test_recent_stalls_and_late_events_need_attention(rig):
-    """小幅超时只作参考；节拍晚到超过迟到容忍度（卡住）或定时事件迟到才需要注意。"""
+    """节拍晚到超过迟到容忍度（卡住）或定时事件迟到才需要注意。"""
     mon, store, fake, synth = rig
-    counts = {"overruns": 5, "stalls": 0, "late": 0}
+    counts = {"stalls": 0, "late": 0}
     mon.runtime = lambda: {"counters": {**counts, "yields": 0, "rejected": 0}, "maxLagMs": 12.0}
     assert mon.step(0)["sound"]["level"] == "ok"                # 启动以来的累计数不算
-    counts["overruns"] = 85
     counts["stalls"] = 2
-    assert mon.step(0.5)["sound"]["level"] == "ok"              # 小幅超时很多、卡住两次：不提示
-    assert store.get("status.timing.overrunsRecent") == 80
+    assert mon.step(0.5)["sound"]["level"] == "ok"              # 卡住两次：不提示
+    assert store.get("status.timing.stallsRecent") == 2
     assert store.get("status.timing.maxLagMs") == 12.0
     counts["stalls"] = 5
     h = mon.step(1)

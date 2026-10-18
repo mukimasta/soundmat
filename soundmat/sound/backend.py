@@ -11,7 +11,7 @@ import heapq
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol, Sequence
 
-from ..sonification.intent import Source
+from ..intent import Source
 from .spatial import SpeakerGains
 
 
@@ -23,6 +23,7 @@ class BackendEvents:
 
 class Backend(Protocol):
     online: bool
+    records_audio: bool        # 能否录下音频（不发声的替身只记录会话数据）
 
     def create_mix(self, instance: str, buses: Sequence[str], channels: int, at: float,
                    fx: str | None = None) -> None: ...
@@ -50,6 +51,7 @@ class Backend(Protocol):
     def slate(self, at: float) -> None: ...
 
     def poll(self, now: float) -> BackendEvents: ...
+    def status(self) -> dict | None: ...          # 给系统监测；不发声的替身为 None
     def levels(self, instance: str | None, meters: Sequence[Sequence[str]], now: float | None = None) -> dict | None: ...
     def flush(self) -> None: ...
 
@@ -69,6 +71,7 @@ class RecordingBackend:
     - 被强制释放的声部立即结束，不再通知。
     """
 
+    records_audio = False
     SIM_LEVEL = -18.0          # 模拟电平：有声部在响的总线显示为这个值（dBFS）
     MAX_COMMANDS = 50000       # 长时间运行（--no-synth 开发）时只保留最近的指令
 
@@ -168,6 +171,9 @@ class RecordingBackend:
 
     def flush(self):
         pass
+
+    def status(self):
+        return None
 
     def poll(self, now):
         ev = BackendEvents(restarted=self._restart_pending)

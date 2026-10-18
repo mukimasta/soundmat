@@ -5,9 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from soundmat.clock import system_time
+from soundmat.timebase import system_time
 from soundmat.config import SoundConfig
-from soundmat.sonification.intent import Event, Position, SoundIntent, Source, Voice
+from soundmat.intent import Event, Position, SoundIntent, Source, Voice
 from soundmat.sound.engine import SoundEngine
 from soundmat.sound.scsynth import Allocator, ScsynthBackend
 from soundmat.sound.spatial import PRESETS

@@ -161,7 +161,7 @@ class Monitor:
             self._counters.popleft()
         oldest = self._counters[0][1]
         out: dict = {}
-        for k in ("overruns", "stalls", "late", "yields", "rejected"):
+        for k in ("stalls", "late", "yields", "rejected"):
             v = counters.get(k)
             out[k] = v
             out[f"{k}Recent"] = None if v is None or oldest.get(k) is None else v - oldest[k]

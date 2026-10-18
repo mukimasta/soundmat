@@ -12,50 +12,77 @@ import contextlib
 import ipaddress
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable, Protocol
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from ..clock import system_time
 from ..config import ROOT, Config
+from ..errors import Conflict, UserError
 from ..exchange import Latest
 from ..perception.model import MatSnapshot
 from ..perception.virtual import VirtualMat
 from ..perception.zones import geometry_json
 from ..rates import RateMeter
-from ..sonification.mode import LoadError
 from ..store import Store
 from ..store.settings import Settings
+from ..timebase import system_time
+from .download import zip_stream
 
 CONSOLE_DIST = ROOT / "console" / "dist"
 MAT_PUSH_HZ = 30.0
 PATCH_HZ = 30.0      # 状态变化合批推送的上限
 
 
+class Recordings(Protocol):
+    """控制接口用到的录制功能（``soundmat.recorder.Recorder``）。"""
+    def request_start(self) -> None: ...
+    def request_stop(self) -> None: ...
+    def list(self) -> list[dict]: ...
+    def folder_of(self, name: str) -> Path: ...
+
+
+class Updates(Protocol):
+    """控制接口用到的软件更新功能（``soundmat.updater.Updater``）。"""
+    enabled: bool
+    def available(self) -> list[dict]: ...
+    def start_update(self, tag: str) -> None: ...
+    def rollback(self) -> None: ...
+
+
 @dataclass
 class ControlContext:
-    """控制接口能接触到的东西。其他模块通过这里暴露的对象和命令接入。"""
+    """控制接口能接触到的东西。其他模块通过这里暴露的对象和命令接入。
+
+    命令拒绝请求时抛出 ``soundmat.errors.UserError``，由控制接口统一转成 HTTP 状态码。
+    """
     config: Config
     store: Store
     mat: Latest[MatSnapshot]
-    virtual: VirtualMat | None = None
-    play: Callable[[str], None] | None = None        # 切换到一份编排；失败抛出 LoadError
-    settings: Settings | None = None
-    test_tone: Callable[[int], None] | None = None   # 逐声道测试音
-    recorder: Any = None                             # 录制（soundmat.recorder.Recorder）
+    settings: Settings
+    play: Callable[[str], None]                      # 切换到一份编排
+    test_tone: Callable[[int], None]                 # 逐声道测试音
+    recorder: Recordings
+    updater: Updates
+    virtual: VirtualMat | None = None                # 只在使用虚拟垫子时存在
     # 额外的高频数据源，例如灯环预览：消息类型 → 保存可 JSON 化 dict 的最新值容器
     streams: dict[str, Latest[dict]] = field(default_factory=dict)
     # 每个 WebSocket 连接实际推送的帧率：连接序号 → 消息类型 → 速率计
     push_rates: dict[int, dict[str, RateMeter]] = field(default_factory=dict)
-    updater: Any = None                              # 软件更新（soundmat.updater.Updater）
 
     def push_rate(self, kind: str) -> float | None:
         """所有连接里这类消息的最高实际推送帧率；没有控制台连着时为 None。"""
         rates = [r[kind].rate() for r in list(self.push_rates.values()) if kind in r]
         return max(rates) if rates else None
+
+    def rates(self) -> dict[str, dict]:
+        """给系统监测：推到控制台的垫面和灯环预览的实际帧率。两者都只在有变化时推送，期望值是上限。"""
+        return {
+            "pushMat": {"actual": self.push_rate("mat"), "expected": MAT_PUSH_HZ},
+            "pushLeds": {"actual": self.push_rate("leds"), "expected": self.config.light.refresh_hz},
+        }
 
 
 TAILSCALE = ipaddress.ip_network("100.64.0.0/10")
@@ -85,7 +112,7 @@ class ZoneBody(BaseModel):
 
 
 class SettingsBody(BaseModel):
-    changes: dict[str, Any]
+    changes: dict
 
 
 class ToneBody(BaseModel):
@@ -109,10 +136,19 @@ def mat_message(snap: MatSnapshot) -> dict:
 def create_app(ctx: ControlContext, console_dist: Path | None = CONSOLE_DIST) -> FastAPI:
     app = FastAPI(title="SoundMat")
 
-    def require_virtual() -> VirtualMat:
+    @app.exception_handler(UserError)
+    def user_error(request: Request, e: UserError) -> JSONResponse:
+        return JSONResponse(status_code=e.status, content={"detail": str(e)})
+
+    def virtual() -> VirtualMat:
         if ctx.virtual is None:
-            raise HTTPException(status_code=409, detail="当前没有使用虚拟垫子")
+            raise Conflict("当前没有使用虚拟垫子")
         return ctx.virtual
+
+    def updater(request: Request) -> Updates:
+        if not may_update(request.client.host if request.client else None):
+            raise HTTPException(status_code=403, detail="只有从本机或 Tailscale 打开的控制台能更新")
+        return ctx.updater
 
     @app.get("/api/state")
     def get_state() -> dict:
@@ -124,75 +160,53 @@ def create_app(ctx: ControlContext, console_dist: Path | None = CONSOLE_DIST) ->
 
     @app.post("/api/virtual/toggle")
     def virtual_toggle(body: ZoneBody) -> dict:
-        vm = require_virtual()
-        try:
-            present = vm.toggle(body.zone)
-        except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e)) from e
-        return {"zone": body.zone, "stone": present}
+        return {"zone": body.zone, "stone": virtual().toggle(body.zone)}
 
     @app.post("/api/virtual/clear")
     def virtual_clear() -> dict:
-        require_virtual().clear()
+        virtual().clear()
         return {"ok": True}
 
     @app.post("/api/arrangements/{arrangement_id}/play")
     def play(arrangement_id: str) -> dict:
-        if ctx.play is None:
-            raise HTTPException(status_code=503, detail="声音化尚未启动")
-        try:
-            ctx.play(arrangement_id)
-        except LoadError as e:
-            raise HTTPException(status_code=422, detail=str(e)) from e
+        ctx.play(arrangement_id)
         return {"ok": True}
 
     @app.post("/api/settings")
     def update_settings(body: SettingsBody) -> dict:
-        if ctx.settings is None:
-            raise HTTPException(status_code=503, detail="设置不可用")
-        try:
-            applied = ctx.settings.update(body.changes)
-        except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e)) from e
-        return {"applied": applied}
+        return {"applied": ctx.settings.update(body.changes)}
 
     @app.post("/api/audio/test-tone")
     def test_tone(body: ToneBody) -> dict:
-        if ctx.test_tone is None:
-            raise HTTPException(status_code=503, detail="声音引擎不可用")
-        try:
-            ctx.test_tone(body.channel)
-        except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e)) from e
+        ctx.test_tone(body.channel)
         return {"ok": True}
-
-    def require_recorder():
-        if ctx.recorder is None:
-            raise HTTPException(status_code=503, detail="录制不可用")
-        return ctx.recorder
 
     @app.post("/api/recording/start")
     def recording_start() -> dict:
-        from ..recorder import RecordingError
-        try:
-            require_recorder().request_start()
-        except RecordingError as e:
-            raise HTTPException(status_code=409, detail=str(e)) from e
+        ctx.recorder.request_start()
         return {"ok": True}
 
-    def require_updater(request: Request):
-        if ctx.updater is None:
-            raise HTTPException(status_code=409, detail="这里不能更新")
-        if not may_update(request.client.host if request.client else None):
-            raise HTTPException(status_code=403, detail="只有从本机或 Tailscale 打开的控制台能更新")
-        return ctx.updater
+    @app.post("/api/recording/stop")
+    def recording_stop() -> dict:
+        ctx.recorder.request_stop()
+        return {"ok": True}
+
+    @app.get("/api/recordings")
+    def recordings() -> list[dict]:
+        return ctx.recorder.list()
+
+    @app.get("/api/recordings/{name}/download")
+    def recording_download(name: str):
+        folder = ctx.recorder.folder_of(name)
+        return StreamingResponse(zip_stream(folder), media_type="application/zip",
+                                 headers={"Content-Disposition": f"attachment; filename*=UTF-8''{folder.name}.zip"})
 
     @app.get("/api/update")
     def update_info(request: Request) -> dict:
         """软件更新面板的数据：能否更新、当前状态，以及 GitHub 上可以安装的版本（能更新时才列出）。"""
         up = ctx.updater
-        allowed = up is not None and up.enabled and may_update(request.client.host if request.client else None)
-        out: dict = {"allowed": allowed, "enabled": bool(up and up.enabled), "available": [], "error": None}
+        allowed = up.enabled and may_update(request.client.host if request.client else None)
+        out: dict = {"allowed": allowed, "enabled": up.enabled, "available": [], "error": None}
         if allowed:
             try:
                 out["available"] = up.available()
@@ -202,40 +216,13 @@ def create_app(ctx: ControlContext, console_dist: Path | None = CONSOLE_DIST) ->
 
     @app.post("/api/update", status_code=202)
     def update_start(body: UpdateBody, request: Request) -> dict:
-        from ..updater import UpdateError
-        try:
-            require_updater(request).start_update(body.tag)
-        except UpdateError as e:
-            raise HTTPException(status_code=409, detail=str(e)) from e
+        updater(request).start_update(body.tag)
         return {"ok": True}
 
     @app.post("/api/update/rollback", status_code=202)
     def update_rollback(request: Request) -> dict:
-        from ..updater import UpdateError
-        try:
-            require_updater(request).rollback()
-        except UpdateError as e:
-            raise HTTPException(status_code=409, detail=str(e)) from e
+        updater(request).rollback()
         return {"ok": True}
-
-    @app.post("/api/recording/stop")
-    def recording_stop() -> dict:
-        require_recorder().request_stop()
-        return {"ok": True}
-
-    @app.get("/api/recordings")
-    def recordings() -> list[dict]:
-        return require_recorder().list()
-
-    @app.get("/api/recordings/{name}/download")
-    def recording_download(name: str):
-        from ..recorder import zip_stream
-        try:
-            folder = require_recorder().folder_of(name)
-        except FileNotFoundError as e:
-            raise HTTPException(status_code=404, detail="没有这段录制") from e
-        return StreamingResponse(zip_stream(folder), media_type="application/zip",
-                                 headers={"Content-Disposition": f"attachment; filename*=UTF-8''{folder.name}.zip"})
 
     @app.websocket("/ws")
     async def ws(socket: WebSocket) -> None:

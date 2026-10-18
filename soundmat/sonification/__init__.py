@@ -18,7 +18,7 @@ from ..monitor.log import EventLog
 from ..perception import Perception
 from ..sound.engine import SoundEngine
 from ..store import Store
-from .intent import BeatOutput, LightIntent, SoundIntent
+from ..intent import BeatOutput, LightIntent, SoundIntent
 from .meters import Meter, resolve_meters
 from .mode import Arrangement, LoadError, LoadPlan, Mode, ModeContext
 

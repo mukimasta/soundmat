@@ -11,10 +11,11 @@ from typing import Any, Callable, Mapping
 
 from ..clock import Beat
 from ..perception.model import MatEvent, MatSnapshot
-from .intent import BeatOutput
+from ..errors import UserError
+from ..intent import BeatOutput
 
 
-class LoadError(Exception):
+class LoadError(UserError):
     """编排不符合模式的要求，或引用无法满足。消息直接显示给人看。"""
 
 

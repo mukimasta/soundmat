@@ -27,8 +27,8 @@ from pythonosc.osc_bundle_builder import IMMEDIATELY, OscBundleBuilder
 from pythonosc.osc_message import OscMessage
 from pythonosc.osc_message_builder import OscMessageBuilder
 
-from ..clock import system_time
-from ..sonification.intent import Source
+from ..timebase import system_time
+from ..intent import Source
 from .backend import BackendEvents
 from .spatial import SpeakerGains
 
@@ -104,6 +104,8 @@ def db(x: float) -> float:
 
 
 class ScsynthBackend:
+    records_audio = True
+
     def __init__(self, host: str = "127.0.0.1", port: int = 57110,
                  synthdefs: Path | None = None,
                  resolve_asset: Callable[[str], object | None] = lambda ref: None):

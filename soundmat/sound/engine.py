@@ -12,7 +12,7 @@ from enum import Enum
 from typing import Callable, Mapping, Sequence
 
 from ..config import SoundConfig
-from ..sonification.intent import Event, Position, SoundIntent, Source, Voice
+from ..intent import Event, Position, SoundIntent, Source, Voice
 from .backend import Backend
 from .spatial import SpeakerGains, SpeakerLayout, voice_gains
 

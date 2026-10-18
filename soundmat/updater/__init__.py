@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Callable
 
 from ..config import ROOT
+from ..errors import Conflict
 from ..store import Store
 from .package import TAG_PREFIX, extract_package, parse_release_body, sha256_of
 
@@ -241,7 +242,7 @@ class Updater:
         return t
 
 
-class UpdateError(Exception):
+class UpdateError(Conflict):
     """不能更新的原因，直接显示给人看。"""
 
 

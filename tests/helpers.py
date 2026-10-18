@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from soundmat.clock import Beat
-from soundmat.sonification.intent import BeatOutput, Event, ModeStatus, SoundIntent, Source, Voice
+from soundmat.intent import BeatOutput, Event, ModeStatus, SoundIntent, Source, Voice
 from soundmat.sonification.mode import Arrangement, LoadError, LoadPlan, Mode
 
 

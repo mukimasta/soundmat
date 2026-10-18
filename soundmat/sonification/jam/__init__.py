@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from ...clock import Beat
 from ...perception.model import MatEvent, MatSnapshot
 from ...perception.zones import ZONES, ring_indices
-from ..intent import BeatOutput, Event, LightIntent, ModeStatus, Position, SoundIntent, Source, Voice
+from ...intent import BeatOutput, Event, LightIntent, ModeStatus, Position, SoundIntent, Source, Voice
 from ..mode import LoadError, LoadPlan, Mode
 from .lights import JamLights
 from .theory import Tempo, Tonality, valid_token

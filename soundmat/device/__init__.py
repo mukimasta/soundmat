@@ -17,7 +17,7 @@ from typing import Callable, Protocol
 
 import numpy as np
 
-from ..clock import system_time
+from ..timebase import system_time
 from ..rates import RateMeter
 from .ports import pick_port
 from .protocol import BAUD, FrameError, encode_led_frame, parse_sensor_frame

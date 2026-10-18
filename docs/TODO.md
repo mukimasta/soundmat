@@ -6,7 +6,6 @@
 - [ ] 查总输出电平：Pi 3B 上看板显示左声道峰值到了 −1 dBFS，正好压在总输出的限幅上；找出是哪一层偏响，或调低总音量
 - [ ] 修改控制器固件：开机后保持低亮度的等待灯效，直到主机程序接管（当前固件开机 5 秒后全亮白光，5 V 总线瞬间约 3.8 A）
 - [ ] 确定 SoundMat 系列文档正本的存放位置，更新 `design/SOUNDMAT_SERIES.md`
-- [ ] 删除旧的 `SETUP.md`（有用内容已并入 `implementation/DEPLOYMENT.md`）
 - [ ] 在 UW 为树莓派登记 UW MPSK
 - [ ] Pi 3B 上新版稳定后，删除保留的第一版（`~/soundmat` 和 `soundmat-v1.service`）
 

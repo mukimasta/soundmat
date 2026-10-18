@@ -13,7 +13,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from ..sonification.intent import Position
+from ..intent import Position
 
 
 @dataclass(frozen=True)

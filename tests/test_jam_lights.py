@@ -4,13 +4,31 @@ import random
 import numpy as np
 import pytest
 
-from soundmat.sonification.intent import LightLayer
+from soundmat.intent import LightLayer
 from soundmat.sonification.lights import RING_COLORS
 from soundmat.sonification.jam.lights import (
     CARDINAL_BREATH_MIN, IDLE_BREATH_MAX, PREVIEW_DURATION, RED_FULL, RED_MUTED, SCAN_HIT_DURATION,
     SCAN_HIT_FALLOFF, SCAN_HIT_OFFSETS, SWEEP_OPACITY_BY_DIST, SWEEP_TRAIL_WIDTH, WHITE, JamLights,
-    RGBA, _blend, _lum, _rgba, breath_phase, pulse_mix, scan_hit_mix,
+    breath_phase, pulse_mix, scan_hit_mix,
 )
+
+RGBA = tuple[float, float, float, float]
+
+
+def _rgba(rgb, op: float) -> RGBA:
+    return (rgb[0], rgb[1], rgb[2], max(0.0, min(1.0, op)))
+
+
+def _lum(c: RGBA) -> float:
+    return (c[0] * 0.299 + c[1] * 0.587 + c[2] * 0.114) * c[3]
+
+
+def _blend(base: RGBA, over: RGBA, mix: float) -> RGBA:
+    m = max(0.0, min(1.0, mix))
+    if m <= 0:
+        return base
+    return (base[0] * (1 - m) + over[0] * m, base[1] * (1 - m) + over[1] * m,
+            base[2] * (1 - m) + over[2] * m, min(1.0, base[3] * (1 - m) + over[3] * m))
 
 
 class ReferenceJamLights:

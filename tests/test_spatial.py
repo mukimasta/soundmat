@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from soundmat.sonification.intent import Position
+from soundmat.intent import Position
 from soundmat.sound.spatial import PRESETS, SpeakerLayout, speaker_gains
 
 
