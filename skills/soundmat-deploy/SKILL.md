@@ -85,6 +85,7 @@ sudo apt-get update -qq && sudo apt-get install -y -q tailscale
 | `system/polkit/50-soundmat.rules` | `/etc/polkit-1/rules.d/`（644） |
 | `system/clock/soundmat-clock` | `/usr/local/bin/`（755） |
 | `system/clock/soundmat-clock.service` | `/etc/systemd/system/` |
+| `system/clock/jackd-after-clock.conf` | `/etc/systemd/system/jackd.service.d/after-clock.conf`（已经部署过、`jackd.service` 不是仓库这份时才需要，例如 Pi 3B） |
 
 ```bash
 scp system/systemd/* system/update/soundmat-guard system/polkit/50-soundmat.rules system/clock/* soundmat@<主机>:/tmp/
@@ -100,6 +101,15 @@ sudo systemctl daemon-reload && sudo systemctl restart systemd-logind
 sudo systemctl enable soundmat-clock
 sudo systemctl enable --now jackd soundmat-scsynth
 ```
+
+已经部署过的装置（例如 Pi 3B，`jackd.service` 是第一版留下的）不要整个替换 `jackd.service`，只加覆盖文件让它排在 `soundmat-clock` 之后。`/tmp` 重启就清空，拷过去的文件要在重启前装好：
+
+```bash
+scp system/clock/* soundmat@<主机>:/tmp/
+ssh -t soundmat@<主机> 'sudo install -m 755 /tmp/soundmat-clock /usr/local/bin/soundmat-clock && sudo install -m 644 /tmp/soundmat-clock.service /etc/systemd/system/soundmat-clock.service && sudo mkdir -p /etc/systemd/system/jackd.service.d && sudo install -m 644 /tmp/jackd-after-clock.conf /etc/systemd/system/jackd.service.d/after-clock.conf && sudo systemctl daemon-reload && sudo systemctl enable soundmat-clock && echo 安装完成 && systemctl is-enabled soundmat-clock && systemctl show -p After jackd | grep -o soundmat-clock.service'
+```
+
+最后应依次输出 `安装完成`、`enabled`、`soundmat-clock.service`；重启后 `cat /run/soundmat-clock` 有内容才算生效。
 
 开机时 `soundmat-clock` 排在 JACK 之前：有网等到校时完成（最多 45 秒），20 秒没网就不等；然后停掉 `systemd-timesyncd`，这次开机不再校时（原因见 `docs/implementation/DEPLOYMENT.md`「时钟」）。看它这次等了多久、校没校上：`journalctl -b -u soundmat-clock -o cat`，或 `cat /run/soundmat-clock`。
 
