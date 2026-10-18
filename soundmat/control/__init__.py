@@ -42,6 +42,7 @@ class Recordings(Protocol):
     def request_stop(self) -> None: ...
     def list(self) -> list[dict]: ...
     def folder_of(self, name: str) -> Path: ...
+    def delete(self, name: str) -> None: ...
 
 
 class Updates(Protocol):
@@ -194,6 +195,11 @@ def create_app(ctx: ControlContext, console_dist: Path | None = CONSOLE_DIST) ->
     @app.get("/api/recordings")
     def recordings() -> list[dict]:
         return ctx.recorder.list()
+
+    @app.post("/api/recordings/{name}/delete")
+    def recording_delete(name: str) -> dict:
+        ctx.recorder.delete(name)
+        return {"ok": True}
 
     @app.get("/api/recordings/{name}/download")
     def recording_download(name: str):

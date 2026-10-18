@@ -106,3 +106,23 @@ def test_double_start_and_download_zip(sup):
     assert client.get("/api/recordings/../../etc/download").status_code == 404
     assert client.get("/api/recordings/nope/download").status_code == 404
     assert client.get("/api/recordings").json()[0]["name"] == name
+
+
+def test_delete_recording(sup):
+    """删除一段录制：整个文件夹没了，列表跟着更新；正在录的那一段、不存在的、路径越界的都不能删。"""
+    rec = sup.recorder
+    client = TestClient(create_app(sup.control, console_dist=None))
+    rec.request_start()
+    beats(sup, 1.0, 1.1)
+    name = rec.session.folder.name
+    r = client.post(f"/api/recordings/{name}/delete")
+    assert r.status_code == 409 and "正在录制" in r.json()["detail"]
+    rec.request_stop()
+    beats(sup, 1.1, 1.2)
+    folder = rec.folder_of(name)
+    assert client.post(f"/api/recordings/{name}/delete").json() == {"ok": True}
+    assert not folder.exists()
+    assert sup.store.get("catalog.recordings") == []
+    assert any("删除了录制" in i["text"] for i in sup.store.get("status.log"))
+    assert client.post(f"/api/recordings/{name}/delete").status_code == 404
+    assert client.post("/api/recordings/..%2F..%2Fetc/delete").status_code == 404

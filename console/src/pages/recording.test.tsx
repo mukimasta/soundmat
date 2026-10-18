@@ -38,8 +38,8 @@ test('start failure shows the reason', async () => {
   expect(screen.getByRole('alert').textContent).toContain('剩余空间 0.1 GB');
 });
 
-test('recordings sheet lists and links downloads', async () => {
-  const { client } = setup();
+test('recordings sheet lists, links downloads and deletes after a confirm', async () => {
+  const { client, posts } = setup();
   connect(client, { catalog: { ...(playingState() as any).catalog, recordings: [
     { name: '2026-10-17_095759_lofi_1', startedAt: '2026-10-17T09:57:59.782+00:00', title: 'Lo-Fi Loop · Progression 1', duration: 75.2, audio: true },
   ] } });
@@ -51,4 +51,8 @@ test('recordings sheet lists and links downloads', async () => {
   expect(within(sheet).getByText('Lo-Fi Loop · Progression 1 · 01:15')).toBeInTheDocument();
   expect(within(sheet).getByRole('link', { name: '下载这段录制' }).getAttribute('href'))
     .toBe('/api/recordings/2026-10-17_095759_lofi_1/download');
+  await userEvent.click(within(sheet).getByRole('button', { name: '删除这段录制' }));
+  expect(posts).not.toContainEqual(['/api/recordings/2026-10-17_095759_lofi_1/delete', undefined]);   // 第一下只是确认
+  await userEvent.click(within(sheet).getByRole('button', { name: '确认删除' }));
+  expect(posts).toContainEqual(['/api/recordings/2026-10-17_095759_lofi_1/delete', undefined]);
 });

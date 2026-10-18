@@ -354,7 +354,8 @@ button { font: inherit; color: inherit; }
 .alert .go { flex: none; display: flex; align-items: center; gap: 2px; font-size: 12.5px; font-weight: 600; }
 
 .rec-item { display: flex; align-items: center; gap: 10px; padding: 12px 8px 12px 14px; border-radius: 16px; background: #22201d; }
-.rec-item a { color: var(--text); }
+.rec-item a, .rec-item .icon-btn { color: var(--text); }
+.btn-clear.danger { color: var(--red-line); border-color: var(--red); }
 .count-overlay {
   position: absolute; left: 50%; top: 50%; width: 132px; height: 132px; margin: -66px 0 0 -66px; border-radius: 50%;
   background: rgba(16, 15, 13, 0.86); display: flex; align-items: center; justify-content: center; pointer-events: none;

@@ -70,4 +70,5 @@
 | `POST /api/recording/stop` | — | 停止录制 |
 | `GET /api/recordings` | — | 录制列表 |
 | `GET /api/recordings/{name}/download` | — | 整个录制文件夹打包成 zip 下载 |
+| `POST /api/recordings/{name}/delete` | — | 删除一段录制（整个文件夹，不可恢复）；正在录的那一段返回 409，不存在返回 404 |
 | `POST /api/settings` | `{"changes": {"sound.volume": 0.7, ...}}` | 修改设置（键是 `settings` 下的路径；`sound.layout` 也可以是预设名 `stereo` / `quad` / `octo`）；任一项非法返回 422，整批不生效 |

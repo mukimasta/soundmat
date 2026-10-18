@@ -366,6 +366,17 @@ class Recorder:
     def refresh_list(self) -> None:
         self.state.set("catalog.recordings", self.list())
 
+    def delete(self, name: str) -> None:
+        """删除一段录制（整个文件夹），不可恢复。正在录的那一段不能删。"""
+        folder = self.folder_of(name)
+        with self._lock:
+            s = self.session
+            if s is not None and s.folder.resolve() == folder:
+                raise RecordingError("这一段正在录制，停止后才能删除")
+            shutil.rmtree(folder)
+        self.refresh_list()
+        self.events.info(f"删除了录制：{name}")
+
     def folder_of(self, name: str) -> Path:
         d = (self.root / name).resolve()
         if d.parent != self.root.resolve() or not (d / "info.json").is_file():
