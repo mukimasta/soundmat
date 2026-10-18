@@ -244,3 +244,29 @@ def test_node_ids_are_never_reused_across_reconnects(rig):
     assert pump(eng, be, 2, until=lambda: eng.stats.restarts == 2 and be.mixes)
     after = {be.mixes["A"].group, be.mixes["A"].mode_node, be.master_node}
     assert before.isdisjoint(after)
+
+
+def test_clock_jump_sends_everything_immediately_for_a_while(rig, monkeypatch):
+    """墙钟跳变（开机校时）后，scsynth 要过一阵才对齐时钟：这期间带时间戳的指令会被它压住，
+    所以一律立即执行，过了宽限期再恢复按时刻。"""
+    import soundmat.sound.scsynth as sc
+
+    fake, be, eng = rig
+    eng.add_instance("A", ["ring0"], system_time())
+    assert pump(eng, be, 2, until=lambda: be.state == "ready" and be.mixes)
+
+    def sent_stamp(at):
+        fake.messages.clear()
+        be.set_master({"volume": round(at, 3)}, at)
+        be.flush()
+        time.sleep(0.1)
+        return [m[0] for m in fake.messages if m[1] == "/n_set"][-1]
+
+    assert sent_stamp(system_time() + 1.0) is not None             # 平时：按时刻
+    real = time.time
+    monkeypatch.setattr(sc.time, "time", lambda: real() + 276.0)    # 校时：墙钟往前跳 276 秒
+    assert sent_stamp(system_time() + 1.0) is None                 # 宽限期内：立即
+    assert be.clock_jumps == 1
+    monkeypatch.setattr(sc, "RESYNC_GRACE", 0.0)
+    be._immediate_until = -1e9
+    assert sent_stamp(system_time() + 1.0) is not None             # 宽限期过后：恢复按时刻

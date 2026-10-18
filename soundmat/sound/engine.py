@@ -11,8 +11,11 @@
 - **其余的一律立即**（没有时刻的事件和声部，例如放下石头时的预听；参数、音量、淡出、混音结构）：
   合成器服务收到后在下一个缓冲执行，越快越好，没有"迟到"一说。
 
-已经排好、还没开始的声部，之后对它的修改、淡出和释放都不早于它的开始时刻，免得先收到"停"、
-后收到"开始"，留下一个停不下来的声音。
+一个声部之后的修改、淡出和释放，跟着它自己开始时的方式走：按时刻开始的，后续指令也按时刻排
+（推后同样的提前量，并且不早于它的开始）；立即开始的，后续指令也立即。不能混用：合成器服务按时间戳
+排队执行带时刻的指令，"立即"的指令却一到就执行；两者的先后取决于它和主机的时钟是否对齐，而树莓派
+没有电池时钟，开机联网校时会让时钟跳变几分钟（2026-10-18 在 Pi 3B 上，带时刻的"开始"被压住、
+立即的"停止"先执行，留下一直响的和声铺底）。
 """
 from __future__ import annotations
 
@@ -53,6 +56,7 @@ class VoiceRecord:
     started: float
     phase: Phase
     fade_out: float = 0.5
+    scheduled: bool = False    # 按时刻开始的（后续指令也按时刻排，见模块说明）
 
 
 @dataclass
@@ -184,6 +188,7 @@ class SoundEngine:
             node=node, instance=inst.id, key=v.id, source=v.source, bus=v.bus,
             params=dict(v.params), position=v.position, priority=v.priority,
             category=v.category, started=at, phase=Phase.SOUNDING, fade_out=v.fade_out,
+            scheduled=v.start is not None,
         )
         inst.voices[v.id] = node
         self.backend.start_voice(node, inst.id, v.source, v.bus, v.params,
@@ -218,7 +223,7 @@ class SoundEngine:
         self.voices[node] = VoiceRecord(
             node=node, instance=inst.id, key=None, source=e.source, bus=e.bus,
             params=dict(e.params), position=e.position, priority=e.priority,
-            category=e.category, started=at, phase=Phase.ONESHOT,
+            category=e.category, started=at, phase=Phase.ONESHOT, scheduled=e.time is not None,
         )
         self.backend.start_voice(node, inst.id, e.source, e.bus, e.params,
                                  self._gains(e.position), 0.0, at, oneshot=True)
@@ -256,7 +261,7 @@ class SoundEngine:
 
     def _evict(self, rec: VoiceRecord, now: float) -> None:
         self.voices.pop(rec.node, None)
-        self.backend.free_voice(rec.node, now)
+        self.backend.free_voice(rec.node, self._after_start(rec, now))
         if rec.key is not None:
             inst = self.instances.get(rec.instance)
             if inst and inst.voices.get(rec.key) == rec.node:
@@ -285,8 +290,8 @@ class SoundEngine:
         for iid, inst in list(self.instances.items()):
             if inst.retire_at is not None and inst.retire_at <= now:
                 own = [rec for rec in self.voices.values() if rec.instance == iid]
-                # 淡出时还排着的声音（还没开始）也要等它们的时刻过去，再整体释放
-                at = max([now] + [rec.started for rec in own])
+                # 每个声部的释放都按它自己的时间方式，排在它开始之后；混音结构等它们都释放了再释放
+                at = max([now] + [self._after_start(rec, now) for rec in own])
                 for rec in own:
                     self.voices.pop(rec.node)
                     self.backend.free_voice(rec.node, at)
@@ -350,10 +355,10 @@ class SoundEngine:
         """有确定时刻的声音交给合成器服务的执行时刻：统一推后 ``schedule_ahead`` 秒（见模块说明）。"""
         return t + self.cfg.schedule_ahead
 
-    @staticmethod
-    def _after_start(rec: VoiceRecord, now: float) -> float:
-        """对一个声部的后续指令：立即，但不早于它排定的开始时刻。"""
-        return max(now, rec.started)
+    def _after_start(self, rec: VoiceRecord, now: float) -> float:
+        """对一个声部的后续指令的执行时刻：跟着它开始时的方式走（见模块说明），并且不早于它的开始。"""
+        at = self._scheduled(now) if rec.scheduled else now
+        return max(at, rec.started)
 
     def _gains(self, position: Position | None) -> SpeakerGains:
         return voice_gains(position, self.layout, self.orientation)

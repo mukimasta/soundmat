@@ -3,8 +3,11 @@
 scsynth 是独立的系统服务（TECH_STACK「合成器服务」），主机程序只通过 UDP 与它通信：
 
 - 每一拍里引擎发出的指令按执行时刻分组，一拍结束时整批发出；时刻是系统时间（单调时钟），
-  发送时换算成墙钟时间作为 bundle 的时间戳。每次发送时现算换算关系，开机后 NTP 校时让墙钟
-  跳变也不影响。时刻已到的指令用"立即执行"的时间戳，避免 scsynth 记录迟到警告。
+  发送时换算成墙钟时间作为 bundle 的时间戳。时刻已到的指令用"立即执行"的时间戳，避免 scsynth
+  记录迟到警告。
+- 墙钟跳变（树莓派没有电池时钟，开机联网校时会一下跳几分钟）时，主机按新墙钟换算，scsynth 却要
+  过一阵（约 20 秒）才重新对齐，这期间带时间戳的指令在它看来都在很久以后，会被压住。所以检测到
+  跳变后 ``RESYNC_GRACE`` 秒内一律立即执行：节奏会松一点，但不会先压住、再一起放出来。
 - 每 0.5 秒查询一次 ``/status``，并确认根组还在。发出的查询超过 2 秒没有回复才算离线：按"问了没回"
   判断，主机自己的线程偶尔卡住几秒（没有发出查询）不会被误判成合成器服务停了。连不上时什么都不发；重新连上（包括第一次
   连上和 scsynth 重启）后加载音色、建立根组，并报告"重新启动过"，由引擎重建混音结构并重新对账。
@@ -44,6 +47,8 @@ STATUS_PERIOD = 0.5
 OFFLINE_AFTER = 2.0
 MAX_DGRAM = 8000
 HEAD, TAIL = 0, 1
+CLOCK_JUMP = 0.5               # 秒：墙钟相对单调时钟跳了这么多，认为发生了校时跳变
+RESYNC_GRACE = 25.0            # 秒：跳变后这么久内指令一律立即执行（scsynth 约 20 秒后重新对齐时钟）
 
 
 class Allocator:
@@ -131,6 +136,9 @@ class ScsynthBackend:
         self._levels: dict[tuple[int, int], tuple[float, list[float]]] = {}
         # 混音组、总输出、录音节点的编号从这里往下数，重连也不归零（见 _node）
         self._next_node = 2_000_000_000
+        self._clock_offset = time.time() - system_time()   # 墙钟 − 单调时钟，用来发现校时跳变
+        self._immediate_until = -1e9
+        self.clock_jumps = 0
         self._reset_state()
 
     def _reset_state(self) -> None:
@@ -173,8 +181,16 @@ class ScsynthBackend:
     def flush(self) -> None:
         pending, self._pending = self._pending, {}
         now = system_time()
+        offset = time.time() - now
+        if abs(offset - self._clock_offset) > CLOCK_JUMP:
+            log.warning("系统时钟跳变了 %.1f 秒（校时），接下来 %.0f 秒内指令一律立即执行",
+                        offset - self._clock_offset, RESYNC_GRACE)
+            self._immediate_until = now + RESYNC_GRACE
+            self.clock_jumps += 1
+        self._clock_offset = offset
+        immediate = now < self._immediate_until
         for at in sorted(pending):
-            stamp = IMMEDIATELY if at <= now + 0.001 else wall_time(at)
+            stamp = IMMEDIATELY if immediate or at <= now + 0.001 else wall_time(at)
             msgs = pending[at]
             chunk: list[OscMessage] = []
             size = 0

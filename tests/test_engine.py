@@ -255,3 +255,15 @@ def test_retired_instance_waits_for_its_scheduled_voices():
     eng.retire_instance("A", now=1.0, fade=0.05)
     eng.tick(1.06)
     assert be.of_kind("free_mix")[0].at == pytest.approx(1.24)
+
+
+def test_follow_ups_use_the_voices_own_timing():
+    """按时刻开始的声部，后续指令也按时刻排（推后提前量、不早于开始）；立即开始的，后续指令立即。
+    混用时，合成器服务时钟和主机不一致（例如开机校时跳变）就可能先执行"停"、后执行"开始"。"""
+    eng, be = make(schedule_ahead=0.15)
+    eng.apply("A", SoundIntent((v("pad"), v("bar1", start=1.0))), now=1.0)   # bar1 的开始已到：立即开始，但属于按时刻的声部
+    eng.apply("A", SoundIntent(()), now=2.0)
+    rel = {c.args["node"]: c.at for c in be.of_kind("release_voice")}
+    by_key = {r.key: r for r in eng.voices.values()}
+    assert rel[by_key["pad"].node] == pytest.approx(2.0)          # 立即开始的：立即停
+    assert rel[by_key["bar1"].node] == pytest.approx(2.15)        # 按时刻开始的：按时刻停
