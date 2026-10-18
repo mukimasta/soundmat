@@ -169,12 +169,12 @@ class AmbientMode(Mode):
                 if due is None:
                     self.next_fire[role.key] = t + self.rng.uniform(*role.interval)
                 elif t >= due:
-                    out_events.append(self._oneshot(role, t, None, by_ring.get(role.ring, [])))
+                    out_events.append(self._oneshot(role, None, by_ring.get(role.ring, [])))
                     self.next_fire[role.key] = t + self.rng.uniform(*role.interval)
             elif role.behavior == "trigger" and self._conditions(role, counts):
                 for e in placed:
                     if ZONES[e.zone].ring == role.ring:
-                        out_events.append(self._oneshot(role, t, e.zone, by_ring.get(role.ring, [])))
+                        out_events.append(self._oneshot(role, e.zone, by_ring.get(role.ring, [])))
 
         return BeatOutput(
             sound=SoundIntent(tuple(voices), tuple(out_events)),
@@ -217,7 +217,7 @@ class AmbientMode(Mode):
             position=self._position(role, None, zones), priority=role.priority,
         )
 
-    def _oneshot(self, role: Role, t: float, zone: int | None, zones: list[int]) -> Event:
+    def _oneshot(self, role: Role, zone: int | None, zones: list[int]) -> Event:
         self.fired += 1
         if role.instrument:
             source = Source("instrument", role.instrument)
@@ -229,7 +229,7 @@ class AmbientMode(Mode):
             file, params = self._sample_params(sid, role.params)
             source = Source("sample", file)
         return Event(
-            id=f"{self.prefix}:{role.key}#{self.fired}", time=t, source=source,
+            id=f"{self.prefix}:{role.key}#{self.fired}", time=None, source=source,   # 对动作的反应：立即
             bus=f"ring{role.ring}", params=_numeric(params),
             position=self._position(role, zone, zones), priority=role.priority,
         )

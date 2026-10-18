@@ -48,6 +48,7 @@ class Fake:
         self.jack = {"running": True, "device": "hw:2", "rate": 48000, "period": 2048, "periods": 2}
         self.cards = P.parse_cards(CARDS)
         self.xruns = 0
+        self.synth_late = 0
         self.network = {"name": "soundmat", "address": "172.20.10.3", "tailscale": "Running"}
         self.restarts = None
         self.version = {"commit": "abc1234", "deployedAt": "2026-10-17T15:00", "dirty": None, "source": "deploy"}
@@ -55,6 +56,7 @@ class Fake:
 
     def probes(self):
         return Probes(jack=lambda: self.jack, cards=lambda: self.cards, xruns=lambda: self.xruns,
+                      synth_late=lambda: self.synth_late,
                       machine=lambda d: {"host": "soundmat-pi", "tempC": 49.0}, network=lambda: self.network,
                       restarts=lambda svc: self.restarts, version=lambda root: self.version,
                       ap_clients=lambda iface: self.clients, platform_linux=True)
@@ -128,6 +130,7 @@ def test_hdmi_output_is_an_error_with_reason_and_logged_once(rig):
     (lambda f, s, st: st.set("status.assets.missing", ["a", "b"]), "warn", "缺少 2 个声音素材"),
     (lambda f, s, st: s.update(peakCPU=91.0), "warn", "峰值 91%"),
     (lambda f, s, st: setattr(f, "xruns", 3), "warn", "卡顿 3 次"),
+    (lambda f, s, st: setattr(f, "synth_late", 12), "warn", "12 条指令收到得太晚"),
 ])
 def test_sound_rules(rig, change, level, text):
     mon, store, fake, synth = rig

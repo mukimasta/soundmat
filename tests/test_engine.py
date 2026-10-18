@@ -13,7 +13,7 @@ SYN = Source("instrument", "pad")
 
 def make(**cfg):
     be = RecordingBackend(oneshot_length=1.0)
-    base = dict(output_latency=LAT, late_tolerance=0.05, voice_budget_total=48,
+    base = dict(schedule_ahead=LAT, late_tolerance=0.05, voice_budget_total=48,
                 voice_budget_categories={"melodic": 12})
     base.update(cfg)
     eng = SoundEngine(be, SoundConfig(**base), PRESETS["stereo"])
@@ -36,7 +36,7 @@ def test_new_keep_change_remove():
     eng, be = make()
     eng.apply("A", SoundIntent((v("a", params={"amp": 0.5}),)), now=1.0)
     (start,) = be.of_kind("start_voice")
-    assert start.at == pytest.approx(1.0 + LAT)
+    assert start.at == pytest.approx(1.0)                 # 没有开始时刻：立即
     assert start.args["params"] == {"amp": 0.5} and start.args["oneshot"] is False
     be.clear()
     # 同一个意图再来一次：什么都不发
@@ -57,7 +57,7 @@ def test_new_keep_change_remove():
     (rel,) = be.of_kind("release_voice")
     assert rel.args["fade_out"] == 0.5
     assert len(eng.voices) == 1   # 淡出完成前仍在声部表
-    eng.tick(2.0 + LAT + 0.5)
+    eng.tick(2.0 + 0.5)
     assert eng.voices == {}
 
 
@@ -203,7 +203,7 @@ def test_voice_with_start_time_begins_exactly_then():
     assert s.at == pytest.approx(1.08 + LAT)
     be.clear()
     eng.apply("A", SoundIntent((v("bar6", start=0.5),)), now=1.0)   # 已经过去：立即
-    assert be.of_kind("start_voice")[0].at == pytest.approx(1.0 + LAT)
+    assert be.of_kind("start_voice")[0].at == pytest.approx(1.0)
 
 
 def test_recording_backend_simulates_meter_levels():
@@ -224,3 +224,34 @@ class _Gains:
     mono = (1.0, 1.0)
     left = (1.0, 0.0)
     right = (0.0, 1.0)
+
+
+def test_immediate_vs_scheduled():
+    """有确定时刻的声音统一推后提前量；没有时刻的（预听）和参数、淡出都立即。"""
+    eng, be = make(schedule_ahead=0.15)
+    eng.apply("A", SoundIntent((v("pad"), v("bar2", start=1.5)),
+                               events=(ev("hit", 1.08), ev("preview", None)), globals={"lofi": 0.3}), now=1.0)
+    at = {c.args["node"]: c.at for c in be.of_kind("start_voice")}
+    by_key = {r.key or r.node: r for r in eng.voices.values()}
+    assert at[by_key["pad"].node] == pytest.approx(1.0)
+    assert at[by_key["bar2"].node] == pytest.approx(1.65)
+    assert sorted(c.at for c in be.of_kind("start_voice") if c.args["oneshot"]) == pytest.approx([1.0, 1.23])
+    assert be.of_kind("set_globals")[0].at == pytest.approx(1.0)
+
+
+def test_commands_to_a_voice_not_yet_started_wait_for_its_start():
+    """排好、还没开始的声部被撤掉或修改时，指令不早于它的开始时刻，不会先停后开留下停不下来的声音。"""
+    eng, be = make(schedule_ahead=0.15)
+    eng.apply("A", SoundIntent((v("bar2", start=1.5, params={"amp": 1}),)), now=1.0)
+    eng.apply("A", SoundIntent((v("bar2", start=1.5, params={"amp": 0.5}),)), now=1.1)
+    assert be.of_kind("set_voice")[0].at == pytest.approx(1.65)
+    eng.apply("A", SoundIntent(()), now=1.2)
+    assert be.of_kind("release_voice")[0].at == pytest.approx(1.65)
+
+
+def test_retired_instance_waits_for_its_scheduled_voices():
+    eng, be = make(schedule_ahead=0.15)
+    eng.apply("A", SoundIntent(events=(ev("hit", 1.09),)), now=1.0)
+    eng.retire_instance("A", now=1.0, fade=0.05)
+    eng.tick(1.06)
+    assert be.of_kind("free_mix")[0].at == pytest.approx(1.24)

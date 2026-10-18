@@ -2,6 +2,10 @@
 
 意图是声明式的：持续声部描述"此刻应该存在哪些声音"，声音引擎拿它和实际在响的声音对账；
 定时事件是时间窗内要发生的单次声音，每个只交出一次。
+
+时刻只分两种：给出时刻（事件的 ``time``、声部的 ``start``）表示"要在这一刻准时响"，用于有节奏的
+声音；不给（None）表示"立即"，用于对动作的反应，例如放下石头时的预听。准时靠声音引擎统一的提前量
+保证（``sound.schedule_ahead``），听到的时刻比给出的时刻晚这么多，模式画灯光时据此对齐（``ModeContext``）。
 """
 from __future__ import annotations
 
@@ -37,14 +41,14 @@ class Voice:
     position: Position | None = None          # None = 不定位，充满整个空间
     priority: int = 0
     category: str | None = None               # 声部预算的类别，例如 "melodic"
-    start: float | None = None                # 可选：在前瞻时间窗内的准确开始时刻（系统时间）
+    start: float | None = None                # 有确定开始时刻时给出（系统时间），例如下一小节的和声；None = 立即开始
 
 
 @dataclass(frozen=True)
 class Event:
     """定时事件：在准确时刻发生的单次声音。``id`` 全局唯一，引擎按它去重。"""
     id: str
-    time: float                               # 系统时间
+    time: float | None                        # 有确定时刻时给出（系统时间），例如鼓点、扫描命中；None = 立即（例如预听）
     source: Source
     bus: str
     params: Mapping[str, float] = field(default_factory=dict)

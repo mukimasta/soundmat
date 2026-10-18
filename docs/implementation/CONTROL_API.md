@@ -38,7 +38,7 @@
 | `status.audio.channels`、`status.audio.buffer`、`status.audio.xruns`、`status.audio.loadHistory` | 声道数、缓冲 `{period, periods, driver}`、最近一小时卡顿次数、最近 60 秒负载 |
 | `status.matHistory` | 最近 60 秒的实测传感帧率 |
 | `status.rates` | 各条链路的帧率，每项为 `{actual, expected}`（次/秒，没有这条链路或没有数据时为 `null`）：`sensing`（控制器传感）、`perception`（垫面解读）、`beat`（声音化节拍）、`light`（灯光引擎）、`ledWrites`（写给控制器的灯光帧）、`pushMat`、`pushLeds`（推送到控制台，取所有连接里最高的一个；只在有变化时推送，期望值是上限） |
-| `status.timing` | `stalls`（节拍晚到超过迟到容忍度）、`late`、`yields`、`rejected` 的累计数，各自带 `…Recent`（最近 1 分钟的增加量）；`maxLagMs`（最近 1 分钟最大的节拍延迟）；`stallsAttention`、`lateAttention`（是否达到需要注意的程度） |
+| `status.timing` | `stalls`（节拍晚到超过迟到容忍度）、`late`、`yields`、`rejected` 的累计数，各自带 `…Recent`（最近 1 分钟的增加量）；`maxLagMs`（最近 1 分钟最大的节拍延迟）；`synthLate`（最近 1 分钟合成器服务收到太晚的指令数，读不到日志时为 `null`）；`stallsAttention`、`lateAttention`、`synthLateAttention`（是否达到需要注意的程度） |
 | `status.program` | 主机程序：`uptime`（秒）、`restarts`（systemd 自动重启次数，不在 systemd 下为 `null`）、`version`（`{commit, deployedAt, dirty, source}`，`source` 为 `deploy` 或 `git`；都读不到为 `null`） |
 | `status.update` | 软件更新：`enabled`（是否从发布包、在 systemd 下运行）、`state`（`idle` / `downloading` / `installing` / `restarting` / `error`）、`message`、`previous`（可以回到的上一版）、`pending`（待确认的新版本）、`failed`（启动失败被自动回退的版本） |
 | `status.storage` | 录音空间：`freeGB`、`minutes`（按当前声道数和分轨设置还能录的分钟数，不录音频时为 `null`） |

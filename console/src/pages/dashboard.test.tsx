@@ -79,7 +79,7 @@ test('rhythm card, network kind, program and recording time', async () => {
       ledWrites: { actual: 41, expected: 60 }, pushMat: { actual: 12, expected: 30 }, pushLeds: { actual: 0, expected: 60 },
     },
     timing: { stalls: 0, stallsRecent: 0, maxLagMs: 9.6, late: 0, lateRecent: 0, yields: 3, rejected: 0,
-      stallsAttention: false, lateAttention: false },
+      synthLate: 7, stallsAttention: false, lateAttention: false, synthLateAttention: true },
     program: { uptime: 5400, restarts: 1, version: { commit: '2d09273', deployedAt: '2026-10-17T15:04:00-07:00', dirty: null, source: 'deploy' } },
     storage: { freeGB: 52, minutes: 1500 },
   };
@@ -97,6 +97,7 @@ test('rhythm card, network kind, program and recording time', async () => {
   expect(row('sensing').textContent).toContain('—');
   expect(row('display')).toBeTruthy();
   expect(within(rhythm).getByText('超过 50 ms 0 次')).toBeInTheDocument();
+  expect(within(rhythm).getByText('合成器收到太晚 7 · 主机丢弃 0')).toBeInTheDocument();
 
   const net = screen.getByRole('region', { name: '网络' });
   expect(within(net).getByText('自建热点')).toBeInTheDocument();

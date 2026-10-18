@@ -39,6 +39,8 @@ RESTART_WINDOW = 3600.0       # 秒：主机程序这么久之内被自动重启
 PROGRAM_CPU_LIMIT = 90.0      # 主机程序最近 10 秒平均占单核的百分比达到这个值：需要注意
 # 最近 1 分钟节拍「卡住」（晚到超过迟到容忍度）达到这个次数才提示；偶尔一次（例如切换编排）不提示。
 STALL_WARN = 3
+# 最近 1 分钟合成器服务收到太晚的指令达到这个数：节奏可能不稳（偶尔一两条，例如刚启动时，不提示）
+SYNTH_LATE_WARN = 5
 
 
 @dataclass
@@ -47,6 +49,7 @@ class Probes:
     jack: Callable[[], dict | None] = probes.jack
     cards: Callable[[], list | None] = probes.sound_cards
     xruns: Callable[[], int | None] = probes.xruns_last_hour
+    synth_late: Callable[[], int | None] = probes.synth_late_last_minute
     machine: Callable[[Path], dict] = probes.machine
     network: Callable[[], dict] = probes.network
     restarts: Callable[[str], int | None] = probes.systemd_restarts
@@ -126,7 +129,8 @@ class Monitor:
 
     def refresh_slow(self, now: float | None = None) -> None:
         """较慢的探针：最近一小时的卡顿、网络、systemd 重启次数、版本。"""
-        self._slow = {"xruns": self.probes.xruns(), "network": self.probes.network(),
+        self._slow = {"xruns": self.probes.xruns(), "synthLate": self.probes.synth_late(),
+                      "network": self.probes.network(),
                       "restarts": self.probes.restarts(self.config.system.service),
                       "version": self.probes.version(ROOT)}
 
@@ -184,6 +188,8 @@ class Monitor:
             counters.update(c.counters())
         timing = self._timing(now, counters)
         timing["maxLagMs"] = round(src.beat_lag() * 1000, 1)
+        timing["synthLate"] = self._slow.get("synthLate")
+        timing["synthLateAttention"] = (timing["synthLate"] or 0) >= SYNTH_LATE_WARN
         program = {"uptime": self.uptime(), "restarts": self._slow.get("restarts"),
                    "version": self._slow.get("version"), "plannedStart": self._planned_start()}
         return {"audio": audio, "mat": mat, "machine": machine, "network": network,
@@ -299,6 +305,9 @@ class Monitor:
         if t.get("stallsAttention"):
             return Indicator(WARN, f"最近 1 分钟声音化节拍有 {t['stallsRecent']} 次晚到超过 "
                                    f"{self.config.sound.late_tolerance * 1000:g} ms，定时声音可能迟到")
+        if t.get("synthLateAttention"):
+            return Indicator(WARN, f"最近 1 分钟合成器服务有 {t['synthLate']} 条指令收到得太晚，节奏可能不稳"
+                                   "（定时声音提前量 sound.schedule_ahead 可能小于音频缓冲）")
         if t.get("lateAttention"):
             return Indicator(WARN, f"最近 1 分钟有 {t['lateRecent']} 个定时事件迟到被丢弃")
         recent = list(self.program_cpu_history)[-10:]

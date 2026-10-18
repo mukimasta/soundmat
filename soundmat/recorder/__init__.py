@@ -120,7 +120,7 @@ class Recorder:
         self.lights = lights
         self.event_queue = perception.events.subscribe()
         self.led_count = config.light.led_count
-        self.latency = config.sound.output_latency
+        self.schedule_ahead = config.sound.schedule_ahead
         self.sample_rate = config.sound.expected_sample_rate
         self.session: Session | None = None
         self.writer: SessionWriter | None = None
@@ -226,7 +226,7 @@ class Recorder:
         s = self.session
         if s is None:
             return
-        self.backend.stop_recording(now + self.latency)
+        self.backend.stop_recording(now + self.schedule_ahead)   # 已经排好、还没响的声音也录进去
         self.lights.set_system_layer("recording", None)
         s.stopped = reason
         if self.writer:
@@ -311,7 +311,7 @@ class Recorder:
                 w.put({"t": _round(now), "type": "sound", **sound})
             if out.sound.events:
                 w.put({"t": _round(now), "type": "events",
-                       "events": [{"id": e.id, "time": _round(e.time), "source": f"{e.source.kind}:{e.source.name}",
+                       "events": [{"id": e.id, "time": _round(now if e.time is None else e.time), "source": f"{e.source.kind}:{e.source.name}",
                                    "bus": e.bus, "params": {k: _round(x) for k, x in e.params.items()}}
                                   for e in out.sound.events]})
         light, lver = self.lights.preview.get_versioned()
@@ -329,6 +329,8 @@ class Recorder:
             "startSystemTime": _round(s.start_t),
             "slateOffsetSeconds": COUNTDOWN,
             "slateSystemTime": _round(s.start_t + COUNTDOWN),
+            # 会话数据里有确定时刻的声音（events 的 time、声部的开始时刻）比记下的时刻晚这么多响
+            "scheduleAheadSeconds": self.schedule_ahead,
             "arrangement": s.arrangement,
             "channels": s.channels,
             "sampleRate": self.sample_rate,

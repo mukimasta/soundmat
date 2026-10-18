@@ -135,7 +135,7 @@ def test_idle_preview_and_no_preview_while_playing():
     z = zone(6, 4).index
     out = m.tick(Beat(0, 1.0, DT), snap(1.0, (z,)), [MatEvent("place", z, 1.0)])
     (ev,) = out.sound.events
-    assert ev.time == 1.0 and ev.params["velocity"] == 0.5
+    assert ev.time is None and ev.params["velocity"] == 0.5
     assert out.light.layers[0].alpha.max() > 0.9      # 预听的灯光闪烁
     run(m, 2.0, 2.5, control=START * 2)
     out = m.tick(Beat(0, 2.5, DT), snap(2.5, (z,), START * 2), [MatEvent("place", z, 2.5)])
@@ -151,3 +151,16 @@ def test_lofi_maps_and_smooths():
         out = m.tick(Beat(i, i * DT, DT), snap(i * DT, (), 8000 / 4095), [])
     assert out.sound.globals["cutoff"] == pytest.approx(2425, abs=1)
     assert out.status.reading == "Lo-Fi 100%"
+
+
+def test_lights_follow_what_is_heard():
+    """扫描命中由声音引擎推后 heard_after 秒发声：命中灯光在那一刻亮。"""
+    m = JamMode(load_arrangement(ARRANGEMENTS_DIR / "lofi_1"), ModeContext(led_count=108, heard_after=0.15))
+    m.plan = m.load()
+    m.start(0.0)
+    z7 = zone(7, 0).index                                       # 第 0 扇区：开始时刻命中
+    run(m, 5.0, 5.12, zones=(z7,), control=START * 2)
+    assert [round(f[0], 3) for f in m.lights.flashes] == [5.15]
+    _, out = run(m, 5.12, 5.2, zones=(z7,), control=START * 2)
+    alpha = out.light.layers[0].alpha
+    assert alpha.max() > 0                                        # 命中的闪光（5.15 起）已经亮了

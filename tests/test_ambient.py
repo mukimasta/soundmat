@@ -72,7 +72,7 @@ def test_triggers_pitch_and_position_follow_zone():
     (hit,) = [e for e in out.sound.events if ".hit#" in e.id]
     assert hit.params["freq"] == pytest.approx(440 * 2 ** ((64 - 69) / 12))   # 第 2 级：E4
     assert hit.position.angle == pytest.approx(z.center_deg)
-    assert hit.time == 1.0
+    assert hit.time is None                       # 对放下石头的反应：立即发声
     # 对称：第 30 区与第 2 区同音
     z2 = zone(5, 30)
     out = m.tick(Beat(1, 1.1, 1 / 60), snap(1.1, [z.index, z2.index]), [place(1.1, z2.index)])
@@ -88,7 +88,7 @@ def test_intermittent_waits_random_interval_and_stops_when_empty():
     t = 0.0
     while t < 60:
         out = m.tick(Beat(0, t, 0.1), snap(t, [z]), [])
-        times += [e.time for e in out.sound.events if ".marimba#" in e.id]
+        times += [t for e in out.sound.events if ".marimba#" in e.id]    # 立即发声：就在这一拍
         t += 0.1
     gaps = np.diff([0.0] + times)
     assert len(times) >= 3

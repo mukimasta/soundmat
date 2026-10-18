@@ -56,6 +56,8 @@ class ModeContext:
     setting: Callable[[str, Any], Any] = _no_settings
     # 随机数种子；None 表示每次运行不同（测试中固定）
     seed: int | None = None
+    # 有确定时刻的声音比给出的时刻晚多少秒被听到（sound.schedule_ahead）；灯光要和这些声音同步时按它推后
+    heard_after: float = 0.0
 
 
 class Mode(ABC):

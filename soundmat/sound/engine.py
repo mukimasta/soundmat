@@ -2,6 +2,17 @@
 
 它不做任何艺术决定，只负责对账、声部预算、定时、混音结构与空间化，对所有模式一视同仁。
 引擎不是线程安全的：只在声音化的节拍线程里调用。
+
+定时只有两种：
+
+- **有确定时刻的**（定时事件的 ``time``、持续声部的 ``start``，例如鼓点、扫描命中、下一小节的和声）：
+  统一推后 ``sound.schedule_ahead`` 秒交给合成器服务。合成器服务要在音频缓冲开始计算之前收到指令
+  才能按采样精度准时执行，推后的这一段就是留给它的提前量；主机偶尔慢一点也不影响节奏。
+- **其余的一律立即**（没有时刻的事件和声部，例如放下石头时的预听；参数、音量、淡出、混音结构）：
+  合成器服务收到后在下一个缓冲执行，越快越好，没有"迟到"一说。
+
+已经排好、还没开始的声部，之后对它的修改、淡出和释放都不早于它的开始时刻，免得先收到"停"、
+后收到"开始"，留下一个停不下来的声音。
 """
 from __future__ import annotations
 
@@ -90,11 +101,10 @@ class SoundEngine:
     def add_instance(self, instance: str, buses: Sequence[str], now: float, fade: float = 0.0,
                      fx: str | None = None) -> None:
         """为一个模式实例建立混音结构，按 ``fade`` 秒淡入（切换编排时的交叉淡化）。``fx`` 是共用效果的音色。"""
-        at = self._at(now)
         rec = InstanceRecord(instance, list(buses), fx=fx)
         self.instances[instance] = rec
-        self.backend.create_mix(instance, rec.buses, self.layout.channels, at, fx)
-        self.backend.set_mix_gain(instance, 1.0, fade, at)
+        self.backend.create_mix(instance, rec.buses, self.layout.channels, now, fx)
+        self.backend.set_mix_gain(instance, 1.0, fade, now)
 
     def retire_instance(self, instance: str, now: float, fade: float) -> None:
         """让一个模式实例的输出在 ``fade`` 秒内淡出，之后整体释放。"""
@@ -103,7 +113,7 @@ class SoundEngine:
             return
         rec.gain = 0.0
         rec.retire_at = now + fade
-        self.backend.set_mix_gain(instance, 0.0, fade, self._at(now))
+        self.backend.set_mix_gain(instance, 0.0, fade, now)
 
     # ── 对账 ────────────────────────────────────────────────────────────
 
@@ -111,14 +121,13 @@ class SoundEngine:
         inst = self.instances.get(instance)
         if inst is None:
             raise KeyError(f"未知的模式实例：{instance}")
-        at = self._at(now)
         desired: dict[str, Voice] = {}
         for v in intent.voices:
             desired[v.id] = v
 
         for key in list(inst.voices):
             if key not in desired:
-                self._release(inst.voices.pop(key), at)
+                self._release(inst.voices.pop(key), now)
         inst.finished &= desired.keys()
         inst.rejected &= desired.keys()
 
@@ -128,24 +137,24 @@ class SoundEngine:
                 rec = self.voices[node]
                 if rec.source != v.source or rec.bus != v.bus:
                     # 声源变了：旧声部淡出，新声部淡入，两者交叉
-                    self._release(inst.voices.pop(key), at)
+                    self._release(inst.voices.pop(key), now)
                     node = None
                 else:
-                    self._update(rec, v, at)
+                    self._update(rec, v, now)
                     continue
             if key in inst.finished:
                 continue
-            self._start_voice(inst, v, now, at)
+            self._start_voice(inst, v, now)
 
         changed = {k: val for k, val in intent.globals.items() if inst.globals.get(k) != val}
         if changed:
             inst.globals.update(changed)
-            self.backend.set_globals(instance, changed, at)
+            self.backend.set_globals(instance, changed, now)
 
         for e in intent.events:
             self._event(inst, e, now)
 
-    def _update(self, rec: VoiceRecord, v: Voice, at: float) -> None:
+    def _update(self, rec: VoiceRecord, v: Voice, now: float) -> None:
         changed = {k: val for k, val in v.params.items() if rec.params.get(k) != val}
         gains = None
         if v.position != rec.position:
@@ -153,21 +162,20 @@ class SoundEngine:
             gains = self._gains(v.position)
         if changed or gains is not None:
             rec.params.update(changed)
-            self.backend.set_voice(rec.node, changed, gains, at)
+            self.backend.set_voice(rec.node, changed, gains, self._after_start(rec, now))
         rec.priority = v.priority
         rec.category = v.category
         rec.fade_out = v.fade_out
 
-    def _start_voice(self, inst: InstanceRecord, v: Voice, now: float, at: float) -> None:
+    def _start_voice(self, inst: InstanceRecord, v: Voice, now: float) -> None:
         if not self._make_room(v.priority, v.category, now):
             if v.id not in inst.rejected:
                 inst.rejected.add(v.id)
                 self.stats.rejected += 1
             return
         inst.rejected.discard(v.id)
-        if v.start is not None:
-            # 模式提前给出的准确开始时刻（例如 Jam 下一小节的和声）；已经过去就立即开始
-            at = max(at, v.start + self.cfg.output_latency)
+        # 有开始时刻的（例如 Jam 下一小节的和声）按时刻排；已经过去或没有时刻的立即开始
+        at = now if v.start is None else max(now, self._scheduled(v.start))
         node = next(self._nodes)
         self.voices[node] = VoiceRecord(
             node=node, instance=inst.id, key=v.id, source=v.source, bus=v.bus,
@@ -178,12 +186,12 @@ class SoundEngine:
         self.backend.start_voice(node, inst.id, v.source, v.bus, v.params,
                                  self._gains(v.position), v.fade_in, at, oneshot=False)
 
-    def _release(self, node: int, at: float) -> None:
+    def _release(self, node: int, now: float) -> None:
         rec = self.voices.get(node)
         if rec is None or rec.phase is Phase.FADING_OUT:
             return
         rec.phase = Phase.FADING_OUT
-        self.backend.release_voice(node, rec.fade_out, at)
+        self.backend.release_voice(node, rec.fade_out, self._after_start(rec, now))
 
     # ── 定时事件 ────────────────────────────────────────────────────────
 
@@ -191,13 +199,15 @@ class SoundEngine:
         if e.id in self._seen_events:
             self.stats.duplicates += 1
             return
-        self._seen_events[e.id] = e.time
-        at = e.time + self.cfg.output_latency
-        if at < now:
-            if now - at > self.cfg.late_tolerance:
+        self._seen_events[e.id] = now if e.time is None else e.time
+        if e.time is None:
+            at = now                                   # 立即
+        else:
+            at = self._scheduled(e.time)
+            if now - at > self.cfg.late_tolerance:     # 主机卡得太久，这个音已经错过了：丢弃
                 self.stats.late += 1
                 return
-            at = now
+            at = max(at, now)
         if not self._make_room(e.priority, e.category, now):
             self.stats.rejected += 1
             return
@@ -243,7 +253,7 @@ class SoundEngine:
 
     def _evict(self, rec: VoiceRecord, now: float) -> None:
         self.voices.pop(rec.node, None)
-        self.backend.free_voice(rec.node, self._at(now))
+        self.backend.free_voice(rec.node, now)
         if rec.key is not None:
             inst = self.instances.get(rec.instance)
             if inst and inst.voices.get(rec.key) == rec.node:
@@ -271,11 +281,12 @@ class SoundEngine:
         retired = []
         for iid, inst in list(self.instances.items()):
             if inst.retire_at is not None and inst.retire_at <= now:
-                at = self._at(now)
-                for node, rec in list(self.voices.items()):
-                    if rec.instance == iid:
-                        self.voices.pop(node)
-                        self.backend.free_voice(node, at)
+                own = [rec for rec in self.voices.values() if rec.instance == iid]
+                # 淡出时还排着的声音（还没开始）也要等它们的时刻过去，再整体释放
+                at = max([now] + [rec.started for rec in own])
+                for rec in own:
+                    self.voices.pop(rec.node)
+                    self.backend.free_voice(rec.node, at)
                 self.backend.free_mix(iid, at)
                 del self.instances[iid]
                 retired.append(iid)
@@ -290,7 +301,8 @@ class SoundEngine:
 
         合成器服务重启后（``free_old=False``，旧节点已不存在），或音箱数量改变时使用。
         """
-        at = self._at(now)
+        # 先释放旧的再重建，用同一个时刻保证顺序；要释放的声音里有排着还没开始的，就等到它们的时刻
+        at = max([now] + [rec.started for rec in self.voices.values()]) if free_old else now
         if free_old:
             for node in list(self.voices):
                 self.backend.free_voice(node, at)
@@ -316,7 +328,7 @@ class SoundEngine:
         changed = {k: v for k, v in params.items() if self._master.get(k) != v}
         if changed:
             self._master.update(changed)
-            self.backend.set_master(changed, self._at(now))
+            self.backend.set_master(changed, now)
 
     def set_layout(self, layout: SpeakerLayout, orientation: float, now: float) -> None:
         """修改音箱布局或垫面朝向。声道数不变时只重新分配增益；变了则重建混音结构。"""
@@ -325,16 +337,20 @@ class SoundEngine:
         if channels_changed:
             self.rebuild(now)
             return
-        at = self._at(now)
         for rec in self.voices.values():
             if rec.phase is not Phase.ONESHOT:
-                self.backend.set_voice(rec.node, {}, self._gains(rec.position), at)
+                self.backend.set_voice(rec.node, {}, self._gains(rec.position), self._after_start(rec, now))
 
     # ── 辅助 ────────────────────────────────────────────────────────────
 
-    def _at(self, now: float) -> float:
-        """所有声音都经过同一段固定输出延迟，相对时序不受主机计算抖动影响。"""
-        return now + self.cfg.output_latency
+    def _scheduled(self, t: float) -> float:
+        """有确定时刻的声音交给合成器服务的执行时刻：统一推后 ``schedule_ahead`` 秒（见模块说明）。"""
+        return t + self.cfg.schedule_ahead
+
+    @staticmethod
+    def _after_start(rec: VoiceRecord, now: float) -> float:
+        """对一个声部的后续指令：立即，但不早于它排定的开始时刻。"""
+        return max(now, rec.started)
 
     def _gains(self, position: Position | None) -> SpeakerGains:
         return voice_gains(position, self.layout, self.orientation)
@@ -342,7 +358,7 @@ class SoundEngine:
     def test_tone(self, channel: int, now: float) -> None:
         """在一个声道上放 1 秒测试音，确认每只音箱接对了位置。"""
         self.check_channel(channel)
-        self.backend.test_tone(channel, self._at(now))
+        self.backend.test_tone(channel, now)
 
     def check_channel(self, channel: int) -> None:
         if not 0 <= channel < self.layout.channels:

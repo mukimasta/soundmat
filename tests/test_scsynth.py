@@ -22,7 +22,7 @@ def rig(tmp_path):
     defs.mkdir()
     wav = SimpleNamespace(path=tmp_path / "a.wav", channels=2)
     be = ScsynthBackend(port=fake.port, synthdefs=defs, resolve_asset=lambda ref: wav if ref == "a.wav" else None)
-    eng = SoundEngine(be, SoundConfig(output_latency=0.03), PRESETS["stereo"])
+    eng = SoundEngine(be, SoundConfig(schedule_ahead=0.15), PRESETS["stereo"])
     yield fake, be, eng
     fake.close()
 

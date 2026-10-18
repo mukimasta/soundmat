@@ -113,7 +113,8 @@ class Supervisor:
         self.sonification = Sonification(
             self.engine, self.assets, self.perception, self.store, self.events, self.light_intent,
             modes=opts.modes,
-            ctx=ModeContext(led_count=cfg.light.led_count, setting=self.settings.get, seed=opts.seed),
+            ctx=ModeContext(led_count=cfg.light.led_count, setting=self.settings.get, seed=opts.seed,
+                            heard_after=cfg.sound.schedule_ahead),
             crossfade=cfg.sound.crossfade_seconds,
         )
         self.catalog = Catalog(self.store, self.events, self.sonification, self.assets, opts.arrangements_dir)

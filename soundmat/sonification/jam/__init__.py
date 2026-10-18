@@ -9,6 +9,10 @@
   （标识含小节序号，带准确的开始时刻）、十六分网格上的鼓、扫描线经过石头的准确时刻的旋律与贝斯。
 - 空闲时新放下的石头立即预听一声；播放中是否预听由编排决定。
 
+时刻：和声、鼓、扫描命中都有确定时刻（音乐时间换算成系统时间），由声音引擎统一推后
+``ctx.heard_after`` 秒准时发声；预听是对放下石头的反应，不带时刻，立即发声。所以听到的音乐比节拍里的
+音乐时间晚 ``heard_after``：扫描线灯光、扫描命中的闪光和预听选用的和弦都按"听到的位置"算。
+
 编排格式见 docs/implementation/ARRANGEMENTS.md。
 """
 from __future__ import annotations
@@ -229,7 +233,8 @@ class JamMode(Mode):
             **self.mix,
         }
 
-        sweep = self.timing.sweep_position(max(0.0, t - self.start_t), self.tempo.bpm) if self.state == "playing" else 0.0
+        heard = t - self.ctx.heard_after          # 此刻听到的音乐时刻（见模块说明）
+        sweep = self.timing.sweep_position(max(0.0, heard - self.start_t), self.tempo.bpm) if self.state == "playing" else 0.0
         light = self.lights.render(t, state=self.state, sweep=sweep,
                                    stones=[(r, s) for r, s, _ in trigger_stones])
         return BeatOutput(
@@ -335,25 +340,27 @@ class JamMode(Mode):
                                 f"{self.prefix}.r{self.run}.scan.{z}.{k}")
                 if ev is not None:
                     out.append(ev)
-                    self.lights.flash(t_hit, slot, ring)
+                    self.lights.flash(t_hit + self.ctx.heard_after, slot, ring)   # 在听到的那一刻闪
         return out
 
     def _preview(self, zone: int, t: float, velocity: float) -> Event | None:
+        """放下石头的预听：立即发声，和弦按此刻听到的位置选。"""
         z = ZONES[zone]
+        heard = t - self.ctx.heard_after
         rotation = 0
         if self.state == "playing" and self.timing.is_two_bar:
-            k = int(self.timing.sweep_position(t - self.start_t, self.tempo.bpm) // 32)
+            k = int(self.timing.sweep_position(max(0.0, heard - self.start_t), self.tempo.bpm) // 32)
             rotation = k % 4
         self.preview_n += 1
-        ev = self._note(z.ring, z.slot, zone, rotation, velocity, t, f"{self.prefix}.preview.{self.preview_n}")
+        ev = self._note(z.ring, z.slot, zone, rotation, velocity, None, f"{self.prefix}.preview.{self.preview_n}")
         if ev is not None:
             self.lights.preview(t, z.slot, z.ring)
             if self.state == "playing":
-                self.last_trigger[zone] = t
+                self.last_trigger[zone] = heard     # 与扫描命中的时刻（音乐时间轴）比较
         return ev
 
     def _note(self, ring: int, slot: int, zone: int, rotation: int, velocity: float,
-              t: float, eid: str) -> Event | None:
+              time: float | None, eid: str) -> Event | None:
         role = self.rings[ring]
         chord_idx, eighth = self.timing.resolve(slot, rotation)
         if not 0 <= chord_idx < len(self.progression):
@@ -367,7 +374,7 @@ class JamMode(Mode):
         sustain = self.tempo.quarter + role.tail_sec if role.role == "bass" else role.note_sec
         z = ZONES[zone]
         return Event(
-            id=eid, time=t, source=Source("instrument", role.instrument), bus=f"ring{ring}",
+            id=eid, time=time, source=Source("instrument", role.instrument), bus=f"ring{ring}",
             params={"freq": freq, "velocity": max(0.2, min(1.0, velocity)), "ringGain": role.gain,
                     "sustain": sustain, **role.params},
             position=Position(z.center_deg, z.radius), priority=PRIORITY[role.role], category="melodic",

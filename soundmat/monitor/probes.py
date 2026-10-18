@@ -135,6 +135,17 @@ def xruns_last_hour() -> int | None:
     return sum(1 for line in out.splitlines() if "xrun" in line.lower())
 
 
+def synth_late_last_minute() -> int | None:
+    """最近 1 分钟合成器服务收到得太晚的指令数：scsynth 每遇到一条就在日志里写一行 ``late <秒>``。
+
+    太晚的指令只能在下一个音频缓冲执行，有节奏的声音因此忽早忽晚；主机程序自己看不到这件事。
+    """
+    out = _run(["journalctl", "--since", "-60s", "--no-pager", "-o", "cat", "_COMM=scsynth"], timeout=3)
+    if out is None:
+        return None
+    return sum(1 for line in out.splitlines() if line.startswith("late "))
+
+
 def machine(data_dir: Path) -> dict:
     info: dict = {"host": socket.gethostname(), "model": None, "tempC": None, "throttled": None,
                   "memUsedMB": None, "memTotalMB": None, "diskFreeGB": None, "diskTotalGB": None,

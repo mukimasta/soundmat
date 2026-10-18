@@ -276,7 +276,9 @@ function RhythmSection() {
   const rates = getPath<Record<string, Rate | null>>(s.state, 'status.rates') ?? {};
   const t = getPath<{ stalls: number | null; stallsRecent: number | null;
     maxLagMs: number | null; late: number | null; lateRecent: number | null; yields: number | null; rejected: number | null;
-    stallsAttention?: boolean; lateAttention?: boolean }>(s.state, 'status.timing');
+    synthLate?: number | null; stallsAttention?: boolean; lateAttention?: boolean; synthLateAttention?: boolean }>(s.state, 'status.timing');
+  // 迟到的定时声音：合成器服务收到得太晚的（只能在下一个音频缓冲执行）加上主机来不及交出、直接丢弃的
+  const late = t == null || (t.synthLate == null && t.lateRecent == null) ? null : (t.synthLate ?? 0) + (t.lateRecent ?? 0);
   const display = useDisplayFps();
   const rows = RATE_ROWS.map((r) => ({ ...r, rate: rates[r.key] ?? null }))
     .filter((r) => r.rate && (r.rate.actual !== null || r.rate.expected !== null));
@@ -309,8 +311,9 @@ function RhythmSection() {
           sub={t?.stallsRecent == null ? undefined
             : `超过 50 ms ${t.stallsRecent} 次`}
           tone={t?.stallsAttention ? 'warn' : t ? 'ok' : undefined} />
-        <Tile label="迟到丢弃" value={t?.lateRecent ?? '—'} unit={t?.lateRecent == null ? '' : '次 · 最近 1 分钟'}
-          sub={t?.late == null ? undefined : `启动以来 ${t.late} 次`} tone={t?.lateAttention ? 'warn' : t ? 'ok' : undefined} />
+        <Tile label="定时声音迟到" value={late ?? '—'} unit={late == null ? '' : '次 · 最近 1 分钟'}
+          sub={t == null ? undefined : `合成器收到太晚 ${t.synthLate ?? '—'} · 主机丢弃 ${t.lateRecent ?? '—'}`}
+          tone={t?.synthLateAttention || t?.lateAttention ? 'warn' : t ? 'ok' : undefined} />
         <Tile label="声部让位" value={t?.yields ?? '—'} unit={t?.yields == null ? '' : '次'} sub="为新声部腾出位置" />
         <Tile label="因预算放弃" value={t?.rejected ?? '—'} unit={t?.rejected == null ? '' : '次'} sub="声部超过上限没能发声" />
       </div>

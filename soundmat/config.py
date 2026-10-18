@@ -45,7 +45,7 @@ class SoundConfig:
     tick_hz: float = 60.0
     voice_budget_total: int = 48
     voice_budget_categories: dict[str, int] = field(default_factory=lambda: {"melodic": 12})
-    output_latency: float = 0.03
+    schedule_ahead: float = 0.15
     late_tolerance: float = 0.05
     asset_memory_mb: float = 768.0
     crossfade_seconds: float = 3.0
@@ -115,6 +115,7 @@ class Config:
             {"label": "期望采样率", "value": f"{s.expected_sample_rate / 1000:g} kHz"},
             {"label": "声部预算", "value": f"{s.voice_budget_total}" + (f"（{cats}）" if cats else "")},
             {"label": "声音化节拍", "value": f"{s.tick_hz:g} 次/秒"},
+            {"label": "定时声音提前量", "value": f"{s.schedule_ahead * 1000:g} ms"},
         ]
 
 
@@ -145,7 +146,7 @@ def load_config(path: Path | str | None = None) -> Config:
     })
     light = take("light", {k: k for k in ("led_count", "led_offset", "refresh_hz")})
     sound = take("sound", {k: k for k in (
-        "tick_hz", "voice_budget_total", "voice_budget_categories", "output_latency",
+        "tick_hz", "voice_budget_total", "voice_budget_categories", "schedule_ahead",
         "late_tolerance", "asset_memory_mb", "crossfade_seconds",
         "expected_sample_rate", "expected_output_device",
     )})
