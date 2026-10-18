@@ -182,12 +182,17 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
     );
   }
 
-  /** 机器：温度、主机程序 CPU、还能录多久。 */
+  /** 机器：温度、内存与存储、还能录多久、CPU，以及运行时间、自动重启和版本（照看装置时常看，不收起）。 */
   function MachineCard() {
     const m = machine();
     if (!m) return null;
+    const memFrac = m.memUsedMB != null && m.memTotalMB ? m.memUsedMB / m.memTotalMB : null;
+    const diskFrac = m.diskFreeGB != null && m.diskTotalGB ? 1 - m.diskFreeGB / m.diskTotalGB : null;
     const hot = (m.tempC ?? 0) >= 80 || !!m.throttled;
     const storage = g<{ freeGB: number | null; minutes: number | null }>('status.storage');
+    const program = g<{ uptime: number | null; restarts: number | null;
+      version: { commit: string; deployedAt: string | null; dirty: boolean | null; source: string } | null }>('status.program');
+    const v = program?.version;
     return (
       <section className="card" aria-label="机器">
         <SecHead no="04" name="机器" ind={hot ? 'warn' : 'ok'} />
@@ -195,14 +200,34 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
           <Gauge value={m.tempC} max={100} limit={80} width={124} text={m.tempC == null ? '—' : `${Math.round(m.tempC)}°`}
             label={m.tempC == null ? '温度未知' : `温度 ${m.tempC} 摄氏度，红线是 80 度`} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div><KV k="内存" v={m.memUsedMB != null ? `${(m.memUsedMB / 1024).toFixed(1)} / ${((m.memTotalMB ?? 0) / 1024).toFixed(1)} GB` : '—'} /><Segments frac={memFrac} /></div>
+            <div><KV k="存储空间" v={m.diskFreeGB != null ? `${Math.round(m.diskFreeGB)} GB 可用` : '—'} /><Segments frac={diskFrac} warn={0.9} /></div>
+            <KV k="还能录" v={storage?.minutes != null ? minutesText(storage.minutes) : '—'} />
             <div data-cpu="program">
               <KV k="主机程序 CPU" v={m.programCpu != null ? `${Math.round(m.programCpu)}% · 单核` : '—'} />
               <Segments frac={m.programCpu != null ? Math.min(1, m.programCpu / 100) : null} warn={0.85} />
             </div>
-            <KV k="还能录" v={storage?.minutes != null ? minutesText(storage.minutes) : '—'} />
+            <div data-cpu="machine">
+              <KV k="整机 CPU" v={m.cpu != null ? `${Math.round(m.cpu)}%${m.cores ? ` · ${m.cores} 核` : ''}` : '—'} />
+              <Segments frac={m.cpu != null ? m.cpu / 100 : null} warn={0.85} />
+            </div>
           </div>
         </div>
+        {(m.programCpuHistory?.length ?? 0) > 1 && (
+          <>
+            <Spark values={m.programCpuHistory!} max={100} height={38} />
+            <span className="small">主机程序 CPU · 最近 1 分钟 · 按单核算，持续超过 90% 时声音和灯光可能卡顿</span>
+          </>
+        )}
         {m.throttled && <Problem text="正在降频（供电不足或过热），声音和灯光可能变慢" />}
+        <div>
+          <KV k="机器" v={m.model ?? m.host} />
+          <KV k="降频" v={m.throttled == null ? '—' : m.throttled ? '有' : '无'} tone={m.throttled ? 'warn' : undefined} />
+          <KV k="机器已运行" v={m.uptime != null ? duration(m.uptime) : '—'} />
+          <KV k="主机程序已运行" v={program?.uptime != null ? duration(program.uptime) : '—'} />
+          <KV k="自动重启" v={program?.restarts == null ? '未知' : `${program.restarts} 次`} />
+          <KV k="版本" v={v ? `${v.commit}${v.dirty ? ' · 有未提交的改动' : ''}${v.deployedAt ? ` · 部署于 ${v.deployedAt.slice(0, 16).replace('T', ' ')}` : ''}` : '未知'} />
+        </div>
       </section>
     );
   }
@@ -220,15 +245,11 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
     const engine = g<{ voices: number; budget: number }>('status.engine');
     const load = soundLoad();
     const t = timing();
-    const m = machine();
     const mt = mat();
-    const program = g<{ uptime: number | null; restarts: number | null;
-      version: { commit: string; deployedAt: string | null; dirty: boolean | null; source: string } | null }>('status.program');
-    const v = program?.version;
     return (
       <details className="details">
         <summary>
-          <span className="t">详细信息<span className="hint">配置、各条链路和内部计数</span></span>
+          <span className="t">详细信息<span className="hint">音频配置、各条链路和内部计数</span></span>
           <svg className="chev" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor"
             strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6.5 9.5L12 15l5.5-5.5" /></svg>
         </summary>
@@ -250,20 +271,6 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
             <KV k="输入" v={mt?.source === 'virtual' ? '虚拟垫子' : '压力垫控制器'} />
             <KV k="校验错误" v={mt?.source === 'virtual' || mt?.checksumErrors == null ? '—' : String(mt.checksumErrors)} />
           </section>
-          {m && (
-            <section aria-label="机器详情">
-              <span className="grp">机器</span>
-              <KV k="型号" v={m.model ?? m.host} />
-              <KV k="降频" v={m.throttled == null ? '—' : m.throttled ? '有' : '无'} tone={m.throttled ? 'warn' : undefined} />
-              <KV k="内存" v={m.memUsedMB != null ? `${(m.memUsedMB / 1024).toFixed(1)} / ${((m.memTotalMB ?? 0) / 1024).toFixed(1)} GB` : '—'} />
-              <KV k="存储空间" v={m.diskFreeGB != null ? `${Math.round(m.diskFreeGB)} GB 可用` : '—'} />
-              <KV k="整机 CPU" v={m.cpu != null ? `${Math.round(m.cpu)}%${m.cores ? ` · ${m.cores} 核` : ''}` : '—'} />
-              <KV k="机器已运行" v={m.uptime != null ? duration(m.uptime) : '—'} />
-              <KV k="主机程序已运行" v={program?.uptime != null ? duration(program.uptime) : '—'} />
-              <KV k="自动重启" v={program?.restarts == null ? '未知' : `${program.restarts} 次`} />
-              <KV k="版本" v={v ? `${v.commit}${v.dirty ? ' · 有未提交的改动' : ''}${v.deployedAt ? ` · 部署于 ${v.deployedAt.slice(0, 16).replace('T', ' ')}` : ''}` : '未知'} />
-            </section>
-          )}
         </div>
       </details>
     );
@@ -296,7 +303,7 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
   function machine() {
     return g<{ host: string; model: string | null; tempC: number | null; throttled: boolean | null; memUsedMB: number | null;
       memTotalMB: number | null; diskFreeGB: number | null; diskTotalGB: number | null; uptime: number | null; programUptime: number;
-      programCpu?: number | null; cpu?: number | null; cores?: number | null }>('status.machine');
+      programCpu?: number | null; cpu?: number | null; cores?: number | null; programCpuHistory?: number[] }>('status.machine');
   }
 }
 

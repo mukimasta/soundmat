@@ -43,7 +43,7 @@ test('normal dashboard', async () => {
   expect(within(screen.getByRole('region', { name: '垫子' })).getByText('58.6')).toBeInTheDocument();
   expect(within(screen.getByRole('region', { name: '网络' })).getByText('已连接 · 100.101.33.8')).toBeInTheDocument();
   expect(within(screen.getByRole('region', { name: '网络' })).getByText('soundmat-pi.local · 172.20.10.3')).toBeInTheDocument();
-  expect(within(screen.getByRole('region', { name: '机器详情' })).getByText('Raspberry Pi 5')).toBeInTheDocument();
+  expect(within(screen.getByRole('region', { name: '机器' })).getByText('Raspberry Pi 5')).toBeInTheDocument();
   expect(screen.getByText('详细信息').closest('details')!.open).toBe(false);       // 详细信息默认收起
 });
 
@@ -114,11 +114,10 @@ test('rhythm card, network kind, program and recording time', async () => {
   const machine = screen.getByRole('region', { name: '机器' });
   expect(within(machine).getByText('约 25 小时')).toBeInTheDocument();              // 还能录：关键信息在卡片上
   expect(machine.querySelector('[data-cpu="program"]')!.textContent).toContain('58% · 单核');
-  const details = screen.getByRole('region', { name: '机器详情' });
-  expect(within(details).getByText('1 小时 30 分')).toBeInTheDocument();
-  expect(within(details).getByText('1 次')).toBeInTheDocument();
-  expect(within(details).getByText('2d09273 · 部署于 2026-10-17 15:04')).toBeInTheDocument();
-  expect(within(details).getByText('20% · 4 核')).toBeInTheDocument();
+  expect(within(machine).getByText('1 小时 30 分')).toBeInTheDocument();             // 运行时间、重启、版本都在机器卡片上
+  expect(within(machine).getByText('1 次')).toBeInTheDocument();
+  expect(within(machine).getByText('2d09273 · 部署于 2026-10-17 15:04')).toBeInTheDocument();
+  expect(machine.querySelector('[data-cpu="machine"]')!.textContent).toContain('20% · 4 核');
   const sound = screen.getByRole('region', { name: '声音' });
   expect(within(sound).getByText('运算负载 · 主机程序')).toBeInTheDocument();          // 主机程序 58% 高于合成器 22%
   expect(within(screen.getByRole('region', { name: '音频' })).getByText('合成器 22% · 主机程序 58%（单核）')).toBeInTheDocument();
