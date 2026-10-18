@@ -180,6 +180,10 @@ uv run python scripts/release.py --device soundmat-pi-old     # Pi 3B
 
 它会：检查没有未提交的改动 → 推送 → 编译音色（`instruments/` 没变就跳过）→ 构建控制台 → 打包（约 700 KB）→ 上传为 GitHub 预发布版本（保留最近 20 个）→ 用 rsync 把编排引用的素材同步到装置的 `/home/soundmat/sound/samples/`（只传有变化的；第一次约 326 MB）→ 通过 Tailscale 让装置更新 → 等装置报告新版本在运行。整个过程约 20–40 秒。`--no-sound` 跳过素材（Jam 不需要素材），`--no-update` 只发布到 GitHub。
 
+素材的注意事项：
+- 装置上的素材目录 `/home/soundmat/sound/samples` 要先存在（rsync 不建上级目录），新装的装置第一次发布前先 `ssh soundmat@<主机> mkdir -p /home/soundmat/sound/samples`。
+- 大批同步（第一次约 326 MB，或新加了大素材）期间，往存储卡写入会让 Pi 3B 的音频卡顿几下（2026-10-18 实测：开始同步的 8 秒里 JACK 记了 14 次 xrun，之后为 0）。不要在演出或拍摄中做；看板的"最近一小时卡顿"提示一小时后自己消失。平时只传有变化的文件，一两秒，不受影响。
+
 装置那边：下载、核对 SHA-256、解压到 `releases/<短提交号>/`、`uv sync`，成功后才切换 `current`，然后程序退出、由 systemd 按新版本拉起。新版本运行满 60 秒自动确认；连续 3 次启动失败，启动前运行的 `soundmat-guard` 会切回上一版。手动回退：控制台「菜单 → 软件更新 → 回到上一版」（只对本机和 Tailscale 来的访问开放），或 `curl -X POST http://<主机>:8000/api/update/rollback`。
 
 发布命令连不上装置时，发布包已经在 GitHub 上：等装置连上后重新运行同一条命令（已上传的会跳过），或在控制台里选这个版本更新。装置正在切换网络时也会连不上，过一两分钟再试。
