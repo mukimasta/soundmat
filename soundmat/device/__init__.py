@@ -25,7 +25,10 @@ from .protocol import BAUD, FrameError, encode_led_frame, parse_sensor_frame
 log = logging.getLogger("soundmat.device")
 
 RETRY_SECONDS = 2.0       # 打不开或断线后多久重试
-SILENCE_SECONDS = 5.0     # 连着但这么久没有 S 帧：关掉重开
+SILENCE_SECONDS = 5.0     # 已经收到过 S 帧之后，这么久没有新的 S 帧：关掉重开
+# 刚打开串口时等第一帧 S 帧的时间。打开串口可能让 ESP32 复位，固件开机后约 5 秒的灯效期间不发
+# S 帧；如果这里也只等 5 秒，每次重开都会在它开完机之前再次复位它，永远等不到（Pi 3B 上实测）
+BOOT_WAIT_SECONDS = 15.0
 
 
 class SerialLike(Protocol):
@@ -190,7 +193,8 @@ class DeviceLink:
                     raw, buf = buf.split(b"\n", 1)
                     self._line(raw.decode("ascii", errors="replace").strip(), now)
             last = self.last_frame if self._booted else opened
-            if now - max(last, opened) > SILENCE_SECONDS:
+            limit = SILENCE_SECONDS if self._booted else BOOT_WAIT_SECONDS
+            if now - max(last, opened) > limit:
                 raise TimeoutError("控制器没有数据")
 
     def _line(self, text: str, now: float) -> None:
