@@ -231,3 +231,16 @@ def test_live_recording_starts_at_the_slate(make_sup, tmp_path, monkeypatch):
     x, sr = soundfile.read(folder / "master.wav")
     assert len(x) / sr == pytest.approx(4.5 - 3.0 + 0.15, abs=0.3)    # 从打板录到停止（加上提前量）
     assert np.abs(x).max() < 0.01                                    # 没有石头：文件里一片安静，没有提示音
+
+
+def test_node_ids_are_never_reused_across_reconnects(rig):
+    """重连后新建的混音组不能和旧的同号：否则排在未来时刻、清空节点树之后才执行的旧指令，
+    会把声音建进新组里，成为没人释放的节点。"""
+    fake, be, eng = rig
+    eng.add_instance("A", ["ring0"], system_time())
+    assert pump(eng, be, 2, until=lambda: be.state == "ready" and be.mixes)
+    before = {be.mixes["A"].group, be.mixes["A"].mode_node, be.master_node}
+    fake.nodes_lost = True                                     # 合成器服务"重启"：引擎重连并重建
+    assert pump(eng, be, 2, until=lambda: eng.stats.restarts == 2 and be.mixes)
+    after = {be.mixes["A"].group, be.mixes["A"].mode_node, be.master_node}
+    assert before.isdisjoint(after)

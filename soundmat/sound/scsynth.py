@@ -129,6 +129,8 @@ class ScsynthBackend:
         self._pending: dict[float, list[OscMessage]] = {}
         self._lock = threading.Lock()
         self._levels: dict[tuple[int, int], tuple[float, list[float]]] = {}
+        # 混音组、总输出、录音节点的编号从这里往下数，重连也不归零（见 _node）
+        self._next_node = 2_000_000_000
         self._reset_state()
 
     def _reset_state(self) -> None:
@@ -137,7 +139,6 @@ class ScsynthBackend:
         self.buffers: dict[str, tuple[int, int]] = {}     # 引用 → (缓冲区编号, 声道数)
         self.bus_alloc = Allocator(FIRST_PRIVATE_BUS, AUDIO_BUSES)
         self.buf_alloc = Allocator(0, 1024)
-        self._next_node = 2_000_000_000
         self.master_node: int | None = None
         self.master_channels = 0
         self.main_bus: int | None = None
@@ -151,6 +152,10 @@ class ScsynthBackend:
     # ── 发送 ────────────────────────────────────────────────────────────
 
     def _node(self) -> int:
+        """新的节点编号，永不重复使用。重连时节点树被清空，但已经发出、排在未来时刻的指令还在合成器
+        服务的队列里，会在清空之后照常执行；如果新的混音组拿到和旧的相同的编号，那些指令建出的声音
+        就落进新组、成了主机程序不知道的节点，没人释放（2026-10-18 在 Pi 3B 上留下了 7 个和声铺底，
+        负载升到 80%）。编号不重复，旧指令指向的组已经不存在，合成器服务直接丢弃。"""
         self._next_node -= 1
         return self._next_node
 
