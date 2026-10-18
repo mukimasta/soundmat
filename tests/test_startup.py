@@ -49,3 +49,22 @@ def test_starts_own_scsynth_and_stops_it(monkeypatch, tmp_path):
     assert (tmp_path / "args").read_text().split() == ["-u", str(port), "-i", "0", "-o", "4", "-S", "48000"]
     proc.stop()
     assert proc.proc.poll() is not None
+
+
+def test_thread_names_reach_the_os():
+    import sys
+    import threading
+
+    from soundmat import threadnames
+
+    threadnames.install()
+    seen = {}
+
+    def work():
+        if sys.platform.startswith("linux"):
+            seen["comm"] = open(f"/proc/self/task/{threading.get_native_id()}/comm").read().strip()
+        else:
+            seen["comm"] = "sonification"
+    t = threading.Thread(target=work, name="sonification")
+    t.start(); t.join()
+    assert seen["comm"] == "sonification"

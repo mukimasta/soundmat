@@ -14,6 +14,7 @@ import uvicorn
 
 from .config import load_config
 from .control import create_app
+from . import threadnames
 from .monitor.probes import local_name
 from .sound.scsynth_process import ensure_scsynth
 from .supervisor import Options, Supervisor
@@ -68,6 +69,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    threadnames.install()
     cfg = load_config(args.config)
     opts = Options(virtual=args.virtual, serial_port=args.serial,
                    synth="recording" if args.no_synth else "scsynth")
