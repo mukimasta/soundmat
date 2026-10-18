@@ -105,8 +105,6 @@ def prune(repo: str) -> None:
 
 def sync_sound(device: str, user: str, remote_dir: str) -> None:
     """把所有编排引用的素材同步到装置的素材库（``<remote_dir>/samples/``）。"""
-    # 用到时才导入，并且先导入运行管理：它按正确的顺序带入整个主机程序，直接先导入设置模块会循环导入
-    import soundmat.supervisor  # noqa: F401
     from soundmat.store.settings import default_sound_library
     from soundmat.updater.samples import referenced_samples
 

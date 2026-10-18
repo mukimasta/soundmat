@@ -3,6 +3,10 @@
 ``Sonification`` 在时钟的每一拍读取最新的垫面快照，取走上一拍之后积累的全部事件，
 调用当前模式实例，把声音意图交给声音引擎、灯光意图交给灯光引擎、模式状态交给状态中心。
 切换编排时新旧两个实例同时运行，声音引擎在两组输出之间交叉淡化，淡化结束后停止旧实例。
+
+节拍线程只做演奏本身：模式、声音引擎、灯光意图，以及自己的状态（状态中心的 ``status.current``、
+``status.engine``、``status.assets``）。电平由别的线程按需采样（``sample_levels``），
+其他模块的状态由它们自己或系统监测发布。
 """
 from __future__ import annotations
 
@@ -10,17 +14,20 @@ import itertools
 import logging
 import queue
 from dataclasses import dataclass
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from ..clock import Beat
 from ..exchange import Latest
+from ..intent import BeatOutput, LightIntent, ModeStatus, SoundIntent
 from ..monitor.log import EventLog
 from ..perception import Perception
 from ..sound.engine import SoundEngine
 from ..store import Store
-from ..intent import BeatOutput, LightIntent, SoundIntent
 from .meters import Meter, resolve_meters
 from .mode import Arrangement, LoadError, LoadPlan, Mode, ModeContext
+
+if TYPE_CHECKING:   # 素材库引用了编排的 LoadError，运行时从这里导入会形成循环
+    from ..sound.assets import AssetLibrary
 
 log = logging.getLogger("soundmat.sonification")
 
@@ -41,37 +48,39 @@ class ModeInstance:
 
 
 class Sonification:
-    def __init__(self, engine: SoundEngine, perception: Perception, store: Store,
+    def __init__(self, engine: SoundEngine, assets: AssetLibrary, perception: Perception, store: Store,
                  events: EventLog, light: Latest[LightIntent], modes: dict[str, ModeFactory],
                  ctx: ModeContext, crossfade: float):
         self.engine = engine
+        self.assets = assets
         self.perception = perception
-        self.store = store
+        self.state = store.writer("status.current", "status.engine", "status.assets")
         self.log = events
         self.light = light
         self.modes = modes
         self.ctx = ctx
         self.crossfade = crossfade
         self.instances: list[ModeInstance] = []
+        # 正在演奏的实例（切换期间是新的那个）。只在节拍线程里改，其他线程可以直接读这个引用
+        self.active: ModeInstance | None = None
+        self.levels: Latest[dict] = Latest()   # 总输出和每根电平条的电平，见 sample_levels
         self._events = perception.events.subscribe()
         self._pending: queue.Queue = queue.Queue()
         self._ids = itertools.count(1)
         self._next_status = 0.0
         self._switch_started: float | None = None
-        # 激活新实例之前调用，例如素材库加载素材；抛出 LoadError 表示失败
-        self.before_activate: list[Callable[[ModeInstance, float], None]] = []
-        # 实例释放之后调用，例如素材库释放只被它使用的素材
-        self.after_retire: list[Callable[[ModeInstance, float], None]] = []
-        # 每拍结束时调用，例如把其他模块的状态按节奏写入状态中心
-        self.after_beat: list[Callable[[float], None]] = []
+        self._last_status: ModeStatus | None = None
+        # 每拍结束时调用 fn(now, 当前实例这一拍的输出)，例如录制把它写进会话数据
+        self.after_beat: list[Callable[[float, BeatOutput | None], None]] = []
+        self.state.set("status.current", {
+            "virtual": perception.source == "virtual", "arrangement": None, "mode": None,
+            "modeStatus": None, "switching": None, "meters": []})
+        self.state.set("status.assets", {"missing": []})
 
-    @property
-    def active(self) -> ModeInstance | None:
-        live = [i for i in self.instances if not i.retiring]
-        return live[-1] if live else None
+    # ── 命令（任意线程）─────────────────────────────────────────────────
 
     def prepare(self, arrangement: Arrangement) -> ModeInstance:
-        """加载编排，建立模式实例（还未激活）。可在任何线程调用；失败抛出 ``LoadError``。"""
+        """加载编排，建立模式实例（还未激活）。失败抛出 ``LoadError``。"""
         factory = self.modes.get(arrangement.mode)
         if factory is None:
             raise LoadError(f"没有名为 {arrangement.mode} 的模式")
@@ -82,13 +91,26 @@ class Sonification:
         iid = f"{arrangement.id}-{next(self._ids)}"
         return ModeInstance(iid, arrangement, mode, plan, meters)
 
-    def switch(self, inst: ModeInstance) -> None:
-        """请求在下一拍激活这个实例；当前实例交叉淡化后停止。"""
+    def play(self, arrangement: Arrangement) -> None:
+        """加载一份编排，在下一拍切换过去；加载失败时保持当前编排，抛出 ``LoadError``。"""
+        try:
+            inst = self.prepare(arrangement)
+        except LoadError as e:
+            self.log.error(f"无法加载 {arrangement.title}：{e}")
+            raise
         self._pending.put(inst)
 
     def run_in_beat(self, fn: Callable[[float], None]) -> None:
         """在下一拍开始时、节拍线程里执行 ``fn(now)``。声音引擎只能在节拍线程里调用。"""
         self._pending.put(fn)
+
+    def sample_levels(self, now: float) -> None:
+        """读取当前实例的电平，更新 ``levels``。在节拍线程之外调用（例如每秒 10 次）。"""
+        active = self.active
+        meters = [m.buses for m in active.meters] if active else []
+        lv = self.engine.backend.levels(active.id if active else None, meters, now)
+        if lv is not None:
+            self.levels.set(lv)
 
     # ── 节拍 ────────────────────────────────────────────────────────────
 
@@ -113,7 +135,9 @@ class Sonification:
             self.engine.apply(inst.id, out.sound, now)
             if inst is active:
                 self.light.set(out.light)
-                self.store.set("status.current.modeStatus", out.status.to_json())
+                if out.status != self._last_status:
+                    self._last_status = out.status
+                    self.state.set("status.current.modeStatus", out.status.to_json())
 
         for iid in self.engine.tick(now):
             self._finish(iid, now)
@@ -121,8 +145,9 @@ class Sonification:
         if now >= self._next_status:
             self._next_status = now + STATUS_PERIOD
             self._publish_status(now)
+        output = active.last if active else None
         for fn in self.after_beat:
-            fn(now)
+            fn(now, output)
         self.engine.backend.flush()
 
     def _tick(self, inst: ModeInstance, beat: Beat, snap, events) -> BeatOutput:
@@ -144,11 +169,15 @@ class Sonification:
 
     def _activate(self, inst: ModeInstance, now: float) -> None:
         try:
-            for fn in self.before_activate:
-                fn(inst, now)
+            missing = self.assets.acquire(inst.id, inst.plan.assets, now)
         except LoadError as e:
             self.log.error(f"无法切换到 {inst.arrangement.title}：{e}")
             return
+        a = inst.arrangement
+        self.state.set("status.assets", {"missing": missing, "needed": len(inst.plan.assets),
+                                         "state": self.assets.status()})
+        if missing:
+            self.log.warning(f"{a.title}：缺少 {len(missing)} 个声音素材，用到它们的声音不会发声")
         previous = [i for i in self.instances if not i.retiring]
         fade = self.crossfade if previous else 0.0
         self.engine.add_instance(inst.id, inst.plan.buses, now, fade, inst.plan.fx)
@@ -157,10 +186,11 @@ class Sonification:
             self.engine.retire_instance(old.id, now, fade)
         inst.mode.start(now)
         self.instances.append(inst)
+        self.active = inst
+        self._last_status = None
         self.perception.set_control_zones(inst.plan.control_zones)
         self._switch_started = now if previous else None
-        a = inst.arrangement
-        self.store.update({
+        self.state.update({
             "status.current.arrangement": a.id,
             "status.current.mode": a.mode,
             "status.current.meters": [m.to_json() for m in inst.meters],
@@ -171,8 +201,7 @@ class Sonification:
         for inst in [i for i in self.instances if i.id == iid]:
             self.instances.remove(inst)
             inst.mode.stop()
-            for fn in self.after_retire:
-                fn(inst, now)
+            self.assets.release(inst.id, now)
 
     def _publish_status(self, now: float) -> None:
         switching = None
@@ -185,7 +214,7 @@ class Sonification:
                 old = next((i for i in self.instances if i.retiring), None)
                 switching = {"from": old.arrangement.id if old else None,
                              "to": active.arrangement.id, "progress": round(p, 3)}
-        self.store.update({
+        self.state.update({
             "status.current.switching": switching,
-            "status.audio.engine": self.engine.status(),
+            "status.engine": self.engine.status(),
         })

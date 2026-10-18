@@ -15,8 +15,9 @@ function state(health: Record<string, unknown>, extra: Record<string, unknown> =
     synth: { online: true, synthdefsLoaded: true, sampleRate: 48000, avgLoad: 22, peakLoad: 30 },
     outputDevice: { name: 'USB-Audio - JCALLY JM6', usb: true }, channels: 2,
     buffer: { period: 2048, periods: 2, driver: 'JACK' }, xruns: 0, loadHistory: [20, 22],
-    assets: { missing: [], needed: 14 }, engine: { voices: 18, budget: 48 },
   };
+  st.status.assets = { missing: [], needed: 14 };
+  st.status.engine = { voices: 18, budget: 48 };
   st.status.network = { name: 'iPhone 热点', address: '172.20.10.3', tailscale: 'Running', tailscaleAddress: '100.101.33.8', localName: 'soundmat-pi.local', line: 'iPhone 热点 · soundmat-pi.local' };
   st.status.machine = { host: 'soundmat-pi', model: 'Raspberry Pi 5', tempC: 49, throttled: false, memUsedMB: 800, memTotalMB: 2048,
     diskFreeGB: 52, diskTotalGB: 64, uptime: 9600, programUptime: 9000, programCpu: 58.3, cpu: 20.4, cores: 4,

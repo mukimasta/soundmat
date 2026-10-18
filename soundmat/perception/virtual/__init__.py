@@ -31,6 +31,11 @@ class VirtualMat:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
+    def status(self) -> dict:
+        """给系统监测：虚拟垫子没有控制器链路（CONTROL_API ``status.mat``）。"""
+        return {"connected": None, "port": None, "fps": None, "checksumErrors": None,
+                "problem": None, "source": "virtual"}
+
     @property
     def stones(self) -> frozenset[int]:
         with self._lock:

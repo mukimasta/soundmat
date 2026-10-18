@@ -62,6 +62,14 @@ class BeatClock:
                 self._lags.popleft()
             return max((lag for _, lag in self._lags), default=0.0)
 
+    def rates(self) -> dict[str, dict]:
+        """给系统监测：实际节拍率与期望值。"""
+        return {"beat": {"actual": self.rate.rate(), "expected": 1.0 / self.period}}
+
+    def counters(self) -> dict[str, int]:
+        """给系统监测：启动以来节拍「卡住」的次数。"""
+        return {"stalls": self.stalls}
+
     def _note_lag(self, now: float, lag: float) -> None:
         if lag > self.period:
             with self._lock:

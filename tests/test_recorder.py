@@ -15,7 +15,7 @@ from soundmat.recorder import RecordingError
 def sup(make_sup, tmp_path, monkeypatch):
     monkeypatch.setenv("SOUNDMAT_SOUND", str(tmp_path / "no-sound"))
     s = make_sup(monitor=False)
-    s.play("kyoto")
+    s.catalog.play("kyoto")
     return s
 
 
@@ -78,7 +78,7 @@ def test_refuses_when_disk_too_small_and_auto_stops(sup, monkeypatch):
     assert r.status_code == 409 and "剩余空间" in r.json()["detail"]
 
     monkeypatch.setattr(rec, "free_bytes", lambda: 10**12)
-    monkeypatch.setattr(rec, "bytes_per_second", lambda stems: 1_000_000)
+    monkeypatch.setattr(rec, "bytes_per_second", lambda stems=None: 1_000_000)
     rec.request_start()
     beats(sup, 1.0, 5.0)
     monkeypatch.setattr(rec, "free_bytes", lambda: 1000)

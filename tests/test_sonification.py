@@ -21,7 +21,7 @@ def press(sup, t, zones):
 
 
 def test_lifecycle_voices_events_status(sup):
-    sup.switch(arrangement())
+    sup.sonification.play(arrangement())
     son, be = sup.sonification, sup.backend
     son.on_beat(beat(0, 1.0))
     assert sup.store.get("status.current.arrangement") == "echo"
@@ -38,12 +38,12 @@ def test_lifecycle_voices_events_status(sup):
 
 
 def test_load_failure_keeps_current(sup):
-    sup.switch(arrangement("a"))
+    sup.sonification.play(arrangement("a"))
     sup.sonification.on_beat(beat(0, 1.0))
     with pytest.raises(LoadError):
-        sup.switch(arrangement("b", broken=True))
+        sup.sonification.play(arrangement("b", broken=True))
     with pytest.raises(LoadError):
-        sup.switch(arrangement("c").__class__(id="c", title="C", mode="nope"))
+        sup.sonification.play(arrangement("c").__class__(id="c", title="C", mode="nope"))
     sup.sonification.on_beat(beat(1, 1.1))
     assert sup.store.get("status.current.arrangement") == "a"
     assert any("无法加载" in item["text"] for item in sup.store.get("status.log"))
@@ -51,11 +51,11 @@ def test_load_failure_keeps_current(sup):
 
 def test_switch_crossfades_then_stops_old(sup, config):
     son, be = sup.sonification, sup.backend
-    sup.switch(arrangement("a", control=[1, 2]))
+    sup.sonification.play(arrangement("a", control=[1, 2]))
     son.on_beat(beat(0, 1.0))
     assert sup.perception.interpreter._control_mask[[1, 2]].all()
     old = son.active
-    sup.switch(arrangement("b", synth="bell"))
+    sup.sonification.play(arrangement("b", synth="bell"))
     son.on_beat(beat(1, 2.0))
     assert son.active.arrangement.id == "b"
     assert len(son.instances) == 2 and old.retiring
@@ -73,7 +73,7 @@ def test_switch_crossfades_then_stops_old(sup, config):
 
 def test_mode_error_keeps_previous_intent(sup):
     son, be = sup.sonification, sup.backend
-    sup.switch(arrangement())
+    sup.sonification.play(arrangement())
     press(sup, 0.0, [5])
     press(sup, 0.1, [5])
     son.on_beat(beat(0, 1.0))
@@ -90,7 +90,7 @@ def test_mode_error_keeps_previous_intent(sup):
 
 
 def test_engine_status_published(sup):
-    sup.switch(arrangement())
+    sup.sonification.play(arrangement())
     sup.sonification.on_beat(beat(0, 1.0))
-    st = sup.store.get("status.audio.engine")
+    st = sup.store.get("status.engine")
     assert st["budget"] == 48 and st["voices"] == 0

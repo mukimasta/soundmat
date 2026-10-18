@@ -43,7 +43,7 @@ def to_hex(colors: np.ndarray) -> str:
 
 class LightEngine:
     def __init__(self, cfg: LightConfig, intent: Latest[LightIntent],
-                 send: Callable[[np.ndarray], None] | None = None):
+                 send: Callable[[np.ndarray], bool] | None = None):
         self.cfg = cfg
         self.intent = intent
         self.send = send
@@ -57,6 +57,7 @@ class LightEngine:
         self._thread: threading.Thread | None = None
         self.frames = 0
         self.rate = RateMeter()          # 灯光引擎实际合成的帧率
+        self.sent = RateMeter()          # 实际写给控制器的帧率（控制器没就绪时不算）
 
     def set_system_layer(self, name: str, layer: LightLayer | None) -> None:
         """设置或移除一个系统提示层（例如录制倒计时），它叠在声音化的灯光之上。"""
@@ -71,8 +72,8 @@ class LightEngine:
         with self._lock:
             system = list(self.system.values())
         colors = composite(list(intent.layers) + system, self.cfg.led_count)
-        if self.send is not None:
-            self.send(to_physical(colors, self.cfg.led_offset))
+        if self.send is not None and self.send(to_physical(colors, self.cfg.led_offset)):
+            self.sent.tick(now)
         hex_colors = to_hex(colors)
         if hex_colors != self._last_preview:
             self._last_preview = hex_colors
@@ -80,6 +81,13 @@ class LightEngine:
         self.frames += 1
         self.rate.tick(now)
         return colors
+
+    def rates(self) -> dict[str, dict]:
+        """给系统监测：合成的帧率，以及写给控制器的帧率（没有控制器时为 None）。"""
+        hz = self.cfg.refresh_hz
+        wired = self.send is not None
+        return {"light": {"actual": self.rate.rate(), "expected": hz},
+                "ledWrites": {"actual": self.sent.rate() if wired else None, "expected": hz if wired else None}}
 
     def start(self) -> None:
         self._stop.clear()

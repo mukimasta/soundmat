@@ -102,7 +102,7 @@ VALIDATORS: dict[str, Callable[[Any], Any]] = {
 
 class Settings:
     def __init__(self, store: Store, data_dir: Path):
-        self.store = store
+        self.store = store.writer("settings")
         self.path = Path(data_dir) / "settings.json"
         self._lock = threading.Lock()
         data = defaults(Path(data_dir))
@@ -116,7 +116,7 @@ class Settings:
                     _set(data, key, self._changed[key])
                 except ValueError as e:
                     log.warning("设置 %s 的值无效（%s），使用默认值", key, e)
-        store.set("settings", data)
+        self.store.set("settings", data)
 
     def _read(self) -> dict[str, Any]:
         try:
@@ -132,6 +132,10 @@ class Settings:
 
     def get(self, key: str, default: Any = None) -> Any:
         return self.store.get(f"settings.{key}", default)
+
+    def snapshot(self) -> dict:
+        """全部设置（例如写进录制信息）。"""
+        return self.store.get("settings", {})
 
     def update(self, changes: dict[str, Any]) -> dict[str, Any]:
         """校验并应用修改，立即保存。任何一项非法时抛出 ``InvalidRequest``，什么都不改。"""

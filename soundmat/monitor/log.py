@@ -12,9 +12,8 @@ log = logging.getLogger("soundmat")
 
 
 class EventLog:
-    def __init__(self, store: Store, path: str = "status.log", size: int = 30):
-        self._store = store
-        self._path = path
+    def __init__(self, store: Store, size: int = 30):
+        self._state = store.writer("status.log")
         self._lock = threading.Lock()
         self._items: deque[dict] = deque(maxlen=size)
 
@@ -26,7 +25,7 @@ class EventLog:
             else:
                 self._items.appendleft(item)
             items = list(self._items)
-        self._store.set(self._path, items)
+        self._state.set("status.log", items)
 
     def info(self, text: str) -> None:
         log.info(text)

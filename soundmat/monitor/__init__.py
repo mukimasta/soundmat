@@ -5,26 +5,29 @@
 录音空间和当前状态，写入状态中心；再按规则给出声音、垫子、网络三个状态指示（正常、需要注意、
 异常、未知）和原因。指示变化时写一条警告或错误到最近的记录。采集不到的项写成 None（未知），
 不沿用旧值。
+
+各模块的运行数据由模块自己提供（``Sources``：每个模块的 ``rates()``、``counters()``、``status()``），
+系统监测只负责采集、判断和写入自己的那几段状态（见 store/branches.py）。较慢的探针
+（journal、nmcli、systemctl、git）在单独的线程里每 10 秒运行一次，不拖慢每秒一次的采集。
 """
 from __future__ import annotations
 
 import json
-import logging
 import os
 import shutil
-import threading
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Protocol, Sequence
 
 from ..config import ROOT, Config
+from ..periodic import Periodic
 from ..store import Store
+from ..timebase import system_time
 from . import probes
 from .log import EventLog
 
-log = logging.getLogger("soundmat.monitor")
 
 OK, WARN, ERROR, UNKNOWN = "ok", "warn", "error", "unknown"
 SEVERITY = {OK: 0, UNKNOWN: 1, WARN: 2, ERROR: 3}
@@ -54,6 +57,31 @@ class Probes:
     platform_linux: bool = Path("/proc").is_dir()
 
 
+class RateSource(Protocol):
+    def rates(self) -> dict[str, dict]: ...          # 链路 → {actual, expected}
+
+
+class CounterSource(Protocol):
+    def counters(self) -> dict[str, int]: ...        # 启动以来的累计数
+
+
+class StorageSource(Protocol):
+    root: Path                                        # 录音保存位置
+    def bytes_per_second(self) -> int: ...            # 录音每秒写入的字节数，不录音频时为 0
+
+
+@dataclass
+class Sources:
+    """系统监测从各模块读取的运行数据。每一项都可以在任意线程调用。"""
+    synth: Callable[[], dict | None] = lambda: None           # 合成器服务（Backend.status）
+    channels: Callable[[], int] = lambda: 2                   # 当前音箱数
+    mat: Callable[[], dict] = lambda: {}                      # 控制器链路（DeviceLink / VirtualMat 的 status）
+    rates: Sequence[RateSource] = ()
+    counters: Sequence[CounterSource] = ()
+    beat_lag: Callable[[], float] = lambda: 0.0              # 最近 1 分钟最大的节拍延迟（秒）
+    storage: StorageSource | None = None
+
+
 @dataclass
 class Indicator:
     level: str
@@ -69,20 +97,18 @@ def _rate_text(hz: float) -> str:
 
 class Monitor:
     def __init__(self, config: Config, store: Store, events: EventLog, data_dir: Path,
-                 synth_status: Callable[[], dict | None], layout_channels: Callable[[], int],
-                 probes_: Probes | None = None, runtime: Callable[[], dict] | None = None):
+                 sources: Sources | None = None, probes_: Probes | None = None):
         self.config = config
-        self.store = store
+        self.state = store.writer("status.health", "status.mat", "status.matHistory", "status.audio",
+                                  "status.machine", "status.network", "status.rates", "status.timing",
+                                  "status.program", "status.storage")
         self.events = events
         self.data_dir = data_dir
-        self.synth_status = synth_status
-        self.layout_channels = layout_channels
+        self.sources = sources or Sources()
         self.probes = probes_ or Probes()
-        # 运行管理提供的运行时数据：rates（各链路实测与期望帧率）、counters（节拍超时等累计数）、
-        # recordBytesPerSecond、recordRoot
-        self.runtime = runtime or (lambda: {})
         self._counters: deque[tuple[float, dict]] = deque()
-        self.started = time.time()
+        self.started = system_time()
+        self.started_wall = time.time()
         self.load_history: deque[float] = deque(maxlen=60)
         self.fps_history: deque[float] = deque(maxlen=60)
         self.program_cpu_history: deque[float] = deque(maxlen=60)
@@ -91,26 +117,33 @@ class Monitor:
         self._slow: dict = {}
         self._next_slow = 0.0
         self._last_levels: dict[str, str] = {}
-        self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
+        self._loops: list[Periodic] = []
+
+    def uptime(self) -> int:
+        return int(system_time() - self.started)
 
     # ── 采集 ────────────────────────────────────────────────────────────
 
+    def refresh_slow(self, now: float | None = None) -> None:
+        """较慢的探针：最近一小时的卡顿、网络、systemd 重启次数、版本。"""
+        self._slow = {"xruns": self.probes.xruns(), "network": self.probes.network(),
+                      "restarts": self.probes.restarts(self.config.system.service),
+                      "version": self.probes.version(ROOT)}
+
     def collect(self, now: float | None = None) -> dict:
-        now = time.monotonic() if now is None else now
-        if now >= self._next_slow:
+        now = system_time() if now is None else now
+        if not self._loops and now >= self._next_slow:      # 没有单独的线程时（测试）在这里顺便运行
             self._next_slow = now + SLOW_PROBE_PERIOD
-            self._slow = {"xruns": self.probes.xruns(), "network": self.probes.network(),
-                          "restarts": self.probes.restarts(self.config.system.service),
-                          "version": self.probes.version(ROOT)}
+            self.refresh_slow(now)
+        src = self.sources
         jack = self.probes.jack()
         cards = self.probes.cards()
         out_dev = probes.output_device(jack, cards)
-        synth = self.synth_status() or {}
+        synth = src.synth() or {}
         online = synth.get("online")
         if online:
             self.load_history.append(round(float(synth.get("avgCPU", 0.0)), 1))
-        mat = self.store.get("status.mat") or {}
+        mat = src.mat()
         if mat.get("fps") is not None:
             self.fps_history.append(mat["fps"])
 
@@ -126,7 +159,7 @@ class Monitor:
                 "peakLoad": synth.get("peakCPU"),
             },
             "outputDevice": out_dev,
-            "channels": self.layout_channels(),
+            "channels": src.channels(),
             "buffer": None if not jack or not jack.get("running") or jack.get("period") is None
             else {"period": jack["period"], "periods": jack.get("periods"), "driver": "JACK"},
             "xruns": self._slow.get("xruns"),
@@ -135,7 +168,7 @@ class Monitor:
         machine = self.probes.machine(self.data_dir)
         machine.update(self._cpu(now))
         machine["cores"] = os.cpu_count()
-        machine["programUptime"] = probes.program_uptime(self.started)
+        machine["programUptime"] = self.uptime()
         network = dict(self._slow.get("network") or {})
         network["localName"] = probes.local_name(machine.get("host"))
         network["line"] = " · ".join(p for p in (network.get("name"), network["localName"]) if p)
@@ -143,15 +176,19 @@ class Monitor:
         network["kind"] = probes.network_kind(network, ncfg.phone_hotspot, ncfg.self_hotspot)
         network["apClients"] = self.probes.ap_clients(ncfg.interface) if network["kind"] == "selfHotspot" else None
 
-        rt = self.runtime()
-        timing = self._timing(now, rt.get("counters") or {})
-        timing["maxLagMs"] = rt.get("maxLagMs")
-        uptime = probes.program_uptime(self.started)
-        program = {"uptime": uptime, "restarts": self._slow.get("restarts"), "version": self._slow.get("version"),
-                   "plannedStart": self._planned_start()}
-        storage = self._storage(machine, rt)
-        return {"audio": audio, "machine": machine, "network": network, "matHistory": list(self.fps_history),
-                "rates": rt.get("rates"), "timing": timing, "program": program, "storage": storage}
+        rates: dict[str, dict] = {}
+        for r in src.rates:
+            rates.update(r.rates())
+        counters: dict[str, int] = {}
+        for c in src.counters:
+            counters.update(c.counters())
+        timing = self._timing(now, counters)
+        timing["maxLagMs"] = round(src.beat_lag() * 1000, 1)
+        program = {"uptime": self.uptime(), "restarts": self._slow.get("restarts"),
+                   "version": self._slow.get("version"), "plannedStart": self._planned_start()}
+        return {"audio": audio, "mat": mat, "machine": machine, "network": network,
+                "matHistory": list(self.fps_history), "rates": rates, "timing": timing,
+                "program": program, "storage": self._storage()}
 
     def _timing(self, now: float, counters: dict) -> dict:
         """累计数和最近 1 分钟内的增加量（节拍超时、迟到丢弃、声部让位、因预算放弃）。"""
@@ -161,12 +198,11 @@ class Monitor:
             self._counters.popleft()
         oldest = self._counters[0][1]
         out: dict = {}
-        for k in ("stalls", "late", "yields", "rejected"):
-            v = counters.get(k)
+        for k, v in counters.items():
             out[k] = v
-            out[f"{k}Recent"] = None if v is None or oldest.get(k) is None else v - oldest[k]
-        out["stallsAttention"] = (out["stallsRecent"] or 0) >= STALL_WARN
-        out["lateAttention"] = bool(out["lateRecent"])
+            out[f"{k}Recent"] = None if oldest.get(k) is None else v - oldest[k]
+        out["stallsAttention"] = (out.get("stallsRecent") or 0) >= STALL_WARN
+        out["lateAttention"] = bool(out.get("lateRecent"))
         return out
 
     def _cpu(self, now: float) -> dict:
@@ -192,21 +228,22 @@ class Monitor:
             planned = json.loads((self.data_dir / "update.json").read_text()).get("plannedAt")
         except (OSError, ValueError):
             return False
-        return isinstance(planned, (int, float)) and 0 <= self.started - planned < 120
+        return isinstance(planned, (int, float)) and 0 <= self.started_wall - planned < 120
 
-    def _storage(self, machine: dict, rt: dict) -> dict:
+    def _storage(self) -> dict:
         """录音空间：可用空间，以及按当前声道数和分轨设置估算还能录多少分钟（不录音频时为 None）。"""
-        root = rt.get("recordRoot")
+        st = self.sources.storage
         free = None
-        if root is not None:
-            p = Path(root)
+        rate = 0
+        if st is not None:
+            rate = st.bytes_per_second()
+            p = Path(st.root)
             while not p.exists() and p != p.parent:
                 p = p.parent
             try:
                 free = shutil.disk_usage(p).free
             except OSError:
                 free = None
-        rate = rt.get("recordBytesPerSecond") or 0
         return {"freeGB": None if free is None else round(free / 1e9, 1),
                 "minutes": None if free is None or rate <= 0 else int(free / rate / 60)}
 
@@ -214,7 +251,7 @@ class Monitor:
 
     def assess(self, data: dict) -> dict:
         snd = self._assess_sound(data["audio"], data)
-        mat = self._assess_mat()
+        mat = self._assess_mat(data["mat"])
         net = self._assess_network(data["network"])
         worst = max((snd, mat, net), key=lambda i: SEVERITY[i.level])
         issues = [f"{label}：{i.reason}" for label, i in (("声音", snd), ("垫子", mat), ("网络", net))
@@ -226,7 +263,7 @@ class Monitor:
         data = data or {}
         cfg = self.config.sound
         s = a["synth"]
-        if s["online"] is False and not s.get("everOnline") and time.time() - self.started < 15:
+        if s["online"] is False and not s.get("everOnline") and self.uptime() < 15:
             return Indicator(UNKNOWN, "正在连接合成器服务")
         if s["online"] is False:
             return Indicator(ERROR, "合成器服务没有响应，音箱不会发声")
@@ -244,7 +281,7 @@ class Monitor:
         sr = s.get("sampleRate")
         if sr and abs(sr - cfg.expected_sample_rate) > 1:
             return Indicator(WARN, f"合成器服务的采样率是 {_rate_text(sr)}，期望 {_rate_text(cfg.expected_sample_rate)}")
-        missing = self.store.get("status.audio.assets.missing") or []
+        missing = self.state.get("status.assets.missing") or []
         if missing:
             return Indicator(WARN, f"缺少 {len(missing)} 个声音素材")
         if (s.get("peakLoad") or 0) > PEAK_LOAD_LIMIT:
@@ -274,8 +311,7 @@ class Monitor:
             return Indicator(WARN, f"主机程序最近一小时内被自动重启过（共 {p['restarts']} 次），可能在反复出错")
         return None
 
-    def _assess_mat(self) -> Indicator:
-        m = self.store.get("status.mat") or {}
+    def _assess_mat(self, m: dict) -> Indicator:
         if m.get("source") == "virtual":
             return Indicator(OK, "使用虚拟垫子")
         if not m:
@@ -287,7 +323,7 @@ class Monitor:
         return Indicator(OK)
 
     def _assess_network(self, n: dict) -> Indicator:
-        if not n:
+        if "address" not in n:              # 网络探针还没运行过（刚启动）
             return Indicator(UNKNOWN)
         if not n.get("address"):
             return Indicator(WARN, "没有连接任何网络，只能在本机查看控制台")
@@ -298,15 +334,11 @@ class Monitor:
     def step(self, now: float | None = None) -> dict:
         data = self.collect(now)
         health = self.assess(data)
-        self.store.update({
-            "status.audio.service": data["audio"]["service"],
-            "status.audio.usbCard": data["audio"]["usbCard"],
-            "status.audio.synth": data["audio"]["synth"],
-            "status.audio.outputDevice": data["audio"]["outputDevice"],
-            "status.audio.channels": data["audio"]["channels"],
-            "status.audio.buffer": data["audio"]["buffer"],
-            "status.audio.xruns": data["audio"]["xruns"],
-            "status.audio.loadHistory": data["audio"]["loadHistory"],
+        audio = data["audio"]
+        self.state.update({
+            **{f"status.audio.{k}": audio[k] for k in ("service", "usbCard", "synth", "outputDevice", "channels",
+                                                         "buffer", "xruns", "loadHistory")},
+            "status.mat": data["mat"],
             "status.matHistory": data["matHistory"],
             "status.machine": data["machine"],
             "status.network": data["network"],
@@ -335,19 +367,11 @@ class Monitor:
                 self.events.info(f"{label}：恢复正常")
 
     def start(self) -> None:
-        self._stop.clear()
-        self._thread = threading.Thread(target=self._run, name="monitor", daemon=True)
-        self._thread.start()
+        self._loops = [Periodic("monitor-slow", SLOW_PROBE_PERIOD, self.refresh_slow),
+                       Periodic("monitor", 1.0, self.step)]
+        for loop in self._loops:
+            loop.start()
 
     def stop(self) -> None:
-        self._stop.set()
-        if self._thread:
-            self._thread.join(timeout=3)
-
-    def _run(self) -> None:
-        while not self._stop.is_set():
-            try:
-                self.step()
-            except Exception:
-                log.exception("系统监测出错")
-            self._stop.wait(1.0)
+        for loop in self._loops:
+            loop.stop()

@@ -97,15 +97,15 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
     const bottleneck: 'synth' | 'program' | null = synthLoad === null && progLoad === null ? null
       : (progLoad ?? -1) > (synthLoad ?? -1) ? 'program' : 'synth';
     const load = bottleneck === 'program' ? progLoad : synthLoad;
-    const engine = g<{ voices: number; budget: number }>('status.audio.engine');
+    const engine = g<{ voices: number; budget: number }>('status.engine');
     const xruns = g<number | null>('status.audio.xruns');
     const expectedRate = 48000;
     const rate = synth?.sampleRate;
     const rateOk = rate !== undefined && Math.abs(rate - expectedRate) < 1;
     const channels = g<number>('status.audio.channels');
     const buffer = g<{ period: number; periods: number; driver: string } | null>('status.audio.buffer');
-    const missing = g<string[]>('status.audio.assets.missing') ?? [];
-    const needed = g<number>('status.audio.assets.needed') ?? 0;
+    const missing = g<string[]>('status.assets.missing') ?? [];
+    const needed = g<number>('status.assets.needed') ?? 0;
     const dev = g<{ name: string; usb: boolean } | null>('status.audio.outputDevice');
     const devBad = dev !== null && dev !== undefined && !dev.usb;
     const synthHistory = g<number[]>('status.audio.loadHistory') ?? [];

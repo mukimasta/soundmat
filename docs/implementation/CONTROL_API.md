@@ -18,7 +18,7 @@
 
 ## 状态树
 
-状态中心的树分为 `status`（运行状态，由各模块写入）、`settings`（持久设置，结构见下）和 `catalog`（可用的编排）。当前已有的路径：
+状态中心的树分为 `status`（运行状态，由各模块写入）、`settings`（持久设置，结构见下）和 `catalog`（可用的编排和录制）。每一段只有一个模块写，登记在 `soundmat/store/branches.py`（见 `HOST_PROGRAM.md`「状态树的写入者」）。当前已有的路径：
 
 | 路径 | 含义 |
 |---|---|
@@ -27,9 +27,9 @@
 | `status.current.modeStatus` | 模式状态 `{text, reading, transport}` |
 | `status.current.switching` | 切换中为 `{from, to, progress}`，否则 `null` |
 | `status.current.meters` | 当前编排的电平条 `[{id, label, group, ring, color}]`：`group` 为 `background` 或 `placed`，背景组在前；`ring` 是只对应一个环时的环号（控制台用这一环的颜色），否则为 `null`；`color` 是编排指定的 `#rrggbb` 或 `null` |
-| `status.audio.engine` | 声音引擎：在响声部数 `voices`、预算 `budget`、各类别在响数 `categories`、让位 `yields`、放弃 `rejected`、迟到 `late`、去重 `duplicates`、合成器服务重启 `restarts` |
+| `status.engine` | 声音引擎：在响声部数 `voices`、预算 `budget`、各类别在响数 `categories`、让位 `yields`、放弃 `rejected`、迟到 `late`、去重 `duplicates`、合成器服务重启 `restarts` |
 | `status.log` | 最近的警告和错误：`[{at, level, text, count?}]`，最新在前 |
-| `status.audio.assets` | `missing`（当前编排缺失的素材）、`needed`（引用总数）、`state`（`loaded`、`memoryMB`、`budgetMB`、`library`） |
+| `status.assets` | `missing`（当前编排缺失的素材）、`needed`（引用总数）、`state`（`loaded`、`memoryMB`、`budgetMB`、`library`） |
 | `status.mat` | 控制器链路：`connected`、`port`、`fps`（实测传感帧率）、`checksumErrors`、`problem`（问题说明）、`source`（`controller` 或 `virtual`；虚拟垫子时其余项为 `null`） |
 | `status.health` | 状态指示：`sound`、`mat`、`net` 各为 `{level, reason}`（`ok` / `warn` / `error` / `unknown`），`overall` 为最严重的一项，`issues` 为"声音：原因"形式的列表 |
 | `status.audio.service`、`status.audio.usbCard` | 音频服务是否运行、是否有 USB 声卡（未知为 `null`） |
@@ -38,7 +38,7 @@
 | `status.audio.channels`、`status.audio.buffer`、`status.audio.xruns`、`status.audio.loadHistory` | 声道数、缓冲 `{period, periods, driver}`、最近一小时卡顿次数、最近 60 秒负载 |
 | `status.matHistory` | 最近 60 秒的实测传感帧率 |
 | `status.rates` | 各条链路的帧率，每项为 `{actual, expected}`（次/秒，没有这条链路或没有数据时为 `null`）：`sensing`（控制器传感）、`perception`（垫面解读）、`beat`（声音化节拍）、`light`（灯光引擎）、`ledWrites`（写给控制器的灯光帧）、`pushMat`、`pushLeds`（推送到控制台，取所有连接里最高的一个；只在有变化时推送，期望值是上限） |
-| `status.timing` | `overruns`（小幅超时，参考）、`stalls`（节拍晚到超过迟到容忍度）、`late`、`yields`、`rejected` 的累计数，各自带 `…Recent`（最近 1 分钟的增加量）；`maxLagMs`（最近 1 分钟最大的节拍延迟）；`stallsAttention`、`lateAttention`（是否达到需要注意的程度） |
+| `status.timing` | `stalls`（节拍晚到超过迟到容忍度）、`late`、`yields`、`rejected` 的累计数，各自带 `…Recent`（最近 1 分钟的增加量）；`maxLagMs`（最近 1 分钟最大的节拍延迟）；`stallsAttention`、`lateAttention`（是否达到需要注意的程度） |
 | `status.program` | 主机程序：`uptime`（秒）、`restarts`（systemd 自动重启次数，不在 systemd 下为 `null`）、`version`（`{commit, deployedAt, dirty, source}`，`source` 为 `deploy` 或 `git`；都读不到为 `null`） |
 | `status.update` | 软件更新：`enabled`（是否从发布包、在 systemd 下运行）、`state`（`idle` / `downloading` / `installing` / `restarting` / `error`）、`message`、`previous`（可以回到的上一版）、`pending`（待确认的新版本）、`failed`（启动失败被自动回退的版本） |
 | `status.storage` | 录音空间：`freeGB`、`minutes`（按当前声道数和分轨设置还能录的分钟数，不录音频时为 `null`） |

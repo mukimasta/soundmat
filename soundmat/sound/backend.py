@@ -188,7 +188,8 @@ class RecordingBackend:
 
     def levels(self, instance, meters, now=None):
         """模拟电平：一根条的总线上有声部在响就是 ``SIM_LEVEL``，否则静音（-120）。"""
-        sounding = {bus for node, (inst, bus) in self._where.items() if inst == instance and node in self._alive}
+        where, alive = dict(self._where), set(self._alive)     # 电平在别的线程里读，先取一份
+        sounding = {bus for node, (inst, bus) in where.items() if inst == instance and node in alive}
         values = [self.SIM_LEVEL if any(b in sounding for b in buses) else -120.0 for buses in meters]
         loud = self.SIM_LEVEL if sounding else -120.0
         return {"output": [loud] * self._channels.get(instance, 2), "meters": values}

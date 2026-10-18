@@ -19,7 +19,7 @@ def test_default_arrangement_plays_and_api(make_sup, tmp_path, monkeypatch):
     son = sup.sonification
     son.on_beat(Beat(0, 1.0, 1 / 60))
     assert sup.store.get("status.current.arrangement") == "kyoto"
-    assert len(sup.store.get("status.audio.assets.missing")) == 14
+    assert len(sup.store.get("status.assets.missing")) == 14
     assert sup.backend.of_kind("set_master")[0].args["params"] == {"volume": 0.8}
 
     client = TestClient(create_app(sup.control, console_dist=None))
@@ -63,7 +63,9 @@ def test_controller_end_to_end_with_fake_esp32(make_sup, tmp_path, monkeypatch):
         while time.monotonic() < deadline and not esp.received:
             time.sleep(0.02)
         assert esp.received and esp.received[0].startswith(b"L:")
-        time.sleep(0.6)
+        deadline = time.monotonic() + 3            # 系统监测每秒写一次控制器链路
+        while time.monotonic() < deadline and not (sup.store.get("status.mat") or {}).get("connected"):
+            time.sleep(0.05)
         st = sup.store.get("status.mat")
         assert st["connected"] and st["source"] == "controller" and st["fps"] > 0
     finally:

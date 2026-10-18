@@ -71,7 +71,7 @@ def test_shipped_arrangements(make_sup):
 def test_supervisor_publishes_meter_definitions_and_levels(make_sup):
     sup = make_sup()
     sup.start()
-    sup.play("lofi_1")
+    sup.catalog.play("lofi_1")
     deadline = time.monotonic() + 3
     while time.monotonic() < deadline and sup.store.get("status.current.arrangement") != "lofi_1":
         time.sleep(0.05)
@@ -81,7 +81,7 @@ def test_supervisor_publishes_meter_definitions_and_levels(make_sup):
     assert meters[2]["ring"] == 2
     lv = None
     while time.monotonic() < deadline:
-        lv = sup.levels.get()
+        lv = sup.sonification.levels.get()
         if lv and len(lv["meters"]) == len(meters):
             break
         time.sleep(0.05)

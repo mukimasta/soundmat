@@ -18,7 +18,6 @@ from typing import Callable, Protocol
 import numpy as np
 
 from ..timebase import system_time
-from ..rates import RateMeter
 from .ports import pick_port
 from .protocol import BAUD, FrameError, encode_led_frame, parse_sensor_frame
 
@@ -78,7 +77,6 @@ class DeviceLink:
         self._booted = False
         self._double_send = False
         self._times: deque[float] = deque(maxlen=240)
-        self.led_rate = RateMeter()      # 实际写给控制器的灯光帧率
         self.seq = 0
         self.port: str | None = None
         self.connected = False
@@ -95,6 +93,7 @@ class DeviceLink:
         return float(len(recent))
 
     def status(self) -> dict:
+        """给系统监测：控制器链路（CONTROL_API ``status.mat``）。"""
         now = system_time()
         return {
             "connected": self.connected and self._booted,
@@ -102,15 +101,20 @@ class DeviceLink:
             "fps": round(self.fps(now), 1),
             "checksumErrors": self.checksum_errors,
             "problem": self.problem,
+            "source": "controller",
         }
+
+    def rates(self) -> dict[str, dict]:
+        """给系统监测：传感帧率由控制器决定，没有固定的期望值。"""
+        return {"sensing": {"actual": self.fps(), "expected": None}}
 
     # ── 灯光 ────────────────────────────────────────────────────────────
 
-    def send_leds(self, colors: np.ndarray) -> None:
-        """发送一帧灯光（物理顺序）。控制器还没就绪时丢弃。"""
+    def send_leds(self, colors: np.ndarray) -> bool:
+        """发送一帧灯光（物理顺序）；返回是否写给了控制器。控制器还没就绪时丢弃。"""
         ser = self._ser
         if ser is None or not self._booted:
-            return
+            return False
         data = encode_led_frame(colors)
         try:
             with self._write_lock:
@@ -119,9 +123,10 @@ class DeviceLink:
                     self._double_send = False
                     time.sleep(0.02)
                     ser.write(data)
-            self.led_rate.tick()
+            return True
         except Exception as e:  # 写失败：读线程会发现断线并重连
             log.debug("写灯光帧失败：%s", e)
+            return False
 
     # ── 线程 ────────────────────────────────────────────────────────────
 

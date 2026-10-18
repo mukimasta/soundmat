@@ -179,11 +179,11 @@ def test_live_scsynth_plays_jam(make_sup, tmp_path, monkeypatch):
     sup.start()
     for z in list(ring_indices(0))[:2] + [zone(7, 0).index]:
         sup.virtual.set(z, True)
-    sup.play("lofi_1")
+    sup.catalog.play("lofi_1")
     deadline = time.monotonic() + 8
     lv = None
     while time.monotonic() < deadline:
-        lv = sup.levels.get()
+        lv = sup.sonification.levels.get()
         if lv and max(lv["output"] or [-120]) > -60:
             break
         time.sleep(0.2)

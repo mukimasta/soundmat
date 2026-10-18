@@ -12,6 +12,7 @@ from enum import Enum
 from typing import Callable, Mapping, Sequence
 
 from ..config import SoundConfig
+from ..errors import InvalidRequest
 from ..intent import Event, Position, SoundIntent, Source, Voice
 from .backend import Backend
 from .spatial import SpeakerGains, SpeakerLayout, voice_gains
@@ -337,6 +338,20 @@ class SoundEngine:
 
     def _gains(self, position: Position | None) -> SpeakerGains:
         return voice_gains(position, self.layout, self.orientation)
+
+    def test_tone(self, channel: int, now: float) -> None:
+        """在一个声道上放 1 秒测试音，确认每只音箱接对了位置。"""
+        self.check_channel(channel)
+        self.backend.test_tone(channel, self._at(now))
+
+    def check_channel(self, channel: int) -> None:
+        if not 0 <= channel < self.layout.channels:
+            raise InvalidRequest(f"声道 {channel} 超出当前音箱布局（共 {self.layout.channels} 只）")
+
+    def counters(self) -> dict[str, int]:
+        """给系统监测：迟到丢弃、让位、因预算放弃的累计数。只读整数，可以在任意线程调用。"""
+        st = self.stats
+        return {"late": st.late, "yields": st.yields, "rejected": st.rejected}
 
     def status(self) -> dict:
         cats = {c: self.category_count(c) for c in self.cfg.voice_budget_categories}

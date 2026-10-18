@@ -24,7 +24,7 @@ def test_hello_then_mat_and_patch(sup):
         vm = sup.virtual
         sup.perception.feed(vm.frame(t=1.0))
         sup.perception.feed(vm.frame(t=1.1))
-        sup.store.set("status.current.arrangement", "kyoto")
+        sup.sonification.state.set("status.current.arrangement", "kyoto")
 
         got_mat = got_patch = False
         for _ in range(20):

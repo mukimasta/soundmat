@@ -76,7 +76,7 @@ class Updater:
                  fetch_json: Callable[[str], object] | None = None,
                  download: Callable[[str, Path], None] | None = None,
                  install_env: Callable[[Path], None] | None = None):
-        self.store = store
+        self.store = store.writer("status.update")
         self.events = events
         self.repo = repo
         self.state_file = data_dir / "update.json"
@@ -89,6 +89,7 @@ class Updater:
         self.install_env = install_env or _uv_sync
         self._lock = threading.Lock()
         self._busy = False
+        self._timer: threading.Timer | None = None
         self._publish("idle", "")
 
     # ── 状态 ────────────────────────────────────────────────────────────
@@ -233,13 +234,20 @@ class Updater:
             self.events.info(f"新版本 {self.version} 运行正常")
             self._publish("idle", "")
 
-    def start_confirm_timer(self) -> threading.Timer:
-        t = threading.Timer(CONFIRM_AFTER, self.confirm_if_pending)
-        t.daemon = True
-        t.start()
-        if self._read_state().get("failed"):
-            self.events.warning(f"版本 {self._read_state()['failed']} 启动失败，已回到 {self.version}")
-        return t
+    def start(self) -> None:
+        """主机程序启动后：报告上次是否被自动回退，``CONFIRM_AFTER`` 秒后确认新版本。不能更新时什么都不做。"""
+        if not self.enabled:
+            return
+        self._timer = threading.Timer(CONFIRM_AFTER, self.confirm_if_pending)
+        self._timer.daemon = True
+        self._timer.start()
+        failed = self._read_state().get("failed")
+        if failed:
+            self.events.warning(f"版本 {failed} 启动失败，已回到 {self.version}")
+
+    def stop(self) -> None:
+        if self._timer is not None:
+            self._timer.cancel()
 
 
 class UpdateError(Conflict):

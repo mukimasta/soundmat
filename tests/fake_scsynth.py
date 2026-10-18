@@ -4,7 +4,6 @@ from __future__ import annotations
 import socket
 import struct
 import threading
-import time
 
 from pythonosc.osc_bundle import OscBundle
 from pythonosc.osc_message import OscMessage

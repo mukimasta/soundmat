@@ -12,6 +12,7 @@ from ..exchange import EventHub, Latest
 from ..rates import RateMeter
 from .interpret import Interpreter
 from .model import MatEvent, MatSnapshot, PressureMap, empty_snapshot
+from .virtual import HZ as VIRTUAL_HZ
 
 
 class Perception:
@@ -24,6 +25,11 @@ class Perception:
         self.events: EventHub[MatEvent] = EventHub()
         self._lock = threading.Lock()
         self.rate = RateMeter()          # 实际完成垫面解读的帧率
+
+    def rates(self) -> dict[str, dict]:
+        """给系统监测：虚拟垫子按固定帧率产生压力图；控制器的帧率由它自己决定，没有期望值。"""
+        return {"perception": {"actual": self.rate.rate(),
+                               "expected": VIRTUAL_HZ if self.source == "virtual" else None}}
 
     def set_control_zones(self, zones) -> None:
         with self._lock:

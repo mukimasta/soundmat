@@ -29,7 +29,7 @@ def test_clock_ticks_and_survives_exceptions():
 
 def test_running_supervisor_end_to_end(make_sup, tmp_path):
     sup = make_sup(modes={"echo": EchoMode}, arrangements_dir=tmp_path / "none")
-    sup.switch(arrangement())
+    sup.sonification.play(arrangement())
     sup.start()
     try:
         sup.virtual.toggle(60)

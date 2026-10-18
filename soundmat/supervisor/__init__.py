@@ -1,35 +1,41 @@
-"""运行管理：唯一能启动和停止其他模块的地方（ARCHITECTURE「灯光引擎、设备连接与运行管理」）。
+"""运行管理：唯一建立、连接、启动和停止其他模块的地方（ARCHITECTURE「灯光引擎、设备连接与运行管理」）。
 
-它按顺序建立各模块并把它们连起来，协调编排切换，决定失败时重试、降级还是退出。
+它只做三件事：按依赖顺序建立各模块并把它们连起来；把设置的变化转给相应的模块；按顺序启动
+各个服务、按相反的顺序停止。具体的事情都在各模块里：编排目录在 ``sonification/catalog.py``，
+各模块的运行数据由模块自己提供给系统监测（``monitor.Sources``），状态树每段由谁写见
+``store/branches.py``。
 """
 from __future__ import annotations
 
 import logging
+import os
+import signal
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Protocol
 
-from ..clock import BeatClock, system_time
+from ..clock import BeatClock
 from ..config import ROOT, Config
-from ..control import MAT_PUSH_HZ, ControlContext
+from ..control import ControlContext
 from ..device import DeviceLink, RawFrame
-from ..light import LightEngine
-from ..errors import InvalidRequest
 from ..exchange import Latest
-from ..monitor import Monitor, Probes
+from ..intent import LightIntent
+from ..light import LightEngine
+from ..monitor import Monitor, Probes, Sources
 from ..monitor import probes
 from ..monitor.log import EventLog
+from ..periodic import Periodic
 from ..perception import Perception
 from ..perception.signal import Signal
-from ..recorder import Recorder
 from ..perception.virtual import VirtualMat
-from ..perception.virtual import HZ as VIRTUAL_HZ
-from ..sonification import ModeFactory, ModeInstance, Sonification
+from ..recorder import Recorder
+from ..sonification import ModeFactory, Sonification
 from ..sonification.ambient import AmbientMode
+from ..sonification.arrangements import ARRANGEMENTS_DIR
+from ..sonification.catalog import Catalog
 from ..sonification.jam import JamMode
-from ..sonification.arrangements import ARRANGEMENTS_DIR, discover
-from ..intent import LightIntent
-from ..sonification.mode import Arrangement, LoadError, ModeContext
+from ..sonification.mode import ModeContext
 from ..sound.assets import AssetLibrary
 from ..sound.backend import Backend, RecordingBackend
 from ..sound.engine import SoundEngine
@@ -41,16 +47,18 @@ from ..updater import Updater, detect_layout
 
 log = logging.getLogger("soundmat")
 
+MODES: dict[str, ModeFactory] = {"ambient": AmbientMode, "jam": JamMode}
+LEVELS_PERIOD = 0.1    # 秒：电平采样的间隔（只供控制台显示）
+
+
+class Service(Protocol):
+    def start(self) -> None: ...
+    def stop(self) -> None: ...
+
 
 def _exit_for_restart() -> None:
     """更新切换版本后：让主机程序正常退出，systemd（Restart=always）按 current 指向的新版本重新启动。"""
-    import os
-    import signal
-    import threading
-
     threading.Timer(0.5, lambda: os.kill(os.getpid(), signal.SIGTERM)).start()
-
-MODES: dict[str, ModeFactory] = {"ambient": AmbientMode, "jam": JamMode}
 
 
 @dataclass
@@ -73,144 +81,93 @@ class Supervisor:
     def __init__(self, config: Config, options: Options | None = None):
         self.config = cfg = config
         self.options = opts = options or Options()
-        self.store = Store({
-            "status": {
-                "current": {"virtual": opts.virtual, "arrangement": None, "mode": None,
-                            "modeStatus": None, "switching": None, "meters": []},
-                "audio": {"assets": {"missing": []}},
-                "log": [],
-            },
-            "catalog": {"arrangements": []},
-        })
+        self.store = Store()
         self.events = EventLog(self.store)
         self.settings = Settings(self.store, opts.data_dir)
 
-        source = "virtual" if opts.virtual else "controller"
-        self.perception = Perception(cfg.mat, source=source)
-        self.virtual: VirtualMat | None = VirtualMat(self.perception.feed) if opts.virtual else None
+        # 感知与输入
+        self.perception = Perception(cfg.mat, source="virtual" if opts.virtual else "controller")
+        self.signal = Signal(cfg.mat)
+        self.virtual: VirtualMat | None = None
+        self.device: DeviceLink | None = None
+        if opts.virtual:
+            self.virtual = VirtualMat(self.perception.feed)
+        else:
+            self.device = opts.device or DeviceLink(self._on_raw_frame, port=opts.serial_port,
+                                                    on_event=self._device_event)
 
+        # 声音
         if opts.backend is not None:
             self.backend: Backend = opts.backend
         elif opts.synth == "scsynth":
-            self.backend = ScsynthBackend(cfg.synth.host, cfg.synth.port, cfg.synth.synthdefs_path)
+            self.backend = ScsynthBackend(cfg.synth.host, cfg.synth.port, cfg.synth.synthdefs_path,
+                                          resolve_asset=lambda ref: self.assets.info(ref))
         else:
             self.backend = RecordingBackend()
         self.engine = SoundEngine(self.backend, cfg.sound, self._layout(), self.settings.get("sound.orientation", 0.0))
         self.assets = AssetLibrary(Path(self.settings.get("run.soundLibrary")), cfg.sound.asset_memory_mb, self.backend)
         self.engine.on_rebuild.append(self.assets.reload_all)
-        if isinstance(self.backend, ScsynthBackend):
-            self.backend.resolve_asset = self.assets.info
-        self.levels: Latest[dict] = Latest()
-        self._next_levels = 0.0
 
-        self.light: Latest[LightIntent] = Latest(LightIntent())
+        # 声音化、灯光与录制
+        self.light_intent: Latest[LightIntent] = Latest(LightIntent())
         self.sonification = Sonification(
-            self.engine, self.perception, self.store, self.events, self.light,
+            self.engine, self.assets, self.perception, self.store, self.events, self.light_intent,
             modes=opts.modes,
             ctx=ModeContext(led_count=cfg.light.led_count, setting=self.settings.get, seed=opts.seed),
             crossfade=cfg.sound.crossfade_seconds,
         )
-        self.sonification.before_activate.append(self._acquire_assets)
-        self.sonification.after_retire.append(lambda inst, now: self.assets.release(inst.id, now))
+        self.catalog = Catalog(self.store, self.events, self.sonification, self.assets, opts.arrangements_dir)
         self.clock = BeatClock(cfg.sound.tick_hz, self.sonification.on_beat, name="sonification",
                                stall_after=cfg.sound.late_tolerance)
+        self.lights = LightEngine(cfg.light, self.light_intent, send=self.device.send_leds if self.device else None)
+        self.recorder = Recorder(self.store, self.events, self.settings, self.sonification, self.perception,
+                                 self.lights, cfg)
 
-        self.signal = Signal(cfg.mat)
-        self.device: DeviceLink | None = None
-        if not opts.virtual:
-            self.device = opts.device or DeviceLink(self._on_raw_frame, port=opts.serial_port,
-                                                    on_event=self._device_event)
-        self.lights = LightEngine(cfg.light, self.light, send=self.device.send_leds if self.device else None)
-        self.sonification.after_beat.append(self._publish_link_status)
-        self._next_link_status = 0.0
-
-        self.arrangements: dict[str, Arrangement] = {}
-        self.refresh_catalog()
-        self.store.subscribe(self._on_change)
-        self.sonification.run_in_beat(self._apply_sound_settings)
-
-        self.recorder = Recorder(
-            self.store, self.events, self.backend, self.settings.get, self.sonification.run_in_beat,
-            cfg.light.led_count, self.lights.set_system_layer, self.perception.snapshot, self.perception.events,
-            self.lights.preview,
-            active_output=lambda: (self.sonification.active.last if self.sonification.active else None),
-            current_arrangement=self._current_arrangement,
-            channels=lambda: self.engine.layout.channels,
-            output_latency=cfg.sound.output_latency,
-            audio_backend=isinstance(self.backend, ScsynthBackend),
-            sample_rate=cfg.sound.expected_sample_rate,
-        )
-        self.sonification.after_beat.append(self.recorder.on_beat)
-
-        self.monitor = Monitor(
-            cfg, self.store, self.events, opts.data_dir,
-            synth_status=self.backend.status if isinstance(self.backend, ScsynthBackend) else (lambda: None),
-            layout_channels=lambda: self.engine.layout.channels, probes_=opts.probes,
-            runtime=self.runtime,
-        )
-
+        # 管理与控制
         version = probes.version(ROOT)
         self.updater = Updater(self.store, self.events, cfg.update.repo, opts.data_dir,
                                version["commit"] if version else None, layout=detect_layout(),
                                restart=opts.restart or _exit_for_restart)
-
         self.control = ControlContext(
-            updater=self.updater,
-            config=cfg, store=self.store, mat=self.perception.snapshot, virtual=self.virtual,
-            play=self.play, settings=self.settings, test_tone=self.test_tone, recorder=self.recorder,
-            streams={"leds": self.lights.preview, "levels": self.levels},
+            config=cfg, store=self.store, mat=self.perception.snapshot, settings=self.settings,
+            play=self.catalog.play, test_tone=self.test_tone, recorder=self.recorder, updater=self.updater,
+            virtual=self.virtual,
+            streams={"leds": self.lights.preview, "levels": self.sonification.levels},
         )
+        link = self.virtual or self.device
+        self.monitor = Monitor(cfg, self.store, self.events, opts.data_dir, probes_=opts.probes, sources=Sources(
+            synth=self.backend.status,
+            channels=lambda: self.engine.layout.channels,
+            mat=link.status,
+            rates=[r for r in (self.device, self.perception, self.clock, self.lights, self.control) if r is not None],
+            counters=[self.clock, self.engine],
+            beat_lag=self.clock.max_lag,
+            storage=self.recorder,
+        ))
 
-    # ── 编排 ────────────────────────────────────────────────────────────
+        self.store.subscribe(self._on_change)
+        self.sonification.run_in_beat(self._apply_sound_settings)
 
-    def refresh_catalog(self) -> None:
-        """重新读取全部编排，检查各自引用的素材是否齐全，写入状态中心供控制台列出。"""
-        found, errors = discover(self.options.arrangements_dir)
-        for e in errors:
-            self.events.warning(e)
-        self.arrangements = found
-        items = []
-        for a in found.values():
-            missing: list[str] = []
-            try:
-                plan = self.sonification.prepare(a).plan
-                missing = self.assets.missing(plan.assets)
-                error = None
-            except LoadError as e:
-                error = str(e)
-            items.append({
-                "id": a.id, "title": a.title, "mode": a.mode, "modeLabel": a.mode_label,
-                "description": a.description, "ringLabels": list(a.ring_labels),
-                "missing": missing, "error": error,
-            })
-        self.store.set("catalog.arrangements", items)
+        # 按顺序启动、按相反的顺序停止
+        self.services: list[Service] = [
+            link, self.clock, self.lights,
+            Periodic("levels", LEVELS_PERIOD, self.sonification.sample_levels),
+            self.updater,
+            *([self.monitor] if opts.monitor else []),
+        ]
 
-    def play(self, arrangement_id: str) -> None:
-        a = self.arrangements.get(arrangement_id)
-        if a is None:
-            raise LoadError(f"没有标识为 {arrangement_id} 的编排")
-        self.switch(a)
+    # ── 启动与停止 ──────────────────────────────────────────────────────
 
-    def switch(self, arrangement: Arrangement) -> None:
-        """加载并切换到一份编排；加载失败时保持当前编排，抛出 ``LoadError``。"""
-        try:
-            inst = self.sonification.prepare(arrangement)
-        except LoadError as e:
-            self.events.error(f"无法加载 {arrangement.title}：{e}")
-            raise
-        self.sonification.switch(inst)
+    def start(self) -> None:
+        self.catalog.play_default(self.settings.get("run.defaultArrangement"))
+        for s in self.services:
+            s.start()
 
-    def _acquire_assets(self, inst: ModeInstance, now: float) -> None:
-        missing = self.assets.acquire(inst.id, inst.plan.assets, now)
-        self.store.update({
-            "status.audio.assets.missing": missing,
-            "status.audio.assets.needed": len(inst.plan.assets),
-            "status.audio.assets.state": self.assets.status(),
-        })
-        if missing:
-            self.events.warning(f"{inst.arrangement.title}：缺少 {len(missing)} 个声音素材，用到它们的声音不会发声")
+    def stop(self) -> None:
+        for s in reversed(self.services):
+            s.stop()
 
-    # ── 设备与灯光 ──────────────────────────────────────────────────────
+    # ── 连接 ────────────────────────────────────────────────────────────
 
     def _on_raw_frame(self, frame: RawFrame) -> None:
         self.perception.feed(self.signal.pressure(frame.t, frame.seq, frame.values))
@@ -218,65 +175,10 @@ class Supervisor:
     def _device_event(self, level: str, text: str) -> None:
         getattr(self.events, level)(text)
 
-    def _publish_link_status(self, now: float) -> None:
-        if now >= self._next_levels:
-            self._next_levels = now + 0.1
-            active = self.sonification.active
-            meters = [m.buses for m in active.meters] if active else []
-            lv = self.backend.levels(active.id if active else None, meters, now)
-            if lv is not None:
-                self.levels.set(lv)
-        if now < self._next_link_status:
-            return
-        self._next_link_status = now + 0.5
-        if self.device is not None:
-            st = self.device.status()
-            st["source"] = "controller"
-        else:
-            st = {"connected": None, "port": None, "fps": None, "checksumErrors": None,
-                  "problem": None, "source": "virtual"}
-        self.store.update({"status.mat": st})
-
-    def runtime(self) -> dict:
-        """给系统监测的运行时数据：各链路的实测帧率与期望值、累计计数、录音的数据速率。
-
-        期望值为 None 表示没有固定目标（例如传感帧率由控制器决定）；实测为 None 表示这条链路不存在
-        （虚拟垫子没有控制器）或暂时没有数据（没有控制台连着）。垫面和灯环预览只在有变化时推送，
-        所以它们的期望值是上限。
-        """
-        cfg = self.config
-        dev = self.device
-        ctl = self.control
-        rates = {
-            "sensing": {"actual": dev.fps() if dev else None, "expected": None},
-            "perception": {"actual": self.perception.rate.rate(),
-                           "expected": VIRTUAL_HZ if self.virtual else None},
-            "beat": {"actual": self.clock.rate.rate(), "expected": cfg.sound.tick_hz},
-            "light": {"actual": self.lights.rate.rate(), "expected": cfg.light.refresh_hz},
-            "ledWrites": {"actual": dev.led_rate.rate() if dev else None,
-                          "expected": cfg.light.refresh_hz if dev else None},
-            "pushMat": {"actual": ctl.push_rate("mat"), "expected": MAT_PUSH_HZ},
-            "pushLeds": {"actual": ctl.push_rate("leds"), "expected": cfg.light.refresh_hz},
-        }
-        st = self.engine.stats
-        counters = {"stalls": self.clock.stalls, "late": st.late,
-                    "yields": st.yields, "rejected": st.rejected}
-        stems = len(self.backend.recordable_stems())
-        return {"rates": rates, "counters": counters, "maxLagMs": round(self.clock.max_lag() * 1000, 1),
-                "recordBytesPerSecond": self.recorder.bytes_per_second(stems), "recordRoot": self.recorder.root}
-
-    def _current_arrangement(self) -> dict:
-        a = self.sonification.active
-        if a is None:
-            return {}
-        return {"id": a.arrangement.id, "title": a.arrangement.title, "mode": a.arrangement.mode}
-
     def test_tone(self, channel: int) -> None:
-        """在某个声道上放 1 秒测试音，确认每只音箱接对了位置。"""
-        if not 0 <= channel < self.engine.layout.channels:
-            raise InvalidRequest(f"声道 {channel} 超出当前音箱布局（共 {self.engine.layout.channels} 只）")
-        self.sonification.run_in_beat(
-            lambda now: self.backend.test_tone(channel, now + self.config.sound.output_latency))
+        """控制台的逐声道测试音：先检查声道，再交给节拍线程（声音引擎只在那里调用）。"""
+        self.engine.check_channel(channel)
+        self.sonification.run_in_beat(lambda now: self.engine.test_tone(channel, now))
 
     # ── 设置 ────────────────────────────────────────────────────────────
 
@@ -287,11 +189,9 @@ class Supervisor:
         paths = [p for p, _ in changes]
         if any(p.startswith("settings.sound") for p in paths):
             self.sonification.run_in_beat(self._apply_sound_settings)
-        if "settings.recording.path" in paths:
-            self.recorder.refresh_list()
         if "settings.run.soundLibrary" in paths:
             self.assets.set_root(Path(self.settings.get("run.soundLibrary")))
-            self.refresh_catalog()
+            self.catalog.refresh()
 
     def _apply_sound_settings(self, now: float) -> None:
         self.engine.set_master({"volume": float(self.settings.get("sound.volume", 0.8))}, now)
@@ -299,41 +199,3 @@ class Supervisor:
         orientation = float(self.settings.get("sound.orientation", 0.0))
         if layout != self.engine.layout or orientation != self.engine.orientation:
             self.engine.set_layout(layout, orientation, now)
-
-    # ── 启动与停止 ──────────────────────────────────────────────────────
-
-    def start(self) -> None:
-        if self.virtual:
-            self.virtual.start()
-            log.info("使用虚拟垫子")
-        elif self.device is not None:
-            self.device.start()
-        default = self.settings.get("run.defaultArrangement")
-        first = default if default in self.arrangements else next(iter(self.arrangements), None)
-        if first is None:
-            self.events.error("没有可用的编排")
-        else:
-            if first != default:
-                self.events.warning(f"默认编排 {default} 不存在，改用 {first}")
-            try:
-                self.play(first)
-            except LoadError:
-                pass
-        self.clock.start()
-        self.lights.start()
-        if self.updater.enabled:
-            self.updater.start_confirm_timer()
-        if self.options.monitor:
-            self.monitor.start()
-
-    def stop(self) -> None:
-        self.monitor.stop()
-        self.lights.stop()
-        self.clock.stop()
-        if self.virtual:
-            self.virtual.stop()
-        if self.device is not None:
-            self.device.stop()
-
-    def now(self) -> float:
-        return system_time()

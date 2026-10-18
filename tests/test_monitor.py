@@ -1,8 +1,7 @@
-from pathlib import Path
 
 import pytest
 
-from soundmat.monitor import Monitor, Probes
+from soundmat.monitor import Monitor, Probes, Sources
 from soundmat.monitor.log import EventLog
 from soundmat.monitor import probes as P
 from soundmat.store import Store
@@ -61,13 +60,37 @@ class Fake:
                       ap_clients=lambda iface: self.clients, platform_linux=True)
 
 
+class Runtime:
+    """各模块交给系统监测的运行数据（测试里手动设置）。"""
+
+    def __init__(self):
+        self.mat = {"source": "controller", "connected": True, "fps": 58.6}
+        self.counts = {"stalls": 0, "late": 0, "yields": 0, "rejected": 0}
+        self.lag = 0.0
+        self.root = None
+        self.bps = 0
+
+    def rates(self):
+        return {"beat": {"actual": 60.0, "expected": 60.0}}
+
+    def counters(self):
+        return dict(self.counts)
+
+    def bytes_per_second(self):
+        return self.bps
+
+
 @pytest.fixture
 def rig(config, tmp_path):
-    store = Store({"status": {"mat": {"source": "controller", "connected": True, "fps": 58.6}, "audio": {"assets": {"missing": []}}}})
+    store = Store({"status": {"assets": {"missing": []}}})
     fake = Fake()
     synth = {"online": True, "synthdefsLoaded": True, "nominalSampleRate": 48000.0, "avgCPU": 22.0, "peakCPU": 30.0}
-    mon = Monitor(config, store, EventLog(store), tmp_path, synth_status=lambda: synth,
-                  layout_channels=lambda: 2, probes_=fake.probes())
+    rt = Runtime()
+    rt.root = tmp_path
+    mon = Monitor(config, store, EventLog(store), tmp_path, probes_=fake.probes(), sources=Sources(
+        synth=lambda: synth, channels=lambda: 2, mat=lambda: rt.mat, rates=[rt], counters=[rt],
+        beat_lag=lambda: rt.lag, storage=rt))
+    mon.rt = rt
     return mon, store, fake, synth
 
 
@@ -102,7 +125,7 @@ def test_hdmi_output_is_an_error_with_reason_and_logged_once(rig):
     (lambda f, s, st: s.update(synthdefsLoaded=False), "error", "没有加载音色"),
     (lambda f, s, st: f.jack.update(running=False), "error", "JACK"),
     (lambda f, s, st: s.update(nominalSampleRate=44100.0), "warn", "44.1 kHz，期望 48 kHz"),
-    (lambda f, s, st: st.set("status.audio.assets.missing", ["a", "b"]), "warn", "缺少 2 个声音素材"),
+    (lambda f, s, st: st.set("status.assets.missing", ["a", "b"]), "warn", "缺少 2 个声音素材"),
     (lambda f, s, st: s.update(peakCPU=91.0), "warn", "峰值 91%"),
     (lambda f, s, st: setattr(f, "xruns", 3), "warn", "卡顿 3 次"),
 ])
@@ -116,12 +139,13 @@ def test_sound_rules(rig, change, level, text):
 
 def test_mat_and_network_rules(rig):
     mon, store, fake, synth = rig
-    store.set("status.mat", {"source": "controller", "connected": False, "problem": "没有找到控制器的 USB 串口"})
+    mon.rt.mat = {"source": "controller", "connected": False, "problem": "没有找到控制器的 USB 串口"}
     h = mon.step(0)
     assert h["mat"] == {"level": "error", "reason": "没有找到控制器的 USB 串口"}
-    store.set("status.mat", {"source": "controller", "connected": True, "fps": 12.0})
+    assert store.get("status.mat.problem") == "没有找到控制器的 USB 串口"
+    mon.rt.mat = {"source": "controller", "connected": True, "fps": 12.0}
     assert mon.step(1)["mat"]["level"] == "warn"
-    store.set("status.mat", {"source": "virtual"})
+    mon.rt.mat = {"source": "virtual"}
     assert mon.step(2)["mat"]["level"] == "ok"
     fake.network = {"name": None, "address": None}
     mon._next_slow = 0
@@ -130,8 +154,7 @@ def test_mat_and_network_rules(rig):
 
 def test_no_synth_is_unknown(config, tmp_path):
     store = Store()
-    mon = Monitor(config, store, EventLog(store), tmp_path, synth_status=lambda: None,
-                  layout_channels=lambda: 2, probes_=Fake().probes())
+    mon = Monitor(config, store, EventLog(store), tmp_path, probes_=Fake().probes())
     assert mon.step(0)["sound"]["level"] == "unknown"
 
 
@@ -162,16 +185,10 @@ def test_restarts_unknown_outside_systemd(monkeypatch):
     assert P.systemd_restarts("soundmat.service") is None
 
 
-def runtime(late=0, rate=0, root=None):
-    return lambda: {"rates": {"beat": {"actual": 60.0, "expected": 60.0}},
-                    "counters": {"late": late, "yields": 0, "rejected": 0},
-                    "recordBytesPerSecond": rate, "recordRoot": root}
-
-
 def test_program_network_storage_and_rates_published(rig, tmp_path):
     mon, store, fake, synth = rig
     fake.network = {"name": "soundmat-ap", "type": "wifi", "address": "10.42.0.1", "tailscale": None}
-    mon.runtime = runtime(rate=48000 * 2 * 3, root=tmp_path / "recordings")
+    mon.rt.root, mon.rt.bps = tmp_path / "recordings", 48000 * 2 * 3
     mon.step(0)
     assert store.get("status.network.kind") == "selfHotspot"
     assert store.get("status.network.apClients") == 2
@@ -180,7 +197,7 @@ def test_program_network_storage_and_rates_published(rig, tmp_path):
     assert store.get("status.rates.beat") == {"actual": 60.0, "expected": 60.0}
     st = store.get("status.storage")
     assert st["freeGB"] > 0 and st["minutes"] > 0
-    mon.runtime = runtime(rate=0, root=tmp_path)
+    mon.rt.root, mon.rt.bps = tmp_path, 0
     mon.step(1)
     assert store.get("status.storage.minutes") is None          # 不录音频时无法换算成分钟
 
@@ -188,8 +205,8 @@ def test_program_network_storage_and_rates_published(rig, tmp_path):
 def test_recent_stalls_and_late_events_need_attention(rig):
     """节拍晚到超过迟到容忍度（卡住）或定时事件迟到才需要注意。"""
     mon, store, fake, synth = rig
-    counts = {"stalls": 0, "late": 0}
-    mon.runtime = lambda: {"counters": {**counts, "yields": 0, "rejected": 0}, "maxLagMs": 12.0}
+    counts = mon.rt.counts
+    mon.rt.lag = 0.012
     assert mon.step(0)["sound"]["level"] == "ok"                # 启动以来的累计数不算
     counts["stalls"] = 2
     assert mon.step(0.5)["sound"]["level"] == "ok"              # 卡住两次：不提示

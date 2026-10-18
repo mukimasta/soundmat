@@ -11,7 +11,6 @@ import re
 import shutil
 import socket
 import subprocess
-import time
 from pathlib import Path
 
 
@@ -203,10 +202,6 @@ def local_name(host: str | None) -> str | None:
     if not host:
         return None
     return host if host.lower().endswith(".local") else f"{host}.local"
-
-
-def program_uptime(started: float) -> int:
-    return int(time.time() - started)
 
 
 def systemd_restarts(service: str) -> int | None:

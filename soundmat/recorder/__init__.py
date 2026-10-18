@@ -22,16 +22,21 @@ import shutil
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ..timebase import system_time
+from ..config import Config
 from ..errors import Conflict, NotFound
-from ..exchange import Latest
+from ..intent import BeatOutput, LightLayer, SoundIntent
 from ..monitor.log import EventLog
-from ..intent import LightLayer, SoundIntent
 from ..store import Store
+from ..store.settings import Settings
+
+if TYPE_CHECKING:
+    from ..light import LightEngine
+    from ..perception import Perception
+    from ..sonification import Sonification
 
 log = logging.getLogger("soundmat.recorder")
 
@@ -104,28 +109,19 @@ def _sound_json(intent: SoundIntent) -> dict:
 
 
 class Recorder:
-    def __init__(self, store: Store, events: EventLog, backend, settings_get: Callable[[str, Any], Any],
-                 run_in_beat: Callable[[Callable[[float], None]], None], led_count: int,
-                 set_light_layer: Callable[[str, LightLayer | None], None],
-                 snapshot: Latest, event_hub, light_preview: Latest, active_output: Callable[[], Any],
-                 current_arrangement: Callable[[], dict], channels: Callable[[], int],
-                 output_latency: float, audio_backend: bool, sample_rate: int = 48000):
-        self.store = store
+    def __init__(self, store: Store, events: EventLog, settings: Settings, sonification: "Sonification",
+                 perception: "Perception", lights: "LightEngine", config: Config):
+        self.state = store.writer("status.recording", "catalog.recordings")
         self.events = events
-        self.backend = backend
-        self.setting = settings_get
-        self.run_in_beat = run_in_beat
-        self.led_count = led_count
-        self.set_light_layer = set_light_layer
-        self.snapshot = snapshot
-        self.event_queue = event_hub.subscribe()
-        self.light_preview = light_preview
-        self.active_output = active_output
-        self.current_arrangement = current_arrangement
-        self.channels = channels
-        self.latency = output_latency
-        self.sample_rate = sample_rate
-        self.audio_backend = audio_backend     # 是否连接真实的合成器服务（否则只记录会话数据）
+        self.settings = settings
+        self.sonification = sonification
+        self.backend = sonification.engine.backend
+        self.perception = perception
+        self.lights = lights
+        self.event_queue = perception.events.subscribe()
+        self.led_count = config.light.led_count
+        self.latency = config.sound.output_latency
+        self.sample_rate = config.sound.expected_sample_rate
         self.session: Session | None = None
         self.writer: SessionWriter | None = None
         self._lock = threading.Lock()
@@ -136,20 +132,38 @@ class Recorder:
         self._next_status = 0.0
         self._last_sound: dict | None = None
         self._was_audio_active = False
-        self.store.update({"status.recording": {"state": "idle"}})
+        self.state.set("status.recording", {"state": "idle"})
         self.refresh_list()
+        sonification.after_beat.append(self.on_beat)
+        store.subscribe(self._on_change)
+
+    def _on_change(self, changes) -> None:
+        if any(path == "settings.recording.path" for path, _ in changes):
+            self.refresh_list()
+
+    def _channels(self) -> int:
+        return self.sonification.engine.layout.channels
+
+    def _current_arrangement(self) -> dict:
+        a = self.sonification.active
+        if a is None:
+            return {}
+        return {"id": a.arrangement.id, "title": a.arrangement.title, "mode": a.arrangement.mode}
 
     # ── 位置与空间 ──────────────────────────────────────────────────────
 
     @property
     def root(self) -> Path:
-        return Path(self.setting("recording.path", "data/recordings"))
+        return Path(self.settings.get("recording.path", "data/recordings"))
 
-    def bytes_per_second(self, stems: int) -> int:
-        if not (self.audio_backend and self.backend.online):
+    def bytes_per_second(self, stems: int | None = None) -> int:
+        """录音每秒写多少字节（总输出加分轨）；不录音频时为 0。"""
+        if not (self.backend.records_audio and self.backend.online):
             return 0
-        per_frame = BYTES_PER_SAMPLE["master"] + (stems * BYTES_PER_SAMPLE["stem"] if self.setting("recording.stems", True) else 0)
-        return self.sample_rate * self.channels() * per_frame
+        if stems is None:
+            stems = len(self.backend.recordable_stems()) if self.settings.get("recording.stems", True) else 0
+        per_frame = BYTES_PER_SAMPLE["master"] + stems * BYTES_PER_SAMPLE["stem"]
+        return self.sample_rate * self._channels() * per_frame
 
     def free_bytes(self) -> int:
         p = self.root
@@ -163,17 +177,16 @@ class Recorder:
         with self._lock:
             if self.session is not None:
                 raise RecordingError("已经在录制")
-            stems = len(self.backend.recordable_stems())
-            need = self.bytes_per_second(stems) * MIN_FREE_SECONDS + MARGIN_BYTES
+            need = self.bytes_per_second() * MIN_FREE_SECONDS + MARGIN_BYTES
             free = self.free_bytes()
             if free < need:
                 raise RecordingError(f"剩余空间 {free / 1e9:.1f} GB，不足以录制 10 分钟（需要约 {need / 1e9:.1f} GB）")
-            if self.audio_backend and not self.backend.online:
+            if self.backend.records_audio and not self.backend.online:
                 raise RecordingError("合成器服务没有响应，无法录音")
-        self.run_in_beat(self._begin)
+        self.sonification.run_in_beat(self._begin)
 
     def request_stop(self) -> None:
-        self.run_in_beat(lambda now: self._end(now, "user"))
+        self.sonification.run_in_beat(lambda now: self._end(now, "user"))
 
     # ── 节拍线程 ────────────────────────────────────────────────────────
 
@@ -182,12 +195,12 @@ class Recorder:
             return
         start_t = now + START_DELAY
         wall = dt.datetime.now().astimezone() + dt.timedelta(seconds=START_DELAY)
-        arr = self.current_arrangement()
+        arr = self._current_arrangement()
         folder = self.root / f"{wall:%Y-%m-%d_%H%M%S}_{arr.get('id') or 'none'}"
         folder.mkdir(parents=True, exist_ok=True)
         files = {"master": str(folder / "master.wav")}
         stems_dir = folder / "stems"
-        stems = self.backend.recordable_stems() if self.setting("recording.stems", True) else []
+        stems = self.backend.recordable_stems() if self.settings.get("recording.stems", True) else []
         if stems:                              # scsynth 不建目录，要先建好；没有音频时不建
             stems_dir.mkdir(exist_ok=True)
             for name in stems:
@@ -197,7 +210,7 @@ class Recorder:
             stems_dir.rmdir()                  # 合成器服务离线，一个分轨也没开始
         rel = [str(Path(files[k]).relative_to(folder)) for k in started]
         self.session = Session(folder=folder, start_t=start_t, started_wall=wall, arrangement=arr,
-                               settings=self.store.get("settings", {}), channels=self.channels(),
+                               settings=self.settings.snapshot(), channels=self._channels(),
                                files=rel + ["session.jsonl", "info.json"], audio=bool(started))
         self._was_audio_active = bool(started)
         self.backend.slate(start_t + COUNTDOWN)
@@ -207,14 +220,14 @@ class Recorder:
         self._last_sound = None
         self._write_info()
         self.events.info(f"开始录制：{folder.name}" + ("" if started else "（没有合成器服务，只记录会话数据）"))
-        self.on_beat(now)
+        self.on_beat(now, self.sonification.active.last if self.sonification.active else None)
 
     def _end(self, now: float, reason: str) -> None:
         s = self.session
         if s is None:
             return
         self.backend.stop_recording(now + self.latency)
-        self.set_light_layer("recording", None)
+        self.lights.set_system_layer("recording", None)
         s.stopped = reason
         if self.writer:
             self.writer.put({"t": _round(now), "type": "stop", "reason": reason})
@@ -222,13 +235,14 @@ class Recorder:
             self.writer = None
         self._write_info(end_t=now)
         self.session = None
-        self.store.set("status.recording", {"state": "idle"})
+        self.state.set("status.recording", {"state": "idle"})
         self.refresh_list()
         text = {"user": "录制结束", "disk": "存储空间将尽，录制已自动停止",
                 "synth": "合成器服务中断，录制已停止"}.get(reason, "录制结束")
         (self.events.warning if reason != "user" else self.events.info)(f"{text}：{s.folder.name}")
 
-    def on_beat(self, now: float) -> None:
+    def on_beat(self, now: float, output: BeatOutput | None) -> None:
+        """每拍结束时由声音化调用：推进倒计时与打板，把这一拍的数据写进会话。"""
         s = self.session
         if s is None:
             self.event_queue.drain()
@@ -238,7 +252,7 @@ class Recorder:
         if not s.slate_done and el >= COUNTDOWN:
             s.slate_done = True
             self.writer.put({"t": _round(s.start_t + COUNTDOWN), "type": "slate"})
-        self._record_data(now)
+        self._record_data(now, output)
         if s.audio and self._was_audio_active and not self.backend.recording_active():
             self._end(now, "synth")
             return
@@ -250,7 +264,7 @@ class Recorder:
                     self._end(now, "disk")
                     return
             state = "countdown" if el < COUNTDOWN else "recording"
-            self.store.set("status.recording", {
+            self.state.set("status.recording", {
                 "state": state,
                 "count": max(1, 3 - int(max(0.0, el))) if el < COUNTDOWN else None,
                 "elapsed": round(max(0.0, el), 1),
@@ -266,7 +280,7 @@ class Recorder:
     def _countdown_light(self, el: float) -> None:
         n = self.led_count
         if el >= COUNTDOWN + FLASH:
-            self.set_light_layer("recording", None)
+            self.lights.set_system_layer("recording", None)
             return
         rgb = np.tile(np.array(SLATE_COLOR, dtype=np.float32) / 255, (n, 1))
         alpha = np.zeros(n, dtype=np.float32)
@@ -275,22 +289,21 @@ class Recorder:
         elif el >= 0:
             lit = 3 - int(el)                    # 三段全亮，每秒熄灭一段
             alpha[: lit * n // 3] = 0.9
-        self.set_light_layer("recording", LightLayer("recording", 1000, rgb, alpha))
+        self.lights.set_system_layer("recording", LightLayer("recording", 1000, rgb, alpha))
 
-    def _record_data(self, now: float) -> None:
+    def _record_data(self, now: float, out: BeatOutput | None) -> None:
         w = self.writer
         if w is None:
             return
         for e in self.event_queue.drain():
             w.put({"t": _round(e.t), "type": "event", "kind": e.kind, "zone": e.zone})
-        snap, ver = self.snapshot.get_versioned()
+        snap, ver = self.perception.snapshot.get_versioned()
         if snap is not None and ver != self._last_snap_version and now >= self._next_pressure:
             self._last_snap_version = ver
             self._next_pressure = now + 1 / 30
             w.put({"t": _round(snap.t), "type": "pressure", "seq": snap.pressure.seq,
                    "values": [int(v * 1000 + 0.5) for v in snap.pressure.values.clip(0, 1)],
                    "occupied": sorted(snap.state.occupied)})
-        out = self.active_output()
         if out is not None:
             sound = _sound_json(out.sound)
             if sound != self._last_sound:
@@ -301,7 +314,7 @@ class Recorder:
                        "events": [{"id": e.id, "time": _round(e.time), "source": f"{e.source.kind}:{e.source.name}",
                                    "bus": e.bus, "params": {k: _round(x) for k, x in e.params.items()}}
                                   for e in out.sound.events]})
-        light, lver = self.light_preview.get_versioned()
+        light, lver = self.lights.preview.get_versioned()
         if light is not None and lver != self._last_light_version and now >= self._next_light:
             self._last_light_version = lver
             self._next_light = now + 0.1
@@ -349,7 +362,7 @@ class Recorder:
         return items
 
     def refresh_list(self) -> None:
-        self.store.set("catalog.recordings", self.list())
+        self.state.set("catalog.recordings", self.list())
 
     def folder_of(self, name: str) -> Path:
         d = (self.root / name).resolve()
