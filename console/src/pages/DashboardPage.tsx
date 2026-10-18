@@ -90,7 +90,13 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
     const layout = sel.setting<{ azimuths: number[]; names: string[] }>(s, 'sound.layout');
     const names = layout?.names ?? [];
     const out = lv?.output ?? [];
-    const load = synth?.avgLoad ?? null;
+    // 运算负载：合成器（scsynth 自报）和主机程序（占单核）里更高的那个，也就是先撑不住的一方
+    const synthLoad = synth?.avgLoad ?? null;
+    const progLoad = g<number | null>('status.machine.programCpu') ?? null;
+    const progHistory = g<number[]>('status.machine.programCpuHistory') ?? [];
+    const bottleneck: 'synth' | 'program' | null = synthLoad === null && progLoad === null ? null
+      : (progLoad ?? -1) > (synthLoad ?? -1) ? 'program' : 'synth';
+    const load = bottleneck === 'program' ? progLoad : synthLoad;
     const engine = g<{ voices: number; budget: number }>('status.audio.engine');
     const xruns = g<number | null>('status.audio.xruns');
     const expectedRate = 48000;
@@ -102,7 +108,8 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
     const needed = g<number>('status.audio.assets.needed') ?? 0;
     const dev = g<{ name: string; usb: boolean } | null>('status.audio.outputDevice');
     const devBad = dev !== null && dev !== undefined && !dev.usb;
-    const history = g<number[]>('status.audio.loadHistory') ?? [];
+    const synthHistory = g<number[]>('status.audio.loadHistory') ?? [];
+    const history = maxTail(synthHistory, progHistory);
     return (
       <section className="card" aria-label="声音">
         <SecHead no="01" name="声音" ind={h?.sound.level} />
@@ -115,11 +122,17 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
             </span>
           </div>
           <div className="load-col">
-            <span className="small" style={{ fontSize: 12 }}>合成器运算负载</span>
-            <Gauge value={load} max={100} limit={85} text={load === null ? '—' : `${Math.round(load)}%`}
-              label={load === null ? '合成器服务运算负载未知' : `合成器服务运算负载 ${Math.round(load)}%，红线是峰值上限 85%`} />
+            <span className="small" style={{ fontSize: 12 }}>
+              运算负载{bottleneck ? ` · ${bottleneck === 'program' ? '主机程序' : '合成器'}` : ''}
+            </span>
+            <Gauge value={load === null ? null : Math.min(load, 100)} max={100} limit={85} text={load === null ? '—' : `${Math.round(load)}%`}
+              label={load === null ? '运算负载未知'
+                : `运算负载 ${Math.round(load)}%，来自${bottleneck === 'program' ? '主机程序' : '合成器'}，红线是上限 85%`} />
             <Spark values={history} max={100} />
-            <span className="small">最近 1 分钟 · 红线是峰值上限 85%</span>
+            <span className="small" data-load="both">
+              合成器 {synthLoad === null ? '—' : `${Math.round(synthLoad)}%`} · 主机程序 {progLoad === null ? '—' : `${Math.round(progLoad)}%`}（单核）
+            </span>
+            <span className="small">最近 1 分钟取两者中较高的 · 红线是上限 85%</span>
           </div>
         </div>
         <div className="grid2">
@@ -326,6 +339,18 @@ function useDisplayFps(): number | null {
     return () => cancelAnimationFrame(id);
   }, []);
   return value;
+}
+
+/** 两条每秒一个点的曲线按末尾对齐，逐点取较高的（谁先撑不住看谁） */
+function maxTail(a: number[], b: number[]): number[] {
+  const n = Math.max(a.length, b.length);
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const x = a[a.length - n + i];
+    const y = b[b.length - n + i];
+    out.push(Math.max(x ?? 0, y ?? 0));
+  }
+  return out;
 }
 
 function fps(v: number | null | undefined): string {

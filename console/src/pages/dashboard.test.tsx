@@ -108,5 +108,7 @@ test('rhythm card, network kind, program and recording time', async () => {
   expect(within(machine).getByText('约 25 小时')).toBeInTheDocument();
   expect(machine.querySelector('[data-cpu="program"]')!.textContent).toContain('58% · 单核');
   expect(machine.querySelector('[data-cpu="machine"]')!.textContent).toContain('20% · 4 核');
-  expect(within(screen.getByRole('region', { name: '声音' })).getByText('合成器运算负载')).toBeInTheDocument();
+  const sound = screen.getByRole('region', { name: '声音' });
+  expect(within(sound).getByText('运算负载 · 主机程序')).toBeInTheDocument();          // 主机程序 58% 高于合成器 22%
+  expect(sound.querySelector('[data-load="both"]')!.textContent).toBe('合成器 22% · 主机程序 58%（单核）');
 });
