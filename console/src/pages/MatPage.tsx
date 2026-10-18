@@ -4,6 +4,7 @@ import * as sel from '../api/selectors';
 import { ArrIcon } from '../components/ArrIcon';
 import { MatView } from '../components/MatView';
 import { LayerMeters } from '../components/LayerMeters';
+import { Volume } from '../components/Volume';
 
 /** 垫面：控制台首页（设计稿“垫面即首页”）。虚拟垫子模式下点按区域放下/拿起石头。 */
 export function MatPage({ onOpenArrangements, overlay }: { onOpenArrangements: () => void; overlay?: React.ReactNode }) {
@@ -73,6 +74,7 @@ export function MatPage({ onOpenArrangements, overlay }: { onOpenArrangements: (
         <span className="right">{right}</span>
       </div>
       <LayerMeters meters={s.connected ? sel.meters(s) : []} levels={lv} />
+      {s.connected && <div className="mat-volume"><Volume /></div>}
       <div className="spacer" />
       {cur && (
         <div className="now-playing">

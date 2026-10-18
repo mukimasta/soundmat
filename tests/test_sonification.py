@@ -94,3 +94,12 @@ def test_engine_status_published(sup):
     sup.sonification.on_beat(beat(0, 1.0))
     st = sup.store.get("status.engine")
     assert st["budget"] == 48 and st["voices"] == 0
+
+
+def test_arrangement_level_sets_mix_gain(sup):
+    from dataclasses import replace
+
+    sup.sonification.play(replace(arrangement("a"), level=-12.0))
+    sup.sonification.on_beat(beat(0, 1.0))
+    (g,) = sup.backend.of_kind("set_mix_gain")
+    assert g.args["gain"] == pytest.approx(10 ** (-12 / 20))

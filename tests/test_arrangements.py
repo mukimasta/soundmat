@@ -27,3 +27,17 @@ def test_errors_are_isolated(tmp_path):
     assert len(errors) == 3
     with pytest.raises(LoadError):
         load_arrangement(tmp_path / "missing")
+
+
+def test_level_header(tmp_path):
+    import pytest
+
+    from soundmat.sonification.arrangements import ARRANGEMENTS_DIR, load_arrangement
+    from soundmat.sonification.mode import LoadError
+
+    assert load_arrangement(ARRANGEMENTS_DIR / "lofi_1").level == -12
+    assert load_arrangement(ARRANGEMENTS_DIR / "kyoto").level == 0
+    (tmp_path / "x").mkdir()
+    (tmp_path / "x" / "arrangement.toml").write_text('title = "X"\nmode = "jam"\nlevel = "loud"\n')
+    with pytest.raises(LoadError, match="level"):
+        load_arrangement(tmp_path / "x")

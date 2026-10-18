@@ -133,6 +133,7 @@ button { font: inherit; color: inherit; }
 
 .spacer { flex: 1 1 auto; min-height: 6px; }
 
+.mat-volume { flex: none; padding: 8px 16px 0; }
 .now-playing { flex: none; padding: 0 16px 4px; }
 .now-playing button {
   width: 100%;

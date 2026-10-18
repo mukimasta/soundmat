@@ -1,10 +1,10 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { useClient, useConsole } from '../api/context';
 import * as sel from '../api/selectors';
 import { ArrIcon } from '../components/ArrIcon';
 import { Sheet } from '../components/Sheet';
 
-/** 编排面板：点选即切换，新旧编排之间交叉淡化；下方调整总音量。 */
+/** 编排面板：点选即切换，新旧编排之间交叉淡化。 */
 export function ArrangementSheet({ onClose }: { onClose: () => void }) {
   const s = useConsole();
   const client = useClient();
@@ -53,31 +53,7 @@ export function ArrangementSheet({ onClose }: { onClose: () => void }) {
         );
       })}
       {error && <p className="arr-warn" role="alert">{error}</p>}
-      <Volume />
     </Sheet>
-  );
-}
-
-function Volume() {
-  const s = useConsole();
-  const client = useClient();
-  const stored = sel.setting<number>(s, 'sound.volume') ?? 0.8;
-  const [local, setLocal] = useState<number | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const value = Math.round((local ?? stored) * 100);
-  const send = (v: number) => {
-    setLocal(v);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      void client.post('/api/settings', { changes: { 'sound.volume': v } }).finally(() => setLocal(null));
-    }, 120);
-  };
-  return (
-    <div className="volume">
-      <span className="head"><label htmlFor="vol">总音量</label><span>{value}%</span></span>
-      <input id="vol" type="range" min={0} max={100} step={1} value={value}
-        onChange={(e) => send(Number(e.target.value) / 100)} />
-    </div>
   );
 }
 

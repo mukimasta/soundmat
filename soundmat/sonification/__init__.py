@@ -180,7 +180,7 @@ class Sonification:
             self.log.warning(f"{a.title}：缺少 {len(missing)} 个声音素材，用到它们的声音不会发声")
         previous = [i for i in self.instances if not i.retiring]
         fade = self.crossfade if previous else 0.0
-        self.engine.add_instance(inst.id, inst.plan.buses, now, fade, inst.plan.fx)
+        self.engine.add_instance(inst.id, inst.plan.buses, now, fade, inst.plan.fx, gain=10 ** (a.level / 20))
         for old in previous:
             old.retiring = True
             self.engine.retire_instance(old.id, now, fade)

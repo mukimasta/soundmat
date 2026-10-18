@@ -29,6 +29,7 @@ class Arrangement:
     mode_label: str = ""                      # 控制台显示的模式说明，例如 "Ambient · 氛围"
     ring_labels: tuple[str, ...] = ()         # 每环在控制台上显示的名字
     meters: Mapping[str, Any] = field(default_factory=dict)  # 电平条声明（[meters]），见 sonification/meters.py
+    level: float = 0.0                        # 整体电平（dB）：这份编排的混音总增益，用来对齐各编排的响度
     content: Mapping[str, Any] = field(default_factory=dict)
     path: str | None = None                   # 编排所在文件夹
 

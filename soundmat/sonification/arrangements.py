@@ -8,6 +8,7 @@
     mode_label = "Ambient · 氛围"
     description = "……"
     ring_labels = ["低音", ...]   # 8 个
+    level = -12                   # 可省略：整体电平（dB），默认 0
     [meters]                      # 可省略：控制台的电平条怎样分组，见 sonification/meters.py
 
 编排对声音素材只做引用：引用是素材库 ``samples/`` 下的相对路径。
@@ -21,7 +22,7 @@ from ..config import ROOT
 from .mode import Arrangement, LoadError
 
 ARRANGEMENTS_DIR = ROOT / "arrangements"
-HEADER = {"id", "title", "mode", "mode_label", "description", "ring_labels", "meters"}
+HEADER = {"id", "title", "mode", "mode_label", "description", "ring_labels", "meters", "level"}
 
 
 def load_arrangement(folder: Path) -> Arrangement:
@@ -42,6 +43,9 @@ def load_arrangement(folder: Path) -> Arrangement:
     meters = raw.get("meters", {})
     if not isinstance(meters, dict):
         raise LoadError(f"{path} 的 meters 应是一个表")
+    level = raw.get("level", 0.0)
+    if isinstance(level, bool) or not isinstance(level, (int, float)) or not -60 <= level <= 12:
+        raise LoadError(f"{path} 的 level 应是 -60 到 12 之间的分贝数")
     content = {k: v for k, v in raw.items() if k not in HEADER}
     return Arrangement(
         id=raw.get("id") or folder.name,
@@ -51,6 +55,7 @@ def load_arrangement(folder: Path) -> Arrangement:
         mode_label=raw.get("mode_label", raw["mode"]),
         ring_labels=tuple(labels),
         meters=meters,
+        level=float(level),
         content=content,
         path=str(folder),
     )

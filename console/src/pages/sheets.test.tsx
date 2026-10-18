@@ -19,7 +19,7 @@ test('mat page shows mode status, ring labels and now-playing card', () => {
   expect(screen.getByText('Ambient · 氛围 · 演奏中')).toBeInTheDocument();
 });
 
-test('arrangement sheet: switch, missing hint, volume', async () => {
+test('arrangement sheet: switch, missing hint; volume on the mat page', async () => {
   const { client, posts } = setup();
   connect(client);
   await userEvent.click(screen.getByRole('button', { name: /当前编排：京都岚山/ }));
@@ -37,7 +37,8 @@ test('arrangement sheet: switch, missing hint, volume', async () => {
   expect(within(dialog).getByText('正在淡出')).toBeInTheDocument();
   expect(screen.getByText('正在切换到 Lo-Fi Loop · Progression 1 · 37%')).toBeInTheDocument();
 
-  const slider = within(dialog).getByLabelText('总音量');
+  expect(within(dialog).queryByLabelText('总音量')).toBeNull();      // 总音量在主页上，不在编排面板里
+  const slider = screen.getByLabelText('总音量');
   await act(async () => {
     fireEvent.change(slider, { target: { value: '79' } });
     await new Promise((r) => setTimeout(r, 200));
