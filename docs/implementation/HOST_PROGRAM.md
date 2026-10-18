@@ -43,7 +43,7 @@ uv run pytest                   # 测试
 | 系统监测 | `soundmat/monitor/` | 每秒采集音频链路、控制器、机器、网络；状态指示与原因；最近的警告和错误（`log.py`） |
 | 状态中心 | `soundmat/store/` | 状态树、按路径修改、变化通知；每段的唯一写入者（`branches.py`）；设置的默认值、校验与原子写入（`settings.py`） |
 | 软件更新 | `soundmat/updater/` | 发布包的格式（`package.py`）；从 GitHub 下载、校验、安装成版本目录、切换 `current`、重启与确认；发布命令是 `scripts/release.py`，启动保护是 `system/update/soundmat-guard`，见 `DEPLOYMENT.md`「发布与更新」 |
-| 维护 | `soundmat/maintenance.py` | 从控制台重启声音、主机程序或整台机器：交给 `systemctl --no-block`，需要系统权限规则 `system/polkit/50-soundmat.rules` |
+| 维护 | `soundmat/maintenance.py` | 从控制台重启声音、主机程序或整台机器：交给 `systemctl --no-block`，需要系统权限规则 `system/polkit/50-soundmat.rules`；只在主机程序本身是 `soundmat.service` 时可用（看 `/proc/self/cgroup`，而不是"是否由 systemd 运行"：CI 的机器也由 systemd 运行） |
 | 控制接口 | `soundmat/control/` | FastAPI：WebSocket 推送、命令与设置、录制打包下载（`download.py`）、提供控制台 |
 | 配置 | `soundmat/config.py` + `config/soundmat.toml` | 启动时读取，未知键报错 |
 | 线程间容器 | `soundmat/exchange.py` | `Latest`、`EventQueue`、`EventHub` |
@@ -141,7 +141,7 @@ uv run pytest                   # 测试
 
 状态指示的规则（按顺序，第一条成立的即为结果）：
 
-1. 声音：合成器服务没有响应 → 异常；没有连接合成器服务（`--no-synth`）→ 未知；音色没有加载 → 异常；Linux 上 JACK 没有运行 → 异常；期望 USB 而实际输出设备不是 USB 声卡、或找不到 USB 声卡 → 异常；采样率与期望不同 → 需要注意；当前编排缺少素材 → 需要注意；负载峰值超过 85% → 需要注意；最近一小时有卡顿 → 需要注意；最近 1 分钟有 3 次以上节拍晚到超过迟到容忍度（50 ms）、合成器服务收到 5 条以上太晚的指令、或有定时事件迟到被丢弃 → 需要注意；主机程序最近 10 秒平均占单核 90% 以上 → 需要注意；主机程序运行不到一小时且被自动重启过、而这次启动不是软件更新安排的 → 需要注意（说明它在一小时内重启过，可能在反复出错；更新切换版本时在 `update.json` 里记下 `plannedAt`，之后两分钟内的启动算作有意的重启）；否则正常。
+1. 声音：合成器服务没有响应 → 异常；没有连接合成器服务（`--no-synth`）→ 未知；音色没有加载 → 异常；Linux 上 JACK 没有运行 → 异常；期望 USB 而实际输出设备不是 USB 声卡、或找不到 USB 声卡 → 异常；采样率与期望不同 → 需要注意；当前编排缺少素材 → 需要注意；负载峰值超过 85% → 需要注意；有卡顿（从主机程序和 JACK 里较晚的那次启动算起、最长一小时）→ 需要注意；最近 1 分钟有 3 次以上节拍晚到超过迟到容忍度（50 ms）、合成器服务收到 5 条以上太晚的指令、或有定时事件迟到被丢弃 → 需要注意；主机程序最近 10 秒平均占单核 90% 以上 → 需要注意；主机程序运行不到一小时且被自动重启过、而这次启动不是软件更新安排的 → 需要注意（说明它在一小时内重启过，可能在反复出错；更新切换版本时在 `update.json` 里记下 `plannedAt`，之后两分钟内的启动算作有意的重启）；否则正常。
 2. 垫子：使用虚拟垫子 → 正常；控制器未连接 → 异常（原因来自设备连接，例如"没有找到控制器的 USB 串口"）；实测帧率低于 20 → 需要注意。
 3. 网络：没有任何出口地址 → 需要注意（装置离线也能演奏，所以不算异常）。
 

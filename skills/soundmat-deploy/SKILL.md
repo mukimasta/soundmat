@@ -96,7 +96,15 @@ sudo systemctl daemon-reload && sudo systemctl restart systemd-logind
 sudo systemctl enable --now jackd soundmat-scsynth
 ```
 
-- `jackd.service` 里的 `hw:Audio` 是当前声卡的名字，换声卡时按 `aplay -l` 改。48 kHz、每块 2048 帧两块缓冲；Pi 5 可以看板上的卡顿次数为准逐步降到 1024、512。
+验证控制台"重启"的权限（`rules.d` 目录只有 root 能读，普通用户用 `ls` 看不到，用 `pkcheck` 问；它只检查、不会真的重启）：
+
+```bash
+ssh soundmat@<主机> 'pkcheck --action-id org.freedesktop.login1.reboot --process $$ </dev/null; echo $?'   # 0 = 已授权
+```
+
+polkit 在 Pi OS Lite 上已装（`polkitd`），平时不常驻、按需启动，规则文件放进去就生效，不用重启。规则只放开 `soundmat` 用户重启 `jackd.service`、`soundmat-scsynth.service`、`soundmat.service` 和重启整机。
+
+- `jackd.service` 里的 `hw:Audio` 是当前声卡的名字，换声卡时按 `aplay -l` 改。48 kHz、每块 2048 帧两块缓冲；Pi 5 可以看板上的卡顿次数为准逐步降到 1024、512。**改 JACK 缓冲时同步改 `config/soundmat.toml` 的 `sound.schedule_ahead`**：至少是一整个缓冲（帧数 × 块数 / 48000）再加一块，另留余量；2048 × 2 时是 0.15，1024 × 2 时约 0.08。小于它，合成器收到的定时指令会迟到，节奏忽早忽晚（看板「节奏」里的"合成器收到太晚"）。
 - 主机程序的服务在程序装好后（第 6 节）再启用。
 - Pi 3B 上程序目录不同，用 drop-in 覆盖路径：`/etc/systemd/system/soundmat.service.d/pi3b.conf` 里重设 `WorkingDirectory=/home/soundmat/sm/current`、`Environment=SOUNDMAT_HOME=/home/soundmat/sm`、`ExecStart=`（先清空）再 `ExecStart=/home/soundmat/sm/current/.venv/bin/soundmat --data-dir /home/soundmat/data`。
 
@@ -185,7 +193,7 @@ uv run python scripts/release.py --device soundmat-pi-old --no-sound   # Pi 3B�
 素材的注意事项：
 - Pi 3B 上不放素材（2026-10-18 删掉了，给录音腾空间）：它内存只有 905 MB，放不下《京都岚山》，只跑 Jam。往 Pi 3B 发布一律加 `--no-sound`，否则素材会被重新传过去（素材目录不在时同步那一步还会失败、中止更新）。
 - 装置上的素材目录 `/home/soundmat/sound/samples` 要先存在（rsync 不建上级目录），新装的装置第一次发布前先 `ssh soundmat@<主机> mkdir -p /home/soundmat/sound/samples`。
-- 大批同步（第一次约 326 MB，或新加了大素材）期间，往存储卡写入会让 Pi 3B 的音频卡顿几下（2026-10-18 实测：开始同步的 8 秒里 JACK 记了 14 次 xrun，之后为 0）。不要在演出或拍摄中做；看板的"最近一小时卡顿"提示一小时后自己消失。平时只传有变化的文件，一两秒，不受影响。
+- 大批同步（第一次约 326 MB，或新加了大素材）期间，往存储卡写入会让 Pi 3B 的音频卡顿几下（2026-10-18 实测：开始同步的 8 秒里 JACK 记了 14 次 xrun，之后为 0）。不要在演出或拍摄中做；看板的卡顿从主机程序和 JACK 里较晚的那次启动算起、最长一小时，所以这条提示一小时后、或在控制台重启声音或程序后消失。平时只传有变化的文件，一两秒，不受影响。
 
 装置那边：下载、核对 SHA-256、解压到 `releases/<短提交号>/`、`uv sync`，成功后才切换 `current`，然后程序退出、由 systemd 按新版本拉起。新版本运行满 60 秒自动确认；连续 3 次启动失败，启动前运行的 `soundmat-guard` 会切回上一版。手动回退：控制台「菜单 → 软件更新 → 回到上一版」（只对本机和 Tailscale 来的访问开放），或 `curl -X POST http://<主机>:8000/api/update/rollback`。
 
@@ -205,6 +213,8 @@ uv run python scripts/release.py --device soundmat-pi-old --no-sound   # Pi 3B�
 6. 断电重启：一两分钟后自动进入默认编排，看板恢复正常（开机灯带全亮 5 秒是固件的行为）。
 7. 网络：第 5 节的测试。
 8. 供电（Pi 5）：负载下 `vcgencmd pmic_read_adc EXT5V_V` 不低于 4.9 V，`vcgencmd get_throttled` 为 `0x0`，跑一两个小时后摸 USB 头不烫。
+9. 控制台「菜单 → 重启 → 重启声音」：约 5 秒后声音恢复，看板回到正常（同时验证了权限规则）。「重启程序」约 10–15 秒后控制台自己重连、控制器重新连上。
+10. 定时声音准时：播放 Jam 一分钟，`journalctl _COMM=scsynth --since -1min -o cat | grep -c ^late` 接近 0（看板「节奏 · 迟到」同理）。
 
 读整体状态的快捷方式：
 
@@ -214,7 +224,9 @@ import json,sys; d=json.load(sys.stdin)['status']; t=d['timing']; m=d['machine']
 print(d['program']['version'], d['current']['arrangement'], d['current']['modeStatus'])
 print('health', d['health']['overall'], d['health']['issues'])
 print('cpu prog', m.get('programCpu'), 'machine', m.get('cpu'), '| synth', d['audio']['synth']['avgLoad'])
-print('lag', t['maxLagMs'], 'stalls', t['stallsRecent'], 'late', t['lateRecent'], '| xruns', d['audio']['xruns'])
+print('lag', t['maxLagMs'], 'stalls', t['stallsRecent'], 'late', t['lateRecent'], 'synthLate', t.get('synthLate'),
+      '| xruns', d['audio']['xruns'], '(since start)' if d['audio'].get('xrunsSinceStart') else '(1h)')
+print('restart from console:', d.get('maintenance'))
 print('rates', {k: v['actual'] for k, v in d['rates'].items()})"
 ```
 
@@ -237,8 +249,12 @@ ssh soundmat@<主机> 'P=$(systemctl show -p MainPID --value soundmat); top -H -
 | JACK 日志 `Cannot use real-time scheduling` | 服务缺 `LimitRTPRIO=95`（第一版就缺）：用仓库里的 `jackd.service` |
 | 没声音，scsynth 在跑 | `jack_lsp -c` 看 SuperCollider 的输出有没有接到 `system:playback_*`；服务里要有 `SC_JACK_DEFAULT_OUTPUTS` |
 | 看板「采样率 44.1 kHz，期望 48 kHz」 | JACK 的 `-r`。Pi 3B 用 drop-in `/etc/systemd/system/jackd.service.d/rate.conf` 重设 `ExecStart` 为 `-r48000` |
-| 看板「缺少 N 个声音素材」 | 当前编排要素材（京都岚山），装置上没有：发布时不要加 `--no-sound` |
-| 看板「主机程序最近一小时内被自动重启过」 | 真的在反复崩溃时：`journalctl -u soundmat -b -o cat \| grep -B2 -A20 Traceback`。更新导致的重启不算（更新时写下 `plannedAt`） |
+| 看板「缺少 N 个声音素材」 | 当前编排要素材（京都岚山），装置上没有：发布时不要加 `--no-sound`。Pi 3B 上是有意不放素材的（内存放不下京都岚山），不用管 |
+| 切到京都岚山后机器卡死、合成器服务被内核结束（`journalctl -k \| grep -i "out of memory"`） | 内存不够：京都岚山的素材解码后约 415 MB，Pi 3B 共 905 MB，其他部分已用约 330 MB。Pi 3B 只跑 Jam，Ambient 用 Pi 5 |
+| 节奏忽早忽晚，看板「节奏」里"合成器收到太晚"不为 0 | 定时声音的提前量 `sound.schedule_ahead` 小于 JACK 的音频缓冲（改过 JACK 的 `-p`/`-n` 却没改它）：按第 4 节的算法改配置、重新发布。直接看：`journalctl _COMM=scsynth --since -1min -o cat \| grep -c ^late` |
+| 控制台重启时提示"systemd 拒绝了这次重启" | 没装或没装对权限规则：按第 4 节安装 `50-soundmat.rules`，用 `pkcheck` 验证 |
+| 控制台重启按钮是灰的，写着"不是由 systemd 运行的装置" | 主机程序不是作为 `soundmat.service` 运行的（例如开发机，或在终端里手动启动的）：`systemctl status soundmat` |
+| 看板「主机程序最近一小时内被自动重启过」 | 真的在反复崩溃时：`journalctl -u soundmat -b -o cat \| grep -B2 -A20 Traceback`。更新导致的重启不算（更新时写下 `plannedAt`），从控制台手动重启也不算（systemd 只统计自动重启） |
 | 看板「节拍晚到超过 50 ms」刚启动时出现 | 启动加载造成的，一分钟后消失；持续出现就看第 9 节 |
 | 发布命令「连不上装置」 | Tailscale 上看 `tailscale status \| grep soundmat`；装置可能在切换网络（手机热点断了、换到 Avocado），等一两分钟重试 |
 | sudo 突然又要密码 | 树莓派重启过，或超过约 15 分钟没用：请人再 `sudo -v` |
