@@ -34,13 +34,17 @@ test('normal dashboard', async () => {
   await userEvent.click(screen.getByRole('button', { name: '看板' }));
   expect(screen.getByText('一切正常')).toBeInTheDocument();
   const sound = screen.getByRole('region', { name: '声音' });
-  expect(within(sound).getByText('USB 声卡 · JCALLY JM6')).toBeInTheDocument();
-  expect(within(sound).getByText('14 / 14')).toBeInTheDocument();
-  expect(within(sound).getByText('✓ 最近 1 小时没有卡顿')).toBeInTheDocument();
+  expect(within(sound).getByText('✓ 没有断过')).toBeInTheDocument();                 // 卡顿：结果放在声音卡片上
+  expect(within(sound).queryByText('USB 声卡 · JCALLY JM6')).toBeNull();           // 配置不在主卡片上
+  expect(within(sound).queryByRole('note')).toBeNull();                            // 一切正常时没有提示
+  const audio = screen.getByRole('region', { name: '音频' });                      // 详细信息里的配置
+  expect(within(audio).getByText('USB 声卡 · JCALLY JM6')).toBeInTheDocument();
+  expect(within(audio).getByText('14 / 14')).toBeInTheDocument();
   expect(within(screen.getByRole('region', { name: '垫子' })).getByText('58.6')).toBeInTheDocument();
   expect(within(screen.getByRole('region', { name: '网络' })).getByText('已连接 · 100.101.33.8')).toBeInTheDocument();
   expect(within(screen.getByRole('region', { name: '网络' })).getByText('soundmat-pi.local · 172.20.10.3')).toBeInTheDocument();
-  expect(within(screen.getByRole('region', { name: '机器' })).getByText('Raspberry Pi 5')).toBeInTheDocument();
+  expect(within(screen.getByRole('region', { name: '机器详情' })).getByText('Raspberry Pi 5')).toBeInTheDocument();
+  expect(screen.getByText('详细信息').closest('details')!.open).toBe(false);       // 详细信息默认收起
 });
 
 test('error: alert on mat page, nav dot label, dashboard reason, test tone', async () => {
@@ -55,7 +59,8 @@ test('error: alert on mat page, nav dot label, dashboard reason, test tone', asy
   expect(screen.getByText(`声音：${reason}`)).toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: '看板，有 1 项需要处理' }));
   expect(screen.getByText('异常', { selector: '.head' })).toBeInTheDocument();
-  expect(screen.getByText('期望 USB 声卡，音箱不会发声')).toBeInTheDocument();
+  // 出问题时声音卡片里出现提示
+  expect(within(screen.getByRole('region', { name: '声音' })).getByRole('note').textContent).toContain('不是 USB 声卡，音箱不会发声');
   await userEvent.click(screen.getByRole('button', { name: '右声道测试音' }));
   expect(posts).toContainEqual(['/api/audio/test-tone', { channel: 1 }]);
   expect(screen.getByText('右 · 发声')).toBeInTheDocument();
@@ -96,21 +101,25 @@ test('rhythm card, network kind, program and recording time', async () => {
   expect(row('pushLeds').querySelector('.num')!.getAttribute('style')).toBeNull();     // 只在有变化时推送：0 不算异常
   expect(row('sensing').textContent).toContain('—');
   expect(row('display')).toBeTruthy();
-  expect(within(rhythm).getByText('超过 50 ms 0 次')).toBeInTheDocument();
-  expect(within(rhythm).getByText('合成器收到太晚 7 · 主机丢弃 0')).toBeInTheDocument();
+  expect(within(rhythm).getByText('最大 10 ms · 超过 50 ms 0 次')).toBeInTheDocument();
+  expect(within(rhythm).getByText('7 次').getAttribute('style')).toContain('amber');      // 合成器收到太晚：需要注意
+  expect(within(rhythm).getByText('因预算放弃')).toBeInTheDocument();     // 内部计数只在详细信息里
+  // 声音卡片上的"节奏"：迟到的定时声音合计
+  expect(within(screen.getByRole('region', { name: '声音' })).getByText('✕ 有音没按时响')).toBeInTheDocument();
 
   const net = screen.getByRole('region', { name: '网络' });
   expect(within(net).getByText('自建热点')).toBeInTheDocument();
   expect(within(net).getByText('约 2 台')).toBeInTheDocument();
 
   const machine = screen.getByRole('region', { name: '机器' });
-  expect(within(machine).getByText('1 小时 30 分')).toBeInTheDocument();
-  expect(within(machine).getByText('1 次')).toBeInTheDocument();
-  expect(within(machine).getByText('2d09273 · 部署于 2026-10-17 15:04')).toBeInTheDocument();
-  expect(within(machine).getByText('约 25 小时')).toBeInTheDocument();
+  expect(within(machine).getByText('约 25 小时')).toBeInTheDocument();              // 还能录：关键信息在卡片上
   expect(machine.querySelector('[data-cpu="program"]')!.textContent).toContain('58% · 单核');
-  expect(machine.querySelector('[data-cpu="machine"]')!.textContent).toContain('20% · 4 核');
+  const details = screen.getByRole('region', { name: '机器详情' });
+  expect(within(details).getByText('1 小时 30 分')).toBeInTheDocument();
+  expect(within(details).getByText('1 次')).toBeInTheDocument();
+  expect(within(details).getByText('2d09273 · 部署于 2026-10-17 15:04')).toBeInTheDocument();
+  expect(within(details).getByText('20% · 4 核')).toBeInTheDocument();
   const sound = screen.getByRole('region', { name: '声音' });
   expect(within(sound).getByText('运算负载 · 主机程序')).toBeInTheDocument();          // 主机程序 58% 高于合成器 22%
-  expect(sound.querySelector('[data-load="both"]')!.textContent).toBe('合成器 22% · 主机程序 58%（单核）');
+  expect(within(screen.getByRole('region', { name: '音频' })).getByText('合成器 22% · 主机程序 58%（单核）')).toBeInTheDocument();
 });

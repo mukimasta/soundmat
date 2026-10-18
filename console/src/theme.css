@@ -336,7 +336,7 @@ button { font: inherit; color: inherit; }
 .segs { display: flex; gap: 3px; }
 .segs span { flex: 1; height: 8px; border-radius: 2px; }
 .kv { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 3px 0; }
-.kv span:first-child { color: var(--text-2); }
+.kv span:first-child { flex: none; white-space: nowrap; color: var(--text-2); }
 .kv span:last-child { font-family: var(--mono); font-size: 12.5px; text-align: right; overflow-wrap: anywhere; }
 .alert {
   flex: none;
@@ -383,3 +383,24 @@ button { font: inherit; color: inherit; }
 .hint.warn { color: var(--amber-line); }
 .link-btn { align-self: flex-start; background: none; border: 0; padding: 8px 2px; color: var(--text-2); font: inherit; font-size: 13px; text-decoration: underline; cursor: pointer; }
 .link-btn:disabled, .btn-clear:disabled { opacity: 0.4; cursor: default; }
+
+/* 看板：出问题时才出现的提示 */
+.problem { padding: 10px 12px; border-radius: 12px; background: var(--amber-bg); color: var(--amber-line); font-size: 12.5px; font-weight: 600; line-height: 1.5; display: flex; flex-direction: column; gap: 4px; }
+.problem.error { background: var(--red-bg); color: var(--red-line); }
+
+/* 看板：详细信息（默认收起） */
+.details { border-radius: 16px; background: var(--card); border: 1px solid var(--card-border); }
+.details > summary { list-style: none; padding: 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; color: var(--text-2); }
+.details > summary::-webkit-details-marker { display: none; }
+.details > summary .t { display: flex; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 600; }
+.details > summary .hint { font-size: 11px; font-weight: 400; color: var(--text-3); }
+.details > summary .chev { flex: none; transition: transform 0.15s; }
+.details[open] > summary .chev { transform: rotate(180deg); }
+.details .groups { padding: 0 14px 14px; display: flex; flex-direction: column; gap: 16px; }
+.details .groups > section { display: flex; flex-direction: column; }
+.details .grp { font-size: 11px; font-weight: 600; color: var(--text-3); letter-spacing: 0.04em; padding-bottom: 4px; border-bottom: 1px solid var(--line); margin-bottom: 2px; }
+.details .rate-row { padding: 3px 0; border-bottom: 0; }
+.details .rate-row span[role='cell']:first-child { color: var(--text-2); }
+.details .rate-row .num { font-size: 12.5px; }
+.details .small { padding: 2px 0 4px; line-height: 1.5; }
+
