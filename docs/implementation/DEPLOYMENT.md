@@ -35,11 +35,11 @@
 在开发机上运行部署脚本，参数是树莓派的地址（`soundmat-pi.local`，或它在 Tailscale 里的名字 `soundmat-pi`）。脚本通过 SSH 依次完成下面的工作。
 
 1. **系统软件包**：安装 SuperCollider 的合成器服务（scsynth）、JACK2、avahi、rsync 等。树莓派上不需要 sclang。
-2. **实时音频权限**：把 `soundmat` 用户加入 `audio` 组，并允许它以实时优先级运行音频服务。
+2. **实时音频权限**：把 `soundmat` 用户加入 `audio` 组，并允许它以实时优先级运行音频服务：JACK 的服务要有 `LimitRTPRIO=95`、`LimitMEMLOCK=infinity`，否则 JACK 会以普通优先级运行（日志里有 `Cannot use real-time scheduling`），容易卡顿；第一版在 Pi 3B 上就一直缺这一项。另外在 `/etc/systemd/logind.conf.d/` 里设 `RemoveIPC=no`：JACK 以普通用户 `soundmat` 运行，默认情况下这个用户最后一个登录会话（例如 SSH）退出时，systemd 会清掉它的共享内存和信号量，JACK 随即失效（`semop (Invalid argument)`）。
 3. **电源设置**：降压模块只输出 5V，不和 Pi 5 协商快充，Pi 5 默认会把 USB 总输出限制在 600 mA。在确认电源能提供足够电流的前提下，于 `/boot/firmware/config.txt` 打开 `usb_max_current_enable`，避免 USB 声卡和 ESP32 供电不足。
 4. **Python 环境**：安装 uv，由它安装 Python 和依赖，不使用系统自带的 Python。
-5. **程序与数据**：用 rsync 把主机程序、编排、编译好的音色同步到树莓派；把开发机的 `SoundMat/sound/` 同步到树莓派的声音素材目录。
-6. **系统服务**：安装 `system/systemd/` 下的三个服务，依次是 JACK、scsynth、主机程序，后一个依赖前一个，任何一个异常退出都会自动重启，并设为开机启动。
+5. **程序与数据**：按下面「发布与更新」一节，从 GitHub 安装第一个发布包；把开发机的 `SoundMat/sound/` 用 rsync 同步到树莓派的声音素材目录（素材不经过 GitHub，见「声音素材」）。
+6. **系统服务**：安装 `system/systemd/` 下的三个服务，依次是 JACK、scsynth（`soundmat-scsynth.service`）、主机程序（`soundmat.service`），后一个依赖前一个，任何一个异常退出都会自动重启，并设为开机启动。scsynth 用环境变量 `SC_JACK_DEFAULT_OUTPUTS` 在启动时自己把输出接到声卡，不再需要第一版那样另外运行 `jack_connect`。主机程序的服务每次启动前运行启动保护 `/usr/local/bin/soundmat-guard`（来自 `system/update/`）。
 7. **网络**：按下面「网络」一节建立 NetworkManager 连接，安装 `system/network/` 下的网络选择与兜底定时任务。avahi 随系统启用，局域网内可以用 `soundmat-pi.local` 访问。
 8. **Tailscale**：从 Tailscale 官方 apt 源安装，用密钥文件里的授权密钥加入网络；没有授权密钥时由 `tailscale up` 打印登录链接，在浏览器里授权。设备名 `soundmat-pi`。
 9. **设置**：树莓派上还没有设置文件时，写入一份默认设置；已有时保持不动。
@@ -57,21 +57,52 @@
 6. 断电后重新上电，装置自己进入默认编排，看板恢复正常。
 7. 关掉手机热点后重启，等待超时后自建热点出现，手机连上它能打开控制台；再打开手机热点，一分钟左右树莓派切回手机热点。
 
-## 日常更新
+## 发布与更新
 
-改了代码、编排或音色后，重新运行同一个部署脚本即可。脚本默认只同步程序、编排和音色，并重启主机程序；同步声音素材和重新安装系统配置需要显式指定，因为前者耗时，后者会重启音频服务。
+程序的每一次更新都经过 GitHub：开发机构建并上传发布包，装置从 GitHub 下载安装，装置上不做任何构建（`DECISION.md` 第 10 条）。
+
+**发布包**是一个 `tar.gz`，包含主机程序（`soundmat/`）、编排、配置、编译好的音色（`instruments/compiled/`）、构建好的控制台（`console/dist/`）、`pyproject.toml` 与 `uv.lock`、`system/`，以及 `VERSION` 文件（第一行提交号，第二行构建时间）。压缩后不到 1 MB。它作为 GitHub 上一个预发布版本的附件存放：标签 `build-<短提交号>`，说明里写分支、完整提交号、构建时间和包的 SHA-256。只保留最近 20 个，更早的连同标签自动删除。
+
+**在开发机上发布**：提交并推送后运行
+
+```bash
+uv run python scripts/release.py
+```
+
+它依次检查工作区没有未提交的改动，推送当前分支，编译音色（源码没变时跳过），构建控制台，打包并上传，同步声音素材（见下面「声音素材」），然后通过 Tailscale 通知装置（默认 `soundmat-pi`，`--device` 指定其他名字）更新到这个版本，等装置报告新版本已运行后结束。前后约 20–30 秒（第一次同步素材另需一两分钟）。`--no-update` 只发布到 GitHub，不碰装置；`--no-sound` 跳过素材。CI 照常在 GitHub 上跑测试，装置不等它。
+
+**在装置上**，程序目录按版本存放：
+
+```
+/home/soundmat/soundmat/
+├── releases/<短提交号>/    每个版本一个目录，各有自己的 .venv
+└── current -> releases/<短提交号>
+```
+
+更新时主机程序在后台下载发布包、核对 SHA-256、解压到 `releases/<短提交号>/`、用 `uv sync --frozen --no-dev` 建好环境，全部成功后才把 `current` 原子地指向新目录，然后自己退出，由 systemd 按新版本重新启动；演奏只在重启的十几秒里中断。`releases/` 保留当前版本、上一版和最近的另外一个，更早的删除。
+
+**失败时自动回退**：切换前把"待确认的新版本"和"上一版"写进 `/home/soundmat/data/update.json`。systemd 每次启动主机程序前先运行 `/usr/local/bin/soundmat-guard`（来自 `system/update/`，不随版本更新，所以新版本坏了它也能工作）：待确认的新版本已经启动过 3 次仍未确认，就把 `current` 改回上一版。新版本正常运行 60 秒后自己确认，清除待确认标记。
+
+**谁能更新**：控制台不设登录，所以只有从本机或 Tailscale（100.64.0.0/10）访问的人能发起更新和回退；从手机热点或自建热点打开控制台的人只能看到当前版本。只有在 systemd 下、从 `releases/` 里运行时才能更新，开发机上看不到更新按钮。
+
+## 声音素材
+
+声音素材不放进发布包，也不经过 GitHub：体积大、很少变化，而且仓库是公开的。发布命令每次用 rsync 从开发机直接同步到装置的 `/home/soundmat/sound/samples/`，只同步所有编排实际引用到的文件（`soundmat/updater/samples.py` 从编排里读出，当前 14 个、约 326 MB）。开发机的素材库 `SoundMat/sound/` 有 1.3 GB，其余是原始录音（`raw/`）和待整理的素材，装置用不到。没有变化的文件不传，之后的发布这一步只要一两秒；不删除装置上已有的文件，换掉的旧素材留在装置上也不影响。新编排引用了新素材时，正常发布就会带过去。
+
+编排缺少素材时照常运行，看板和编排面板会列出缺了哪些。
 
 ## 树莓派上的目录
 
 | 内容 | 位置 |
 |---|---|
-| 主机程序、编排、音色 | `/home/soundmat/soundmat/` |
+| 主机程序、编排、音色、控制台（按版本） | `/home/soundmat/soundmat/releases/<短提交号>/`，`current` 指向正在用的版本 |
 | 声音素材 | `/home/soundmat/sound/` |
+| 更新状态 | `/home/soundmat/data/update.json` |
 | 设置 | `/home/soundmat/data/settings.json` |
 | 录音 | `/home/soundmat/data/recordings/` |
 | 日志 | systemd journal |
 
-程序目录可以随时被部署覆盖，`data/` 下的内容只由装置自己写入，部署从不覆盖。
+`releases/` 只由更新写入，`data/` 下的内容只由装置自己写入，更新从不碰 `data/` 下的设置和录音。程序目录不在 `sound/` 旁边，所以主机程序的服务用环境变量 `SOUNDMAT_SOUND=/home/soundmat/sound` 和 `--data-dir /home/soundmat/data` 指定这两个位置。
 
 ## 音频参数
 

@@ -72,12 +72,32 @@ class ControlConfig:
 
 
 @dataclass(frozen=True)
+class SystemConfig:
+    service: str = "soundmat.service"           # 主机程序的 systemd 服务名，用来读取自动重启次数
+
+
+@dataclass(frozen=True)
+class NetworkConfig:
+    interface: str = "wlan0"                    # 无线网卡；自建热点开着时在它上面数连上的设备
+    phone_hotspot: str = "phone-hotspot"        # NetworkManager 里手机热点的连接名
+    self_hotspot: str = "soundmat-ap"           # NetworkManager 里自建热点的连接名
+
+
+@dataclass(frozen=True)
+class UpdateConfig:
+    repo: str = "mukimasta/soundmat"            # 发布包所在的 GitHub 仓库
+
+
+@dataclass(frozen=True)
 class Config:
     mat: MatConfig = field(default_factory=MatConfig)
     light: LightConfig = field(default_factory=LightConfig)
     sound: SoundConfig = field(default_factory=SoundConfig)
     synth: SynthConfig = field(default_factory=SynthConfig)
     control: ControlConfig = field(default_factory=ControlConfig)
+    system: SystemConfig = field(default_factory=SystemConfig)
+    network: NetworkConfig = field(default_factory=NetworkConfig)
+    update: UpdateConfig = field(default_factory=UpdateConfig)
 
     def describe(self) -> list[dict[str, str]]:
         """控制台「配置 · 只读」一栏显示的条目。"""
@@ -131,7 +151,10 @@ def load_config(path: Path | str | None = None) -> Config:
     )})
     synth = take("synth", {"host": "host", "port": "port", "synthdefs": "synthdefs"})
     control = take("control", {"host": "host", "port": "port"})
-    unknown = set(raw) - {"mat", "light", "sound", "synth", "control"}
+    system = take("system", {"service": "service"})
+    network = take("network", {k: k for k in ("interface", "phone_hotspot", "self_hotspot")})
+    update = take("update", {"repo": "repo"})
+    unknown = set(raw) - {"mat", "light", "sound", "synth", "control", "system", "network", "update"}
     if unknown:
         raise ValueError(f"配置有未知的段：{', '.join(sorted(unknown))}")
     return Config(
@@ -140,4 +163,7 @@ def load_config(path: Path | str | None = None) -> Config:
         sound=SoundConfig(**sound),
         synth=SynthConfig(**synth),
         control=ControlConfig(**control),
+        system=SystemConfig(**system),
+        network=NetworkConfig(**network),
+        update=UpdateConfig(**update),
     )

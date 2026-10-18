@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { hello, mat, playingState } from '../test/fixtures';
+import { LOFI_METERS, hello, mat, playingState } from '../test/fixtures';
 import { setup } from '../test/render';
 
 function connect(client: ReturnType<typeof setup>['client']) {
@@ -78,13 +78,23 @@ test('jam status line shows section progress and Lo-Fi reading', () => {
     client.handle(hello(playingState()));
     client.handle({ type: 'patch', changes: [
       ['status.current.arrangement', 'lofi_1'],
+      ['status.current.meters', LOFI_METERS],
       ['status.current.modeStatus', { text: '第 3 段 C · 0:44 / 2:08', reading: 'Lo-Fi 45%', transport: 'playing' }],
     ] });
+    client.handle({ type: 'levels', output: [-12, -12], meters: [-20, -9, -120, -120, -120, -14, -120, -120] });
   });
   expect(screen.getByText('第 3 段 C · 0:44 / 2:08')).toBeInTheDocument();
   expect(screen.getByText('Lo-Fi 45%')).toBeInTheDocument();
   expect(screen.getByText('Jam · 合奏 · 120 BPM · 演奏中')).toBeInTheDocument();
-  expect(document.querySelector('.meters')!.textContent).toContain('暗电钢');
+  const meters = document.querySelector('.meters')!;
+  expect(meters.textContent).toContain('暗电钢');
+  expect(meters.textContent).not.toContain('控制');               // 控制环不显示电平条
+  // 背景（和声、鼓）与石头触发的层分成两组，名字各只写一次
+  const groups = meters.querySelectorAll('.meter-group');
+  expect(groups).toHaveLength(2);
+  expect(groups[0].textContent).toBe('和声鼓');
+  expect(meters.querySelectorAll('.meter')).toHaveLength(8);
+  expect(meters.getAttribute('aria-label')).toContain('正在发声：和声、鼓、暗电钢');
   act(() => client.handle({ type: 'patch', changes: [
     ['status.current.modeStatus', { text: '曲终 · 清空中间两环，再压一次重新开始', reading: '', transport: 'ended' }],
   ] }));

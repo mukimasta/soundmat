@@ -47,3 +47,5 @@ jobs:
           scsynth -u 57110 -i 0 -o 2 &
           sleep 3
       - run: uv run pytest -q tests/test_scsynth.py -rs
+        env:
+          SOUNDMAT_LIVE_SCSYNTH: "1"

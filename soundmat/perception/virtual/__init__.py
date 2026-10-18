@@ -18,8 +18,10 @@ from ..zones import NUM_ZONES
 STONE_PRESSURE = 0.5
 
 
+HZ = 60.0  # 虚拟垫子产生压力图的频率，与控制器的传感帧率相当
+
 class VirtualMat:
-    def __init__(self, on_pressure: Callable[[PressureMap], None], frame_hz: float = 60.0):
+    def __init__(self, on_pressure: Callable[[PressureMap], None], frame_hz: float = HZ):
         self._on_pressure = on_pressure
         self._period = 1.0 / frame_hz
         self._lock = threading.Lock()

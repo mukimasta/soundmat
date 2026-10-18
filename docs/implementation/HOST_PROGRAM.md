@@ -7,12 +7,11 @@
 ```bash
 uv sync                         # 安装 Python 3.12 与依赖
 uv run python scripts/compile_instruments.py   # 编译音色（需要 SuperCollider）
-scripts/scsynth-dev.sh &        # 开发机上启动合成器服务
-uv run soundmat --virtual       # 用虚拟垫子运行，控制台在 http://localhost:8000
+uv run soundmat --virtual       # 用虚拟垫子运行；本机没有合成器服务时自己启动 scsynth
 uv run pytest                   # 测试
 ```
 
-主机程序默认连接本机的 scsynth（见 `SYNTH.md`），`--no-synth` 改用只记录指令、不发声的声音引擎。不带 `--virtual` 时连接控制器：`--port-serial` 指定串口，默认 `auto` 自动选择（规则见下文「设备连接」）。`--virtual` 用虚拟垫子代替控制器；`--config` 指定其他配置文件；`--data-dir` 指定本机数据目录（设置文件 `settings.json` 和录音，默认是程序目录下的 `data/`，树莓派上是 `/home/soundmat/data`）；`--host`、`--port` 覆盖控制接口的监听地址。控制台需要先在 `console/` 下构建（`npm ci && npm run build`），构建产物由控制接口直接提供；开发控制台时用 `npm run dev`，Vite 把 `/api` 和 `/ws` 转发到 8000 端口。
+主机程序默认连接本机的 scsynth，开发机上没有在运行的就自己启动一个、退出时一起关掉（见 `SYNTH.md`「运行 scsynth」）；启动后打印控制台的网址：本机 `http://localhost:<端口>`，监听所有网卡时再加局域网名字（`<主机名>.local`）和出口地址。`--no-synth` 改用只记录指令、不发声的声音引擎。不带 `--virtual` 时连接控制器：`--port-serial` 指定串口，默认 `auto` 自动选择（规则见下文「设备连接」）。`--virtual` 用虚拟垫子代替控制器；`--config` 指定其他配置文件；`--data-dir` 指定本机数据目录（设置文件 `settings.json` 和录音，默认是程序目录下的 `data/`，树莓派上是 `/home/soundmat/data`）；`--host`、`--port` 覆盖控制接口的监听地址。控制台需要先在 `console/` 下构建（`npm ci && npm run build`），构建产物由控制接口直接提供；开发控制台时用 `npm run dev`，Vite 把 `/api` 和 `/ws` 转发到 8000 端口。
 
 ## 模块与文件
 
@@ -41,6 +40,7 @@ uv run pytest                   # 测试
 | 录制 | `soundmat/recorder/` | 空间检查、倒计时与打板、合成器服务内部录音、会话数据、录制信息、打包下载 |
 | 系统监测 | `soundmat/monitor/` | 每秒采集音频链路、控制器、机器、网络；状态指示与原因；最近的警告和错误（`log.py`） |
 | 状态中心 | `soundmat/store/` | 状态树、按路径修改、变化通知；设置的默认值、校验与原子写入（`settings.py`） |
+| 软件更新 | `soundmat/updater/` | 发布包的格式（`package.py`）；从 GitHub 下载、校验、安装成版本目录、切换 `current`、重启与确认；发布命令是 `scripts/release.py`，启动保护是 `system/update/soundmat-guard`，见 `DEPLOYMENT.md`「发布与更新」 |
 | 控制接口 | `soundmat/control/` | FastAPI：WebSocket 推送、命令与设置、提供控制台 |
 | 配置 | `soundmat/config.py` + `config/soundmat.toml` | 启动时读取，未知键报错 |
 | 线程间容器 | `soundmat/exchange.py` | `Latest`、`EventQueue`、`EventHub` |
@@ -56,12 +56,14 @@ uv run pytest                   # 测试
 1. **虚拟垫子**（`virtual-mat`）：每秒 60 次产生压力图，在本线程里调用 `Perception.feed` 完成垫面解读，发布快照和事件。真机上由设备连接的读取线程调用同一个入口。
 2. **声音化**（`sonification`）：`BeatClock` 每秒 60 拍（配置 `sound.tick_hz`）。每拍取走垫面事件、读取最新快照、调用所有模式实例（切换期间新旧两个），把声音意图交给声音引擎，再处理合成器服务的通知、释放淡出完毕的实例。声音引擎不是线程安全的，只在这个线程里调用；切换编排的请求从其他线程放进队列，在下一拍开始时执行。某一拍的计算超过节拍间隔时不补拍，直接跳到当前时刻，并计入 `BeatClock.overruns`。
 3. **设备连接**（`device`）：真机上读串口，每收到一帧 S 帧就在本线程里完成垫面信号和垫面解读（代替虚拟垫子线程）。灯光帧由灯光线程直接写串口，写入加锁。
-4. **灯光**（`light`）：每秒 60 次（配置 `light.refresh_hz`）读取最新的灯光意图和系统提示层，合成后写给设备连接，并以 30 次/秒更新控制台的灯环预览。
-5. **系统监测**（`monitor`）：每秒采集一次并写入状态中心，较慢的探针（journal、nmcli、tailscale）每 10 秒一次。
+4. **灯光**（`light`）：声音化交出新的灯光意图时立刻合成一帧，没有新意图时按配置 `light.refresh_hz`（60 次/秒）继续刷新，两帧之间至少隔半个周期；合成后写给设备连接，合成结果有变化时同时更新控制台的灯环预览。两个 60 Hz 时钟如果各走各的，会时而把同一份意图合成两次、时而漏掉一份（实测每秒 47 份新意图只有 39 份到达预览），所以由新意图唤醒。
+5. **系统监测**（`monitor`）：每秒采集一次并写入状态中心，较慢的探针（journal、nmcli、tailscale、systemctl、git）每 10 秒一次。
 6. **会话数据写入**（`session-writer`）：录制期间把会话数据逐行写进文件，不阻塞节拍线程。
 7. **主线程**：uvicorn 与控制接口。
 
-状态中心的订阅回调在修改者的线程里执行；控制接口在回调里只用 `loop.call_soon_threadsafe` 把变化交给事件循环，再由每个 WebSocket 连接自己的推送任务发出。
+状态中心的订阅回调在修改者的线程里执行；控制接口在回调里只用 `loop.call_soon_threadsafe` 把变化交给事件循环，再由每个 WebSocket 连接自己的推送任务发出。`Latest` 也可以订阅：垫面快照和灯环预览等数据流有新值时同样唤醒推送任务，所以推送跟着数据走，不按固定间隔轮询；状态变化和垫面仍各自限制在 30 次/秒以内。
+
+各条链路的实测帧率用 `rates.py` 的 `RateMeter` 统计（最近 1 秒的次数）：垫面解读、声音化节拍、灯光引擎、写给控制器的灯光帧，以及每个 WebSocket 连接实际推送的垫面和灯环。运行管理的 `runtime()` 把它们和期望值、累计计数一起交给系统监测。
 
 ## 配置
 
@@ -99,7 +101,7 @@ uv run pytest                   # 测试
 
 ## 设备连接与垫面信号
 
-串口协议、选口规则和打开方式沿用第一版：921600 波特；Mac 上只看 `/dev/cu.*`，Linux 上看 `ttyUSB*`、`ttyACM*`、`/dev/serial/by-id/*` 并排除板载 UART；打开时 DTR、RTS 置低；收到第一帧 `S:` 才算控制器就绪并开始发灯光帧，就绪后的第一帧灯光发两次。打不开或没有找到串口时每 2 秒重试；连着但 5 秒没有 S 帧时关掉重开。校验失败的帧丢弃并计数。链路状态每 0.5 秒写入 `status.mat`。
+串口协议、选口规则和打开方式沿用第一版：921600 波特；Mac 上只看 `/dev/cu.*`，Linux 上看 `ttyUSB*`、`ttyACM*`、`/dev/serial/by-id/*` 并排除板载 UART；打开时 DTR、RTS 置低；收到第一帧 `S:` 才算控制器就绪并开始发灯光帧，就绪后的第一帧灯光发两次。打不开或没有找到串口时每 2 秒重试；打开后最多等 15 秒收到第一帧（打开串口可能让 ESP32 复位，固件开机约 5 秒的灯效期间不发 S 帧；只等 5 秒的话，每次重开都会在它开完机前再次复位它，在 Pi 3B 上实测会一直重连），收到过之后 5 秒没有 S 帧才关掉重开。校验失败的帧丢弃并计数。链路状态每 0.5 秒写入 `status.mat`。
 
 垫面信号把 256 个接线读数按预先算好的索引表取成 224 个区域，再做校准（无效读数 −1 当 0、可选反相、除以满量程）。索引表由第一版的映射规则逐步照搬生成：整体先做扇区镜像，外环直接取镜像后的扇区，内环从镜像后的奇数接线扇区读回，最后整体旋转 `sector_offset` 个扇区。需要注意的是，内环在第一版里经过两次镜像，结果其实没有被镜像：内环第 j 个有电极的接线扇区 2k 落在逻辑扇区 2k+1，而外环是反向的。新版照搬了这一行为，是否符合实物需要在真机上核对（见 `TODO.md`）。
 
@@ -116,11 +118,14 @@ uv run pytest                   # 测试
 | 卡顿次数 | 最近一小时 systemd journal 里 jackd 的 xrun 记录数 |
 | 合成器服务 | `/status.reply`：是否在线、音色是否加载、采样率、平均与峰值负载（另保留最近 60 秒的负载曲线） |
 | 机器 | `/sys/class/thermal`、`vcgencmd get_throttled`、`/proc/meminfo`、数据目录所在磁盘、`/proc/uptime`、`/proc/device-tree/model` |
-| 网络 | `nmcli` 当前连接、出口地址、`tailscale status --json` |
+| 网络 | `nmcli` 当前连接、出口地址、`tailscale status --json`；连接类型按配置 `[network]` 的连接名区分；自建热点开着时，用 `ip -4 neigh show dev wlan0` 数仍有效的邻居条目（约数：离开的设备几分钟后才消失） |
+| 主机程序 | 运行时间；自动重启次数来自 `systemctl show -p NRestarts`，服务名是配置 `system.service`，只在 systemd 启动时（有 `INVOCATION_ID` 环境变量）读取；版本先读程序目录的 `VERSION` 文件（部署时写入），没有时用 `git rev-parse` 并标出未提交的改动 |
+| 帧率与计时 | 运行管理的 `runtime()`：各链路 `RateMeter`、`BeatClock` 的节拍延迟（每拍比计划晚开始多久，最近 1 分钟的最大值）、卡住次数（延迟超过 `sound.late_tolerance`）和小幅超时次数、声音引擎的迟到、让位、放弃；监测保留最近 1 分钟的样本，算出增加量。小幅超时只作参考：在 Mac 上实测每分钟几十次，来自线程等待多睡的几毫秒和 Python 全局锁的轮换（默认 5 ms），节拍率仍是 60、没有迟到；声音都带时间戳并有前瞻和输出延迟，几毫秒的延迟听不出来 |
+| 录音空间 | 录音保存位置所在磁盘的可用空间，除以录制的数据速率（当前声道数、是否录分轨） |
 
 状态指示的规则（按顺序，第一条成立的即为结果）：
 
-1. 声音：合成器服务没有响应 → 异常；没有连接合成器服务（`--no-synth`）→ 未知；音色没有加载 → 异常；Linux 上 JACK 没有运行 → 异常；期望 USB 而实际输出设备不是 USB 声卡、或找不到 USB 声卡 → 异常；采样率与期望不同 → 需要注意；当前编排缺少素材 → 需要注意；负载峰值超过 85% → 需要注意；最近一小时有卡顿 → 需要注意；否则正常。
+1. 声音：合成器服务没有响应 → 异常；没有连接合成器服务（`--no-synth`）→ 未知；音色没有加载 → 异常；Linux 上 JACK 没有运行 → 异常；期望 USB 而实际输出设备不是 USB 声卡、或找不到 USB 声卡 → 异常；采样率与期望不同 → 需要注意；当前编排缺少素材 → 需要注意；负载峰值超过 85% → 需要注意；最近一小时有卡顿 → 需要注意；最近 1 分钟有 3 次以上节拍晚到超过迟到容忍度（50 ms）或有定时事件迟到 → 需要注意；主机程序运行不到一小时且被自动重启过、而这次启动不是软件更新安排的 → 需要注意（说明它在一小时内重启过，可能在反复出错；更新切换版本时在 `update.json` 里记下 `plannedAt`，之后两分钟内的启动算作有意的重启）；否则正常。
 2. 垫子：使用虚拟垫子 → 正常；控制器未连接 → 异常（原因来自设备连接，例如"没有找到控制器的 USB 串口"）；实测帧率低于 20 → 需要注意。
 3. 网络：没有任何出口地址 → 需要注意（装置离线也能演奏，所以不算异常）。
 
@@ -136,7 +141,7 @@ uv run pytest                   # 测试
 |---|---|
 | `master.wav` | 总输出（硬件输出总线 0…N−1，经过系统音量和限幅），24 位整数 WAV |
 | `stems/<总线>.wav` | 各环总线、分组总线和效果返回 `fx`，在模式总处理之前、乘过交叉淡化增益；可能超过 0 dBFS，所以是 32 位浮点 WAV |
-| `session.jsonl` | 每行一条，带系统时间 `t`：`start`、`pressure`（最多 30 次/秒，压力 × 1000 和有石头的区域）、`event`（放下、拿起）、`sound`（持续声部与全局参数，变化时）、`events`（交出的定时事件）、`light`（灯环颜色，最多 10 次/秒）、`slate`、`stop` |
+| `session.jsonl` | 每行一条，带系统时间 `t`：`start`、`pressure`（最多 30 次/秒，压力 × 1000 和有石头的区域）、`event`（放下、拿起）、`sound`（持续声部与全局参数，变化时）、`events`（交出的定时事件）、`light`（灯环颜色，与控制台预览相同的十六进制字符串，每颗灯 6 个字符 rrggbb；最多 10 次/秒）、`slate`、`stop` |
 | `info.json` | `startedAt`（带时区的开始时间）、`startSystemTime`、`slateOffsetSeconds`（打板在录音中的位置，固定 3 秒）、`slateSystemTime`、编排、声道数、采样率、格式、开始时的设置、文件清单、`duration`、`endedAt`、`stopReason` |
 
 没有连接合成器服务（`--no-synth`）时也能录制，只产生会话数据和录制信息，`audio` 为 false，不建 `stems/` 目录；文件清单只列实际开始录制的文件。下载接口把整个文件夹边打包边输出为不压缩的 zip，不需要临时文件。

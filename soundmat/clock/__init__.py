@@ -9,8 +9,11 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 from typing import Callable
+
+from ..rates import RateMeter
 
 log = logging.getLogger("soundmat.clock")
 
@@ -31,17 +34,47 @@ class Beat:
         return self.t, self.t + lookahead
 
 
-class BeatClock:
-    """在独立线程里按固定频率调用回调。回调超时不会让节拍堆积：落后时跳到当前时刻。"""
+LAG_WINDOW = 60.0  # 秒：最近多长时间内的最大节拍延迟
 
-    def __init__(self, hz: float, on_beat: Callable[[Beat], None], name: str = "beat"):
+
+class BeatClock:
+    """在独立线程里按固定频率调用回调。回调超时不会让节拍堆积：落后时跳到当前时刻。
+
+    除了实际节拍率，还记录每一拍比计划晚开始了多久（节拍延迟）。几毫秒的延迟无害：声音都带时间戳、
+    有前瞻和输出延迟兜着；只有延迟超过 ``stall_after`` 秒（配置的迟到容忍度）才可能让定时声音迟到，
+    这样的一拍计为一次「卡住」。``overruns`` 只是参考：任何一拍晚到挤占了下一拍的时间都会计入，
+    在开发机上主要来自线程调度和 Python 全局锁的轮换，并不影响声音。
+    """
+
+    def __init__(self, hz: float, on_beat: Callable[[Beat], None], name: str = "beat",
+                 stall_after: float = 0.05):
         self.period = 1.0 / hz
+        self.stall_after = stall_after
         self._on_beat = on_beat
         self._name = name
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
-        self.overruns = 0                  # 计算超过一个节拍间隔的次数
+        self.overruns = 0                  # 晚到挤占了下一拍的次数（参考）
+        self.stalls = 0                    # 节拍延迟超过 stall_after 的次数
+        self._lags: deque[tuple[float, float]] = deque()   # (时刻, 延迟)，只记超过一个节拍间隔的
+        self._lock = threading.Lock()
+        self.rate = RateMeter()            # 实际节拍率
         self.index = 0
+
+    def max_lag(self, now: float | None = None) -> float:
+        """最近 1 分钟里最大的节拍延迟（秒）；都在一个节拍间隔以内时为 0。"""
+        now = system_time() if now is None else now
+        with self._lock:
+            while self._lags and now - self._lags[0][0] > LAG_WINDOW:
+                self._lags.popleft()
+            return max((lag for _, lag in self._lags), default=0.0)
+
+    def _note_lag(self, now: float, lag: float) -> None:
+        if lag > self.period:
+            with self._lock:
+                self._lags.append((now, lag))
+        if lag > self.stall_after:
+            self.stalls += 1
 
     def start(self) -> None:
         self._stop.clear()
@@ -57,6 +90,8 @@ class BeatClock:
         next_t = system_time()
         while not self._stop.is_set():
             now = system_time()
+            self._note_lag(now, now - next_t)
+            self.rate.tick(now)
             try:
                 self._on_beat(Beat(self.index, now, self.period))
             except Exception:  # 节拍线程不能因为一次异常停下
@@ -67,5 +102,8 @@ class BeatClock:
             if delay > 0:
                 self._stop.wait(delay)
             else:
+                # 落后了：先记下比计划晚了多少（这一拍算得太久时，延迟就在这里体现），再跳到当前时刻
                 self.overruns += 1
-                next_t = system_time()
+                now = system_time()
+                self._note_lag(now, now - next_t)
+                next_t = now

@@ -7,15 +7,16 @@ const chevron = (
     strokeLinecap="round" strokeLinejoin="round"><path d="M9.5 6l6 6-6 6" /></svg>
 );
 
-/** 菜单：已录制与设置。 */
+/** 菜单：已录制、设置与软件更新。 */
 export function MenuSheet({ onClose, onOpen, recordingsText }: {
   onClose: () => void;
-  onOpen: (sheet: 'recs' | 'set') => void;
+  onOpen: (sheet: 'recs' | 'set' | 'upd') => void;
   recordingsText?: string;
 }) {
   const s = useConsole();
   const host = getPath<string>(s.state, 'status.machine.host');
   const model = getPath<string>(s.state, 'status.machine.model');
+  const version = getPath<string>(s.state, 'status.program.version.commit');
   return (
     <Sheet title="菜单" onClose={onClose}>
       <div className="menu-list">
@@ -37,6 +38,15 @@ export function MenuSheet({ onClose, onOpen, recordingsText }: {
             <path d="M4 7h10 M18 7h2 M4 17h4 M12 17h8" /><circle cx="16" cy="7" r="2.2" /><circle cx="10" cy="17" r="2.2" />
           </svg>
           <span className="grow">设置</span>
+          {chevron}
+        </button>
+        <div className="sep" />
+        <button type="button" onClick={() => onOpen('upd')}>
+          <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 4v10 M7.5 9.5L12 14l4.5-4.5 M5 19h14" />
+          </svg>
+          <span className="grow">软件更新</span>
+          <span className="mono-sub">{version ?? ''}</span>
           {chevron}
         </button>
       </div>

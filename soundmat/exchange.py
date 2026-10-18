@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import threading
 from collections import deque
-from typing import Generic, TypeVar
+from typing import Callable, Generic, TypeVar
 
 T = TypeVar("T")
 
@@ -18,11 +18,26 @@ class Latest(Generic[T]):
         self._lock = threading.Lock()
         self._value = initial
         self._version = 0
+        self._listeners: list[Callable[[], None]] = []
 
     def set(self, value: T) -> None:
         with self._lock:
             self._value = value
             self._version += 1
+            listeners = list(self._listeners)
+        for fn in listeners:
+            fn()
+
+    def subscribe(self, fn: Callable[[], None]) -> Callable[[], None]:
+        """有新值时在写入方的线程里调用 ``fn()``（例如唤醒控制接口的推送）。返回取消订阅的函数。"""
+        with self._lock:
+            self._listeners.append(fn)
+
+        def unsubscribe() -> None:
+            with self._lock:
+                if fn in self._listeners:
+                    self._listeners.remove(fn)
+        return unsubscribe
 
     def get(self) -> T | None:
         with self._lock:

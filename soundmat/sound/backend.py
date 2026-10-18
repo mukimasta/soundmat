@@ -50,6 +50,7 @@ class Backend(Protocol):
     def slate(self, at: float) -> None: ...
 
     def poll(self, now: float) -> BackendEvents: ...
+    def levels(self, instance: str | None, meters: Sequence[Sequence[str]], now: float | None = None) -> dict | None: ...
     def flush(self) -> None: ...
 
 
@@ -68,12 +69,17 @@ class RecordingBackend:
     - 被强制释放的声部立即结束，不再通知。
     """
 
+    SIM_LEVEL = -18.0          # 模拟电平：有声部在响的总线显示为这个值（dBFS）
+    MAX_COMMANDS = 50000       # 长时间运行（--no-synth 开发）时只保留最近的指令
+
     def __init__(self, oneshot_length: float = 2.0):
         self.online = True
         self.oneshot_length = oneshot_length
         self.commands: list[Command] = []
         self._ends: list[tuple[float, int]] = []
         self._alive: set[int] = set()
+        self._where: dict[int, tuple[str, str]] = {}      # 节点 → (模式实例, 总线)
+        self._channels: dict[str, int] = {}
         self._restart_pending = False
 
     # 测试辅助 ----------------------------------------------------------
@@ -94,9 +100,12 @@ class RecordingBackend:
 
     def _rec(self, kind: str, at: float, **args) -> None:
         self.commands.append(Command(kind, at, args))
+        if len(self.commands) > self.MAX_COMMANDS:
+            del self.commands[: len(self.commands) - self.MAX_COMMANDS]
 
     def create_mix(self, instance, buses, channels, at, fx=None):
         self._rec("create_mix", at, instance=instance, buses=list(buses), channels=channels, fx=fx)
+        self._channels[instance] = channels
 
     def set_mix_gain(self, instance, gain, fade, at):
         self._rec("set_mix_gain", at, instance=instance, gain=gain, fade=fade)
@@ -112,6 +121,7 @@ class RecordingBackend:
                   params=dict(params), gains=list(gains.mono), stereo=(list(gains.left), list(gains.right)),
                   fade_in=fade_in, oneshot=oneshot)
         self._alive.add(node)
+        self._where[node] = (instance, bus)
         if oneshot:
             heapq.heappush(self._ends, (at + self.oneshot_length, node))
 
@@ -126,6 +136,7 @@ class RecordingBackend:
     def free_voice(self, node, at):
         self._rec("free_voice", at, node=node)
         self._alive.discard(node)
+        self._where.pop(node, None)
 
     def load_asset(self, ref, at):
         self._rec("load_asset", at, ref=ref)
@@ -165,5 +176,13 @@ class RecordingBackend:
             _, node = heapq.heappop(self._ends)
             if node in self._alive:
                 self._alive.discard(node)
+                self._where.pop(node, None)
                 ev.ended.append(node)
         return ev
+
+    def levels(self, instance, meters, now=None):
+        """模拟电平：一根条的总线上有声部在响就是 ``SIM_LEVEL``，否则静音（-120）。"""
+        sounding = {bus for node, (inst, bus) in self._where.items() if inst == instance and node in self._alive}
+        values = [self.SIM_LEVEL if any(b in sounding for b in buses) else -120.0 for buses in meters]
+        loud = self.SIM_LEVEL if sounding else -120.0
+        return {"output": [loud] * self._channels.get(instance, 2), "meters": values}

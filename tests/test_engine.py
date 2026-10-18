@@ -205,3 +205,23 @@ def test_voice_with_start_time_begins_exactly_then():
     be.clear()
     eng.apply("A", SoundIntent((v("bar6", start=0.5),)), now=1.0)   # 已经过去：立即
     assert be.of_kind("start_voice")[0].at == pytest.approx(1.0 + LAT)
+
+
+def test_recording_backend_simulates_meter_levels():
+    """不发声的引擎也给出电平：总线上有声部在响就是模拟电平，方便在开发机上看电平条。"""
+    from soundmat.sound.backend import RecordingBackend
+
+    be = RecordingBackend()
+    be.create_mix("A", ["ring2", "harmony"], 2, 0.0)
+    be.start_voice(1000, "A", "src", "harmony", {}, _Gains(), 0.0, 0.0, oneshot=False)
+    lv = be.levels("A", [["harmony"], ["ring2"]])
+    assert lv["meters"] == [be.SIM_LEVEL, -120.0]
+    assert lv["output"] == [be.SIM_LEVEL] * 2
+    be.free_voice(1000, 0.1)
+    assert be.levels("A", [["harmony"]])["meters"] == [-120.0]
+
+
+class _Gains:
+    mono = (1.0, 1.0)
+    left = (1.0, 0.0)
+    right = (0.0, 1.0)

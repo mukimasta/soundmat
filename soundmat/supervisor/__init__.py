@@ -7,19 +7,22 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from ..clock import BeatClock, system_time
 from ..config import ROOT, Config
-from ..control import ControlContext
+from ..control import MAT_PUSH_HZ, ControlContext
 from ..device import DeviceLink, RawFrame
 from ..light import LightEngine
 from ..exchange import Latest
 from ..monitor import Monitor, Probes
+from ..monitor import probes
 from ..monitor.log import EventLog
 from ..perception import Perception
 from ..perception.signal import Signal
 from ..recorder import Recorder
 from ..perception.virtual import VirtualMat
+from ..perception.virtual import HZ as VIRTUAL_HZ
 from ..sonification import ModeFactory, ModeInstance, Sonification
 from ..sonification.ambient import AmbientMode
 from ..sonification.jam import JamMode
@@ -33,8 +36,18 @@ from ..sound.scsynth import ScsynthBackend
 from ..sound.spatial import SpeakerLayout
 from ..store import Store
 from ..store.settings import Settings
+from ..updater import Updater, detect_layout
 
 log = logging.getLogger("soundmat")
+
+
+def _exit_for_restart() -> None:
+    """更新切换版本后：让主机程序正常退出，systemd（Restart=always）按 current 指向的新版本重新启动。"""
+    import os
+    import signal
+    import threading
+
+    threading.Timer(0.5, lambda: os.kill(os.getpid(), signal.SIGTERM)).start()
 
 MODES: dict[str, ModeFactory] = {"ambient": AmbientMode, "jam": JamMode}
 
@@ -52,6 +65,7 @@ class Options:
     device: DeviceLink | None = None      # 测试时注入模拟控制器
     arrangements_dir: Path = ARRANGEMENTS_DIR
     seed: int | None = None
+    restart: Callable[[], None] | None = None   # 更新后重新启动主机程序；默认让进程退出、由 systemd 拉起
 
 
 class Supervisor:
@@ -61,7 +75,7 @@ class Supervisor:
         self.store = Store({
             "status": {
                 "current": {"virtual": opts.virtual, "arrangement": None, "mode": None,
-                            "modeStatus": None, "switching": None},
+                            "modeStatus": None, "switching": None, "meters": []},
                 "audio": {"assets": {"missing": []}},
                 "log": [],
             },
@@ -97,7 +111,8 @@ class Supervisor:
         )
         self.sonification.before_activate.append(self._acquire_assets)
         self.sonification.after_retire.append(lambda inst, now: self.assets.release(inst.id, now))
-        self.clock = BeatClock(cfg.sound.tick_hz, self.sonification.on_beat, name="sonification")
+        self.clock = BeatClock(cfg.sound.tick_hz, self.sonification.on_beat, name="sonification",
+                               stall_after=cfg.sound.late_tolerance)
 
         self.signal = Signal(cfg.mat)
         self.device: DeviceLink | None = None
@@ -130,9 +145,16 @@ class Supervisor:
             cfg, self.store, self.events, opts.data_dir,
             synth_status=self.backend.status if isinstance(self.backend, ScsynthBackend) else (lambda: None),
             layout_channels=lambda: self.engine.layout.channels, probes_=opts.probes,
+            runtime=self.runtime,
         )
 
+        version = probes.version(ROOT)
+        self.updater = Updater(self.store, self.events, cfg.update.repo, opts.data_dir,
+                               version["commit"] if version else None, layout=detect_layout(),
+                               restart=opts.restart or _exit_for_restart)
+
         self.control = ControlContext(
+            updater=self.updater,
             config=cfg, store=self.store, mat=self.perception.snapshot, virtual=self.virtual,
             play=self.play, settings=self.settings, test_tone=self.test_tone, recorder=self.recorder,
             streams={"leds": self.lights.preview, "levels": self.levels},
@@ -196,9 +218,11 @@ class Supervisor:
         getattr(self.events, level)(text)
 
     def _publish_link_status(self, now: float) -> None:
-        if now >= self._next_levels and isinstance(self.backend, ScsynthBackend):
+        if now >= self._next_levels:
             self._next_levels = now + 0.1
-            lv = self.backend.levels(self.engine.layout.azimuths, now)
+            active = self.sonification.active
+            meters = [m.buses for m in active.meters] if active else []
+            lv = self.backend.levels(active.id if active else None, meters, now)
             if lv is not None:
                 self.levels.set(lv)
         if now < self._next_link_status:
@@ -211,6 +235,34 @@ class Supervisor:
             st = {"connected": None, "port": None, "fps": None, "checksumErrors": None,
                   "problem": None, "source": "virtual"}
         self.store.update({"status.mat": st})
+
+    def runtime(self) -> dict:
+        """给系统监测的运行时数据：各链路的实测帧率与期望值、累计计数、录音的数据速率。
+
+        期望值为 None 表示没有固定目标（例如传感帧率由控制器决定）；实测为 None 表示这条链路不存在
+        （虚拟垫子没有控制器）或暂时没有数据（没有控制台连着）。垫面和灯环预览只在有变化时推送，
+        所以它们的期望值是上限。
+        """
+        cfg = self.config
+        dev = self.device
+        ctl = self.control
+        rates = {
+            "sensing": {"actual": dev.fps() if dev else None, "expected": None},
+            "perception": {"actual": self.perception.rate.rate(),
+                           "expected": VIRTUAL_HZ if self.virtual else None},
+            "beat": {"actual": self.clock.rate.rate(), "expected": cfg.sound.tick_hz},
+            "light": {"actual": self.lights.rate.rate(), "expected": cfg.light.refresh_hz},
+            "ledWrites": {"actual": dev.led_rate.rate() if dev else None,
+                          "expected": cfg.light.refresh_hz if dev else None},
+            "pushMat": {"actual": ctl.push_rate("mat"), "expected": MAT_PUSH_HZ},
+            "pushLeds": {"actual": ctl.push_rate("leds"), "expected": cfg.light.refresh_hz},
+        }
+        st = self.engine.stats
+        counters = {"overruns": self.clock.overruns, "stalls": self.clock.stalls, "late": st.late,
+                    "yields": st.yields, "rejected": st.rejected}
+        stems = len(self.backend.recordable_stems())
+        return {"rates": rates, "counters": counters, "maxLagMs": round(self.clock.max_lag() * 1000, 1),
+                "recordBytesPerSecond": self.recorder.bytes_per_second(stems), "recordRoot": self.recorder.root}
 
     def _current_arrangement(self) -> dict:
         a = self.sonification.active
@@ -268,6 +320,8 @@ class Supervisor:
                 pass
         self.clock.start()
         self.lights.start()
+        if self.updater.enabled:
+            self.updater.start_confirm_timer()
         if self.options.monitor:
             self.monitor.start()
 

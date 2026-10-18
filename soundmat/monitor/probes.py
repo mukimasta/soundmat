@@ -74,11 +74,28 @@ def jack() -> dict | None:
     return parse_jack_args(args)
 
 
+def _split_short_options(args: list[str]) -> list[str]:
+    """把连写的短选项拆开：``-dalsa`` → ``-d alsa``，``-r44100`` → ``-r 44100``（jackd 两种写法都接受）。"""
+    out = []
+    for a in args:
+        if len(a) > 2 and a[0] == "-" and a[1] != "-" and a[1].isalpha():
+            out += [a[:2], a[2:]]
+        else:
+            out.append(a)
+    return out
+
+
 def parse_jack_args(args: list[str]) -> dict:
+    """从 jackd 的命令行读出驱动、设备、采样率和缓冲；``-d`` 之前是服务器选项，之后是驱动选项。"""
     info: dict = {"running": True, "device": None, "rate": None, "period": None, "periods": None}
-    driver_args = args[args.index("-d") + 2:] if "-d" in args and args.index("-d") + 1 < len(args) else []
-    for i, a in enumerate(driver_args):
-        nxt = driver_args[i + 1] if i + 1 < len(driver_args) else None
+    args = _split_short_options(args)
+    if "-d" not in args:
+        return info
+    i = args.index("-d")
+    driver = args[i + 1] if i + 1 < len(args) else None
+    driver_args = args[i + 2:]
+    for j, a in enumerate(driver_args):
+        nxt = driver_args[j + 1] if j + 1 < len(driver_args) else None
         if a in ("-d", "--device", "-P", "--playback") and nxt:
             info["device"] = nxt
         elif a in ("-r", "--rate") and nxt:
@@ -87,7 +104,7 @@ def parse_jack_args(args: list[str]) -> dict:
             info["period"] = int(nxt)
         elif a in ("-n", "--nperiods") and nxt:
             info["periods"] = int(nxt)
-    if args[args.index("-d") + 1:args.index("-d") + 2] == ["dummy"]:
+    if driver == "dummy":
         info["device"] = "dummy"
     return info
 
@@ -190,3 +207,59 @@ def local_name(host: str | None) -> str | None:
 
 def program_uptime(started: float) -> int:
     return int(time.time() - started)
+
+
+def systemd_restarts(service: str) -> int | None:
+    """主机程序被 systemd 自动重启的次数（NRestarts）。不在 systemd 下运行时为 None。"""
+    if not os.environ.get("INVOCATION_ID"):      # systemd 启动的进程才有这个环境变量
+        return None
+    out = _run(["systemctl", "show", "-p", "NRestarts", "--value", service])
+    if out is None or not out.strip().isdigit():
+        return None
+    return int(out.strip())
+
+
+def version(root: Path) -> dict | None:
+    """当前运行的程序版本。先读部署时写入的 VERSION 文件（第一行提交号，第二行部署时间），
+    没有时用 git 读当前提交（有未提交的改动时标出）。都没有时为 None。"""
+    text = _read(str(root / "VERSION"))
+    if text:
+        lines = text.splitlines()
+        return {"commit": lines[0].strip(), "deployedAt": lines[1].strip() if len(lines) > 1 else None,
+                "branch": lines[2].strip() if len(lines) > 2 else None, "dirty": None, "source": "deploy"}
+    if not (root / ".git").exists():
+        return None
+    commit = _run(["git", "-C", str(root), "rev-parse", "--short", "HEAD"])
+    if not commit:
+        return None
+    status = _run(["git", "-C", str(root), "status", "--porcelain", "--untracked-files=no"])
+    branch = _run(["git", "-C", str(root), "rev-parse", "--abbrev-ref", "HEAD"])
+    return {"commit": commit.strip(), "deployedAt": None, "branch": branch.strip() if branch else None,
+            "dirty": bool(status and status.strip()), "source": "git"}
+
+
+def ap_clients(interface: str) -> int | None:
+    """自建热点上连着的设备数：内核邻居表里这个网卡上仍有效的条目（约数，离开的设备几分钟后才消失）。"""
+    out = _run(["ip", "-4", "neigh", "show", "dev", interface])
+    if out is None:
+        return None
+    return parse_neigh(out)
+
+
+def parse_neigh(text: str) -> int:
+    alive = ("REACHABLE", "STALE", "DELAY", "PROBE")
+    return sum(1 for line in text.splitlines() if "lladdr" in line and line.split()[-1] in alive)
+
+
+def network_kind(n: dict, phone_hotspot: str, self_hotspot: str) -> str | None:
+    """连接类型：phoneHotspot（手机热点）、selfHotspot（自建热点）、external（其他 Wi-Fi）、wired（网线）。"""
+    name, kind = n.get("name"), n.get("type")
+    if name is None:
+        return None
+    if kind == "ethernet":
+        return "wired"
+    if name == phone_hotspot:
+        return "phoneHotspot"
+    if name == self_hotspot:
+        return "selfHotspot"
+    return "external"

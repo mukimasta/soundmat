@@ -58,3 +58,18 @@ synthdefs = "instruments/compiled"
 [control]
 host = "0.0.0.0"
 port = 8000
+
+[system]
+# 主机程序的 systemd 服务名；看板据此显示自动重启次数（不在 systemd 下运行时显示"未知"）
+service = "soundmat.service"
+
+[network]
+# 看板按 NetworkManager 的连接名区分网络类型：手机热点、自建热点，其他 Wi-Fi 是外部网络，网线是有线。
+# 名字与 system/network/ 和 DEPLOYMENT.md「网络」一节建立的连接一致。
+interface = "wlan0"
+phone_hotspot = "phone-hotspot"
+self_hotspot = "soundmat-ap"
+
+[update]
+# 软件更新从这个 GitHub 仓库的预发布版本（build-<短提交号>）下载发布包，见 DEPLOYMENT.md「发布与更新」
+repo = "mukimasta/soundmat"

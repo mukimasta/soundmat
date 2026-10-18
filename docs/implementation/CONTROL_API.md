@@ -9,12 +9,12 @@
 | 消息 | 内容 | 时机 |
 |---|---|---|
 | `hello` | `geometry`（224 个区域的几何：`index`、`id`、`ring`、`slot`、`center`、`span`、`rInner`、`rOuter`）、`config`（只读配置的显示条目 `{label, value}`）、`ledCount`、`state`（状态中心的完整快照） | 连接时一次 |
-| `patch` | `changes`：`[[路径, 新值], ...]`，路径是状态树里的点号路径 | 状态中心有变化时，按 30 次/秒合批 |
-| `levels` | `output`：总输出各声道峰值（dBFS）；`rings`：每环 `[左, 右]` 峰值（dBFS，−120 表示无声） | 有合成器服务时 10 次/秒 |
-| `leds` | `colors`：每个逻辑灯位一个 `[r, g, b]`（0–255），不亮为 `null`；逻辑位置 0 在 12 点方向，未施加灯带偏移 | 最多 30 次/秒，有变化时 |
+| `patch` | `changes`：`[[路径, 新值], ...]`，路径是状态树里的点号路径 | 状态中心有变化时，最多 30 次/秒合批 |
+| `levels` | `output`：总输出各声道峰值（dBFS）；`meters`：每根电平条的峰值（dBFS，−120 表示无声），顺序与 `status.current.meters` 一致 | 10 次/秒；不发声的记录型引擎给出模拟值（有声部在响的条为 −18） |
+| `leds` | `colors`：十六进制字符串，每颗灯 6 个字符 `rrggbb`，按逻辑位置排列；逻辑位置 0 在 12 点方向，未施加灯带偏移 | 与灯光引擎同频（60 次/秒），只在颜色变化时 |
 | `mat` | `t`、`source`（`controller` 或 `virtual`）、`pressure`（224 个整数，压力 × 1000）、`occupied`（有石头的区域序号）、`ringCounts`、`control`（控制区压力，未声明为 `null`） | 垫面变化时，最多 30 次/秒 |
 
-客户端把 `patch` 逐条应用到 `hello` 给出的状态树上。断开后客户端丢弃全部实时数据，重连后重新收到 `hello`。
+推送由数据变化唤醒，不按固定间隔轮询，所以灯环预览不会因为两边节奏错开而丢帧。客户端把 `patch` 逐条应用到 `hello` 给出的状态树上。断开后客户端丢弃全部实时数据，重连后重新收到 `hello`。
 
 ## 状态树
 
@@ -26,6 +26,7 @@
 | `status.current.arrangement`、`status.current.mode` | 当前编排标识与模式名 |
 | `status.current.modeStatus` | 模式状态 `{text, reading, transport}` |
 | `status.current.switching` | 切换中为 `{from, to, progress}`，否则 `null` |
+| `status.current.meters` | 当前编排的电平条 `[{id, label, group, ring, color}]`：`group` 为 `background` 或 `placed`，背景组在前；`ring` 是只对应一个环时的环号（控制台用这一环的颜色），否则为 `null`；`color` 是编排指定的 `#rrggbb` 或 `null` |
 | `status.audio.engine` | 声音引擎：在响声部数 `voices`、预算 `budget`、各类别在响数 `categories`、让位 `yields`、放弃 `rejected`、迟到 `late`、去重 `duplicates`、合成器服务重启 `restarts` |
 | `status.log` | 最近的警告和错误：`[{at, level, text, count?}]`，最新在前 |
 | `status.audio.assets` | `missing`（当前编排缺失的素材）、`needed`（引用总数）、`state`（`loaded`、`memoryMB`、`budgetMB`、`library`） |
@@ -36,8 +37,13 @@
 | `status.audio.outputDevice` | 实际输出设备 `{name, usb}` |
 | `status.audio.channels`、`status.audio.buffer`、`status.audio.xruns`、`status.audio.loadHistory` | 声道数、缓冲 `{period, periods, driver}`、最近一小时卡顿次数、最近 60 秒负载 |
 | `status.matHistory` | 最近 60 秒的实测传感帧率 |
+| `status.rates` | 各条链路的帧率，每项为 `{actual, expected}`（次/秒，没有这条链路或没有数据时为 `null`）：`sensing`（控制器传感）、`perception`（垫面解读）、`beat`（声音化节拍）、`light`（灯光引擎）、`ledWrites`（写给控制器的灯光帧）、`pushMat`、`pushLeds`（推送到控制台，取所有连接里最高的一个；只在有变化时推送，期望值是上限） |
+| `status.timing` | `overruns`（小幅超时，参考）、`stalls`（节拍晚到超过迟到容忍度）、`late`、`yields`、`rejected` 的累计数，各自带 `…Recent`（最近 1 分钟的增加量）；`maxLagMs`（最近 1 分钟最大的节拍延迟）；`stallsAttention`、`lateAttention`（是否达到需要注意的程度） |
+| `status.program` | 主机程序：`uptime`（秒）、`restarts`（systemd 自动重启次数，不在 systemd 下为 `null`）、`version`（`{commit, deployedAt, dirty, source}`，`source` 为 `deploy` 或 `git`；都读不到为 `null`） |
+| `status.update` | 软件更新：`enabled`（是否从发布包、在 systemd 下运行）、`state`（`idle` / `downloading` / `installing` / `restarting` / `error`）、`message`、`previous`（可以回到的上一版）、`pending`（待确认的新版本）、`failed`（启动失败被自动回退的版本） |
+| `status.storage` | 录音空间：`freeGB`、`minutes`（按当前声道数和分轨设置还能录的分钟数，不录音频时为 `null`） |
 | `status.machine` | `host`、`model`、`tempC`、`throttled`、`memUsedMB`、`memTotalMB`、`diskFreeGB`、`diskTotalGB`、`uptime`、`programUptime` |
-| `status.network` | `name`、`type`、`address`、`tailscale`、`tailscaleAddress`、`localName`（局域网名字，主机名已带 `.local` 时不再追加）、`line`（垫面页顶部显示的一行） |
+| `status.network` | `name`、`type`、`address`、`tailscale`、`tailscaleAddress`、`localName`（局域网名字，主机名已带 `.local` 时不再追加）、`line`（垫面页顶部显示的一行）、`kind`（`phoneHotspot` / `selfHotspot` / `external` / `wired`，按配置 `[network]` 的连接名区分）、`apClients`（自建热点开着时大约连着的设备数，否则 `null`） |
 | `status.recording` | `{state}`，`state` 为 `idle` / `countdown` / `recording`；录制中另有 `count`（倒计时数字）、`flash`（打板的一瞬）、`elapsed`、`folder`、`audio`、`freeGB` |
 | `catalog.recordings` | `[{name, startedAt, title, duration, audio}]`，最新在前 |
 | `catalog.arrangements` | `[{id, title, mode, modeLabel, description, ringLabels, missing, error}]` |
@@ -57,6 +63,9 @@
 | `POST /api/virtual/clear` | — | 清空虚拟垫子 |
 | `POST /api/arrangements/{id}/play` | — | 切换到这份编排；加载失败返回 422 和原因 |
 | `POST /api/audio/test-tone` | `{"channel": 声道序号}` | 在该硬件声道放 1 秒测试音；超出当前音箱布局返回 422 |
+| `GET /api/update` | — | `{allowed, enabled, available, error}`：`available` 是 GitHub 上的发布包 `[{tag, commit, branch, builtAt, current}]`，最新在前，只在 `allowed` 时列出；`allowed` 只对本机和 Tailscale（100.64.0.0/10）的请求为真 |
+| `POST /api/update` | `{"tag": "build-<短提交号>"}` | 在后台下载、安装并切换到这个版本，之后主机程序重新启动；不是本机或 Tailscale 来的请求返回 403，不能更新或正在更新返回 409 |
+| `POST /api/update/rollback` | — | 切回上一版并重新启动；权限与返回同上 |
 | `POST /api/recording/start` | — | 开始录制；空间不足、已在录制或合成器服务没有响应时返回 409 和原因 |
 | `POST /api/recording/stop` | — | 停止录制 |
 | `GET /api/recordings` | — | 录制列表 |

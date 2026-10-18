@@ -29,8 +29,19 @@ export interface LogItem {
 export interface Levels {
   /** 总输出各声道电平（dBFS） */
   output: number[];
-  /** 每环 [左, 右] 电平（dBFS） */
-  rings: [number, number][];
+  /** 每根电平条的电平（dBFS），顺序与 status.current.meters 一致 */
+  meters: number[];
+}
+
+/** 一根电平条：编排里的一层声音（docs/implementation/ARRANGEMENTS.md「电平条」） */
+export interface MeterDef {
+  id: string;
+  label: string;
+  /** background：不靠放石头、自己在走的部分；placed：由石头触发的部分 */
+  group: 'background' | 'placed';
+  /** 只对应一个环时用这一环的颜色 */
+  ring: number | null;
+  color: string | null;
 }
 
 export const arrangements = (s: ConsoleState) =>
@@ -55,6 +66,8 @@ export const logs = (s: ConsoleState) => getPath<LogItem[]>(s.state, 'status.log
 export const setting = <T,>(s: ConsoleState, path: string) => getPath<T>(s.state, `settings.${path}`);
 
 export const levels = (s: ConsoleState): Levels | null => (s.streams.levels as unknown as Levels) ?? null;
+
+export const meters = (s: ConsoleState) => getPath<MeterDef[]>(s.state, 'status.current.meters') ?? [];
 
 export function transportWord(st: ModeStatus | null): string {
   if (st?.transport === 'idle') return '空闲';

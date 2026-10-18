@@ -10,9 +10,10 @@ import { MatPage } from './pages/MatPage';
 import { MenuSheet } from './pages/MenuSheet';
 import { RecordingsSheet } from './pages/RecordingsSheet';
 import { SettingsSheet } from './pages/SettingsSheet';
+import { UpdateSheet } from './pages/UpdateSheet';
 
 type Page = 'mat' | 'dash';
-type SheetKind = 'none' | 'arr' | 'menu' | 'set' | 'recs';
+type SheetKind = 'none' | 'arr' | 'menu' | 'set' | 'recs' | 'upd';
 
 export function App() {
   const s = useConsole();
@@ -90,6 +91,7 @@ export function App() {
       )}
       {sheet === 'recs' && <RecordingsSheet onClose={close} onBack={() => setSheet('menu')} />}
       {sheet === 'set' && <SettingsSheet onClose={close} onBack={() => setSheet('menu')} />}
+      {sheet === 'upd' && <UpdateSheet onClose={close} onBack={() => setSheet('menu')} />}
     </div>
   );
 }

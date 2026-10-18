@@ -3,7 +3,7 @@ import { getPath } from '../api/patch';
 import * as sel from '../api/selectors';
 import { ArrIcon } from '../components/ArrIcon';
 import { MatView } from '../components/MatView';
-import { RingMeters } from '../components/RingMeters';
+import { LayerMeters } from '../components/LayerMeters';
 
 /** 垫面：控制台首页（设计稿“垫面即首页”）。虚拟垫子模式下点按区域放下/拿起石头。 */
 export function MatPage({ onOpenArrangements, overlay }: { onOpenArrangements: () => void; overlay?: React.ReactNode }) {
@@ -62,7 +62,7 @@ export function MatPage({ onOpenArrangements, overlay }: { onOpenArrangements: (
           pressure={mat?.pressure ?? null}
           occupied={mat?.occupied ?? []}
           ledCount={s.ledCount}
-          leds={s.connected ? (s.streams.leds?.colors as ([number, number, number] | null)[] | undefined) : null}
+          leds={s.connected ? ((s.streams.leds?.colors as string | undefined) ?? null) : null}
           onZone={canTap ? (z) => void client.toggleZone(z) : undefined}
         />
         {!s.connected && <div className="mat-overlay">已断开 · 暂不显示垫面</div>}
@@ -72,7 +72,7 @@ export function MatPage({ onOpenArrangements, overlay }: { onOpenArrangements: (
         <span className="left">{left}</span>
         <span className="right">{right}</span>
       </div>
-      <RingMeters labels={cur?.ringLabels ?? []} levels={lv} />
+      <LayerMeters meters={s.connected ? sel.meters(s) : []} levels={lv} />
       <div className="spacer" />
       {cur && (
         <div className="now-playing">

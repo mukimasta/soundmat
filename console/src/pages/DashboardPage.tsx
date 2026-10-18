@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useClient, useConsole } from '../api/context';
 import { getPath } from '../api/patch';
 import * as sel from '../api/selectors';
@@ -64,12 +64,13 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
           <>
             {SoundSection({ h })}
             {MatSection({ h })}
+            <RhythmSection />
             {NetSection({ h })}
             {MachineSection()}
           </>
         )}
         <section className="card" aria-label="最近的警告和错误">
-          <SecHead no="05" name="最近的警告和错误" />
+          <SecHead no="06" name="最近的警告和错误" />
           {(s.connected ? sel.logs(s) : []).length === 0 && <span className="small">没有记录。</span>}
           {(s.connected ? sel.logs(s) : []).map((it, i) => (
             <div key={i} className="log-item">
@@ -160,7 +161,7 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
         <span className="small" style={{ fontSize: 12 }}>传感帧率</span>
         <span><span className="big-num">{virtual || m?.fps == null ? '—' : m.fps.toFixed(1)}</span>
           <span className="small" style={{ marginLeft: 6 }}>{virtual ? '虚拟垫子没有传感帧率' : 'fps'}</span></span>
-        {!virtual && <><Spark values={hist} max={80} height={38} /><span className="small">最近 60 秒 · 也是灯光的实际刷新率</span></>}
+        {!virtual && <><Spark values={hist} max={80} height={38} /><span className="small">最近 60 秒</span></>}
         <div>
           <KV k="输入" v={virtual ? '虚拟垫子' : '压力垫控制器'} />
           <KV k="控制器" v={virtual ? '未使用' : m?.connected ? `已连接 · ${m.port ?? ''}` : '未连接'} />
@@ -171,12 +172,16 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
   }
 
   function NetSection({ h }: { h: sel.Health | null }) {
-    const n = g<{ name: string | null; address: string | null; tailscale: string | null; tailscaleAddress: string | null; localName: string | null }>('status.network');
+    const n = g<{ name: string | null; address: string | null; tailscale: string | null; tailscaleAddress: string | null;
+      localName: string | null; kind: NetKind | null; apClients: number | null }>('status.network');
+    const kind = n?.kind ? NET_KIND[n.kind] : null;
     return (
       <section className="card" aria-label="网络">
-        <SecHead no="03" name="网络" ind={h?.net.level} />
-        <span style={{ fontSize: 16, fontWeight: 600 }}>{n?.name ?? (n?.address ? '已联网' : '未连接网络')}</span>
+        <SecHead no="04" name="网络" ind={h?.net.level} />
+        <span style={{ fontSize: 16, fontWeight: 600 }}>{kind ?? (n?.address ? '已联网' : '未连接网络')}</span>
         <div>
+          {n?.name && <KV k="连接" v={n.name} />}
+          {n?.kind === 'selfHotspot' && <KV k="连着的设备" v={n.apClients == null ? '未知' : `约 ${n.apClients} 台`} />}
           <KV k="地址" v={[n?.localName, n?.address].filter(Boolean).join(' · ') || '—'} />
           <KV k="Tailscale" v={n?.tailscale ? `${n.tailscale === 'Running' ? '已连接' : n.tailscale}${n.tailscaleAddress ? ` · ${n.tailscaleAddress}` : ''}` : '未知'} />
         </div>
@@ -191,25 +196,129 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
     const memFrac = m.memUsedMB != null && m.memTotalMB ? m.memUsedMB / m.memTotalMB : null;
     const diskFrac = m.diskFreeGB != null && m.diskTotalGB ? 1 - m.diskFreeGB / m.diskTotalGB : null;
     const hot = (m.tempC ?? 0) >= 80 || m.throttled;
+    const storage = g<{ freeGB: number | null; minutes: number | null }>('status.storage');
+    const program = g<{ uptime: number | null; restarts: number | null;
+      version: { commit: string; deployedAt: string | null; dirty: boolean | null; source: string } | null }>('status.program');
+    const v = program?.version;
     return (
       <section className="card" aria-label="机器">
-        <SecHead no="04" name="机器" ind={hot ? 'warn' : 'ok'} />
+        <SecHead no="05" name="机器" ind={hot ? 'warn' : 'ok'} />
         <div style={{ display: 'grid', gridTemplateColumns: '124px minmax(0, 1fr)', gap: 12, alignItems: 'center' }}>
           <Gauge value={m.tempC} max={100} limit={80} width={124} text={m.tempC == null ? '—' : `${Math.round(m.tempC)}°`}
             label={m.tempC == null ? '温度未知' : `温度 ${m.tempC} 摄氏度，红线是 80 度`} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div><KV k="内存" v={m.memUsedMB != null ? `${(m.memUsedMB / 1024).toFixed(1)} / ${((m.memTotalMB ?? 0) / 1024).toFixed(1)} GB` : '—'} /><Segments frac={memFrac} /></div>
             <div><KV k="存储空间" v={m.diskFreeGB != null ? `${Math.round(m.diskFreeGB)} GB 可用` : '—'} /><Segments frac={diskFrac} warn={0.9} /></div>
+            <KV k="还能录" v={storage?.minutes != null ? minutesText(storage.minutes) : '—'} />
           </div>
         </div>
         <div>
           <KV k="机器" v={m.model ?? m.host} />
           <KV k="降频" v={m.throttled == null ? '—' : m.throttled ? '有' : '无'} />
-          <KV k="已运行" v={m.uptime != null ? duration(m.uptime) : duration(m.programUptime)} />
+          <KV k="机器已运行" v={m.uptime != null ? duration(m.uptime) : '—'} />
+          <KV k="主机程序已运行" v={program?.uptime != null ? duration(program.uptime) : '—'} />
+          <KV k="自动重启" v={program?.restarts == null ? '未知' : `${program.restarts} 次`} />
+          <KV k="版本" v={v ? `${v.commit}${v.dirty ? ' · 有未提交的改动' : ''}${v.deployedAt ? ` · 部署于 ${v.deployedAt.slice(0, 16).replace('T', ' ')}` : ''}` : '未知'} />
         </div>
       </section>
     );
   }
+}
+
+type NetKind = 'phoneHotspot' | 'selfHotspot' | 'external' | 'wired';
+const NET_KIND: Record<NetKind, string> = {
+  phoneHotspot: '手机热点', selfHotspot: '自建热点', external: '外部网络', wired: '有线网络',
+};
+
+interface Rate { actual: number | null; expected: number | null }
+
+/** 各条链路的实际帧率，与期望值并排（期望为“最多”的，是只在有变化时才产生的数据） */
+const RATE_ROWS: { key: string; label: string; upTo?: boolean }[] = [
+  { key: 'sensing', label: '传感（控制器 → 主机）' },
+  { key: 'perception', label: '垫面解读' },
+  { key: 'beat', label: '声音化节拍' },
+  { key: 'light', label: '灯光引擎' },
+  { key: 'ledWrites', label: '写给控制器的灯光' },
+  { key: 'pushMat', label: '推送到控制台 · 垫面', upTo: true },
+  { key: 'pushLeds', label: '推送到控制台 · 灯环', upTo: true },
+];
+
+function RhythmSection() {
+  const s = useConsole();
+  const rates = getPath<Record<string, Rate | null>>(s.state, 'status.rates') ?? {};
+  const t = getPath<{ overruns: number | null; overrunsRecent: number | null; stalls: number | null; stallsRecent: number | null;
+    maxLagMs: number | null; late: number | null; lateRecent: number | null; yields: number | null; rejected: number | null;
+    stallsAttention?: boolean; lateAttention?: boolean }>(s.state, 'status.timing');
+  const display = useDisplayFps();
+  const rows = RATE_ROWS.map((r) => ({ ...r, rate: rates[r.key] ?? null }))
+    .filter((r) => r.rate && (r.rate.actual !== null || r.rate.expected !== null));
+  return (
+    <section className="card" aria-label="节奏">
+      <SecHead no="03" name="节奏" />
+      <div className="rate-table" role="table" aria-label="各条链路的帧率">
+        <div className="rate-row head" role="row">
+          <span role="columnheader">链路</span><span role="columnheader">实测</span><span role="columnheader">期望</span>
+        </div>
+        {rows.map(({ key, label, upTo, rate }) => {
+          const low = !upTo && rate!.expected && rate!.actual !== null && rate!.actual < rate!.expected * 0.9;
+          return (
+            <div key={key} className="rate-row" role="row" data-rate={key}>
+              <span role="cell">{label}</span>
+              <span role="cell" className="num" style={low ? { color: 'var(--amber-line)' } : undefined}>{fps(rate!.actual)}</span>
+              <span role="cell" className="num dim">{rate!.expected ? `${upTo ? '最多 ' : ''}${rate!.expected}` : '—'}</span>
+            </div>
+          );
+        })}
+        <div className="rate-row" role="row" data-rate="display">
+          <span role="cell">本机控制台显示</span>
+          <span role="cell" className="num">{fps(display)}</span>
+          <span role="cell" className="num dim">60</span>
+        </div>
+      </div>
+      <span className="small">单位：次/秒。垫面和灯环只在有变化时推送，静止时为 0 属于正常。</span>
+      <div className="grid2">
+        <Tile label="节拍延迟" value={t?.maxLagMs == null ? '—' : Math.round(t.maxLagMs)} unit={t?.maxLagMs == null ? '' : 'ms · 最近 1 分钟最大'}
+          sub={t?.stallsRecent == null ? undefined
+            : `超过 50 ms ${t.stallsRecent} 次 · 小幅超时 ${t.overrunsRecent ?? 0} 次（不影响声音）`}
+          tone={t?.stallsAttention ? 'warn' : t ? 'ok' : undefined} />
+        <Tile label="迟到丢弃" value={t?.lateRecent ?? '—'} unit={t?.lateRecent == null ? '' : '次 · 最近 1 分钟'}
+          sub={t?.late == null ? undefined : `启动以来 ${t.late} 次`} tone={t?.lateAttention ? 'warn' : t ? 'ok' : undefined} />
+        <Tile label="声部让位" value={t?.yields ?? '—'} unit={t?.yields == null ? '' : '次'} sub="为新声部腾出位置" />
+        <Tile label="因预算放弃" value={t?.rejected ?? '—'} unit={t?.rejected == null ? '' : '次'} sub="声部超过上限没能发声" />
+      </div>
+    </section>
+  );
+}
+
+/** 本机浏览器实际的显示帧率（requestAnimationFrame 每秒的次数），只反映正在看看板的这台设备 */
+function useDisplayFps(): number | null {
+  const [value, setValue] = useState<number | null>(null);
+  useEffect(() => {
+    if (typeof requestAnimationFrame !== 'function') return;
+    let frames = 0;
+    let id = 0;
+    let start = performance.now();
+    const loop = (now: number) => {
+      frames++;
+      if (now - start >= 1000) {
+        setValue(Math.round((frames * 1000) / (now - start)));
+        frames = 0;
+        start = now;
+      }
+      id = requestAnimationFrame(loop);
+    };
+    id = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(id);
+  }, []);
+  return value;
+}
+
+function fps(v: number | null | undefined): string {
+  return v === null || v === undefined ? '—' : String(Math.round(v));
+}
+
+function minutesText(min: number): string {
+  return min >= 120 ? `约 ${Math.floor(min / 60)} 小时` : `约 ${min} 分钟`;
 }
 
 function ToneButtons({ names }: { names: string[] }) {

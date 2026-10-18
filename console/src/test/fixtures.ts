@@ -37,12 +37,23 @@ export const LOFI = {
   missing: [], error: null,
 };
 
+const placed = (labels: string[], from = 0) =>
+  labels.slice(from).map((label, k) => ({ id: `placed.${k + from}`, label, group: 'placed', ring: k + from, color: null }));
+
+export const KYOTO_METERS = placed(KYOTO.ringLabels);
+export const LOFI_METERS = [
+  { id: 'background.0', label: '和声', group: 'background', ring: null, color: null },
+  { id: 'background.1', label: '鼓', group: 'background', ring: null, color: null },
+  ...placed(LOFI.ringLabels, 2),
+];
+
 export function playingState(extra: Record<string, unknown> = {}) {
   return {
     status: {
       current: {
         virtual: true, arrangement: 'kyoto', mode: 'ambient',
         modeStatus: { text: '每环一层 · 左右两只音箱', reading: null, transport: null }, switching: null,
+        meters: KYOTO_METERS,
       },
       log: [{ at: 1760000000, level: 'warning', text: '京都岚山：缺少 2 个声音素材，用到它们的声音不会发声' }],
     },

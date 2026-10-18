@@ -67,3 +67,42 @@ test('disconnected dashboard hides stale data', async () => {
   expect(screen.getByText('已断开', { selector: '.head' })).toBeInTheDocument();
   expect(screen.queryByRole('region', { name: '声音' })).not.toBeInTheDocument();
 });
+
+test('rhythm card, network kind, program and recording time', async () => {
+  const { client } = setup();
+  const extra = {
+    rates: {
+      sensing: { actual: 58.6, expected: null }, perception: { actual: 58.6, expected: null },
+      beat: { actual: 60, expected: 60 }, light: { actual: 41, expected: 60 },
+      ledWrites: { actual: 41, expected: 60 }, pushMat: { actual: 12, expected: 30 }, pushLeds: { actual: 0, expected: 60 },
+    },
+    timing: { overruns: 70, overrunsRecent: 52, stalls: 0, stallsRecent: 0, maxLagMs: 9.6, late: 0, lateRecent: 0, yields: 3, rejected: 0,
+      stallsAttention: false, lateAttention: false },
+    program: { uptime: 5400, restarts: 1, version: { commit: '2d09273', deployedAt: '2026-10-17T15:04:00-07:00', dirty: null, source: 'deploy' } },
+    storage: { freeGB: 52, minutes: 1500 },
+  };
+  const st = state({ sound: OK, mat: OK, net: OK, overall: 'ok', issues: [] }, extra);
+  st.status.network = { ...st.status.network, name: 'soundmat-ap', kind: 'selfHotspot', apClients: 2 };
+  act(() => { client.handle(hello(st)); client.handle(mat([])); });
+  await userEvent.click(screen.getByRole('button', { name: '看板' }));
+
+  const rhythm = screen.getByRole('region', { name: '节奏' });
+  const row = (key: string) => rhythm.querySelector(`[data-rate="${key}"]`)!;
+  expect(row('beat').textContent).toBe('声音化节拍6060');
+  expect(row('light').querySelector('.num')!.getAttribute('style')).toContain('amber');   // 低于期望：标出来
+  expect(row('pushLeds').textContent).toContain('最多 60');
+  expect(row('pushLeds').querySelector('.num')!.getAttribute('style')).toBeNull();     // 只在有变化时推送：0 不算异常
+  expect(row('sensing').textContent).toContain('—');
+  expect(row('display')).toBeTruthy();
+  expect(within(rhythm).getByText('超过 50 ms 0 次 · 小幅超时 52 次（不影响声音）')).toBeInTheDocument();
+
+  const net = screen.getByRole('region', { name: '网络' });
+  expect(within(net).getByText('自建热点')).toBeInTheDocument();
+  expect(within(net).getByText('约 2 台')).toBeInTheDocument();
+
+  const machine = screen.getByRole('region', { name: '机器' });
+  expect(within(machine).getByText('1 小时 30 分')).toBeInTheDocument();
+  expect(within(machine).getByText('1 次')).toBeInTheDocument();
+  expect(within(machine).getByText('2d09273 · 部署于 2026-10-17 15:04')).toBeInTheDocument();
+  expect(within(machine).getByText('约 25 小时')).toBeInTheDocument();
+});

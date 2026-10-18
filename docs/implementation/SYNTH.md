@@ -4,11 +4,13 @@
 
 ## 运行 scsynth
 
-scsynth 是独立的系统服务，主机程序不启动它，只通过 UDP 57110 端口通信（配置 `[synth]`）。树莓派上由 systemd 服务启动（JACK 之后，见 `DEPLOYMENT.md`）；开发机上用 `scripts/scsynth-dev.sh [声道数]` 手动启动：优先用 `/Applications/SuperCollider.app` 里的 scsynth，否则用 PATH 里的；macOS 走 CoreAudio 的默认输出设备，不开输入（`-i 0`，避免输入输出设备采样率不一致），采样率 48 kHz（`-S 48000`，设备设不到时 scsynth 报错退出，需在"音频 MIDI 设置"里改）。scsynth 的硬件输出声道数（`-o`）不能少于音箱布局的声道数。
+树莓派上 scsynth 是独立的系统服务，由 systemd 启动（JACK 之后，见 `DEPLOYMENT.md`），主机程序只通过 UDP 57110 端口与它通信（配置 `[synth]`）。这样主机程序重启（部署新版本、出错后被拉起）时声音链路不中断，scsynth 出错时由 systemd 单独重启、主机程序发现后重建，两边各自恢复。
+
+开发机上为了一条命令就能运行，`uv run soundmat` 启动时先向配置的地址发 `/status`：有回应就直接连（systemd 服务、手动启动的都算）；没有回应、地址在本机、并且不在 systemd 下运行时，自己启动一个 scsynth，参数与 `scripts/scsynth-dev.sh` 相同、声道数取当前音箱布局，退出时一起关掉（`soundmat/sound/scsynth_process.py`）。在 systemd 下从不自己启动，免得和 scsynth 服务抢端口。scsynth 的位置依次是环境变量 `SOUNDMAT_SCSYNTH`、PATH 里的 `scsynth`、`/Applications/SuperCollider.app`。想单独看 scsynth 的输出时，也可以先用 `scripts/scsynth-dev.sh [声道数]` 手动启动：优先用 `/Applications/SuperCollider.app` 里的 scsynth，否则用 PATH 里的；macOS 走 CoreAudio 的默认输出设备，不开输入（`-i 0`，避免输入输出设备采样率不一致），采样率 48 kHz（`-S 48000`，设备设不到时 scsynth 报错退出，需在"音频 MIDI 设置"里改）。scsynth 的硬件输出声道数（`-o`）不能少于音箱布局的声道数。
 
 主机程序默认连接 scsynth；连不上时照常运行、什么都不发，等 scsynth 出现后自动接上。`--no-synth` 改用只记录指令的声音引擎。
 
-云端和 CI 没有声卡：可以安装 `jackd2` 和 `supercollider-server`，用 `jackd -d dummy -r 48000` 起一个虚拟声卡，再启动 scsynth。`tests/test_scsynth.py` 的最后一个测试在本机能连上 scsynth 时运行真实的 Jam，否则跳过。
+云端和 CI 没有声卡：可以安装 `jackd2` 和 `supercollider-server`，用 `jackd -d dummy -r 48000` 起一个虚拟声卡，再启动 scsynth。`tests/test_scsynth.py` 里连真实 scsynth 的两个测试（真实的 Jam、录音打板）只在设置 `SOUNDMAT_LIVE_SCSYNTH=1` 并且本机能连上 scsynth 时运行，CI 里打开。它们会清空 scsynth 的节点树、发声并录音，所以默认不运行，免得打断开发机上正在试听的合成器服务。
 
 ## 音色
 

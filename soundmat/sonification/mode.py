@@ -27,6 +27,7 @@ class Arrangement:
     description: str = ""
     mode_label: str = ""                      # 控制台显示的模式说明，例如 "Ambient · 氛围"
     ring_labels: tuple[str, ...] = ()         # 每环在控制台上显示的名字
+    meters: Mapping[str, Any] = field(default_factory=dict)  # 电平条声明（[meters]），见 sonification/meters.py
     content: Mapping[str, Any] = field(default_factory=dict)
     path: str | None = None                   # 编排所在文件夹
 

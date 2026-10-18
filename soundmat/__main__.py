@@ -1,15 +1,57 @@
-"""命令行入口：``uv run soundmat [--virtual]``。"""
+"""命令行入口：``uv run soundmat [--virtual]``。
+
+没有在运行的合成器服务时自己启动一个（退出时一起关掉，见 sound/scsynth_process.py），
+启动后打印控制台能直接点开的网址。
+"""
 from __future__ import annotations
 
 import argparse
 import logging
+import socket
 from pathlib import Path
 
 import uvicorn
 
 from .config import load_config
 from .control import create_app
+from .monitor.probes import local_name
+from .sound.scsynth_process import ensure_scsynth
 from .supervisor import Options, Supervisor
+
+
+def lan_address() -> str | None:
+    """本机在局域网里的地址（出口网卡的 IPv4）；没有联网时为 None。"""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("10.255.255.255", 1))     # 不发送任何数据，只为得到出口地址
+        addr = s.getsockname()[0]
+        s.close()
+    except OSError:
+        return None
+    return None if addr.startswith("127.") else addr
+
+
+def console_urls(bind_host: str, port: int, hostname: str | None, address: str | None) -> list[tuple[str, str]]:
+    """控制台的网址：本机一个；监听所有网卡时再加局域网名字和地址。"""
+    urls = [("本机", f"http://localhost:{port}")]
+    if bind_host in ("0.0.0.0", "::", ""):
+        name = local_name(hostname)
+        if name:
+            urls.append(("局域网", f"http://{name}:{port}"))
+        if address:
+            urls.append(("局域网", f"http://{address}:{port}"))
+    return urls
+
+
+def print_urls(urls: list[tuple[str, str]]) -> None:
+    print("\nSoundMat 控制台", flush=True)
+    width = max(2 * len(label) for label, _ in urls)      # 汉字在终端里占两格
+    last = None
+    for label, url in urls:
+        shown = label if label != last else ""
+        print(f"  {shown}{' ' * (width - 2 * len(shown))}  {url}", flush=True)
+        last = label
+    print(flush=True)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -32,17 +74,20 @@ def main(argv: list[str] | None = None) -> None:
     if args.data_dir:
         opts.data_dir = Path(args.data_dir)
     sup = Supervisor(cfg, opts)
+    synth_proc = None
+    if not args.no_synth:
+        synth_proc = ensure_scsynth(cfg.synth.host, cfg.synth.port, sup.engine.layout.channels,
+                                    cfg.sound.expected_sample_rate)
+    host = args.host or cfg.control.host
+    port = args.port or cfg.control.port
     sup.start()
     try:
-        uvicorn.run(
-            create_app(sup.control),
-            host=args.host or cfg.control.host,
-            port=args.port or cfg.control.port,
-            ws="wsproto",
-            log_level="warning",
-        )
+        print_urls(console_urls(host, port, socket.gethostname(), lan_address()))
+        uvicorn.run(create_app(sup.control), host=host, port=port, ws="wsproto", log_level="warning")
     finally:
         sup.stop()
+        if synth_proc is not None:
+            synth_proc.stop()
 
 
 if __name__ == "__main__":
