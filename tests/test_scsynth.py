@@ -192,8 +192,8 @@ def test_live_scsynth_plays_jam(make_sup, tmp_path, monkeypatch):
 
 
 @pytest.mark.skipif(not _live_enabled(), reason="需要 SOUNDMAT_LIVE_SCSYNTH=1 和本机运行的 scsynth")
-def test_live_recording_slate_at_three_seconds(make_sup, tmp_path, monkeypatch):
-    """真实的 scsynth 录下总输出和分轨；没有石头时总输出里只有打板提示音，正好在 3 秒处。"""
+def test_live_recording_starts_at_the_slate(make_sup, tmp_path, monkeypatch):
+    """真实的 scsynth 录下总输出和分轨；录音从打板（按下后 3 秒）开始，提示音只在现场响、不进录音。"""
     import numpy as np
     import soundfile
 
@@ -216,6 +216,5 @@ def test_live_recording_slate_at_three_seconds(make_sup, tmp_path, monkeypatch):
     folder = sup.recorder.folder_of(item["name"])
     assert item["audio"] is True and (folder / "stems" / "fx.wav").exists()
     x, sr = soundfile.read(folder / "master.wav")
-    env = np.abs(x).max(axis=1)
-    onset = np.argmax(env > 0.01) / sr
-    assert onset == pytest.approx(3.0, abs=0.03)
+    assert len(x) / sr == pytest.approx(4.5 - 3.0 + 0.15, abs=0.3)    # 从打板录到停止（加上提前量）
+    assert np.abs(x).max() < 0.01                                    # 没有石头：文件里一片安静，没有提示音

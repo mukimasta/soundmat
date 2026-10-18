@@ -504,9 +504,11 @@ class ScsynthBackend:
         return bool(self.recording)
 
     def slate(self, at: float) -> None:
+        """打板提示音：直接写到硬件输出，加在 MASTER_GROUP 末尾。与录音同一时刻开始时，先调用
+        ``start_recording`` 再调用这里，它就排在录音节点之后，只在现场响、不进录音。"""
         if self.master_node is not None:
-            self._queue(at, _msg("/s_new", f"sm_slate_{self.master_channels}", -1, HEAD, MASTER_GROUP,
-                                 "out", self.main_bus))
+            self._queue(at, _msg("/s_new", f"sm_slate_{self.master_channels}", -1, TAIL, MASTER_GROUP,
+                                 "out", 0))
 
     # ── 监测 ────────────────────────────────────────────────────────────
 

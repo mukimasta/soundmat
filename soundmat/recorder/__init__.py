@@ -6,11 +6,12 @@
 - ``stems/<总线>.wav``：每条环总线和分组总线一轨，加上共用效果的返回 ``fx``（可在设置里关闭）；
   分轨在模式总处理之前，可能超过 0 dBFS，用 32 位浮点 WAV；
 - ``session.jsonl``：压力图、垫面事件、声音意图、灯光，每行一条，带系统时间；
-- ``info.json``：开始的准确日期时间、打板在录音中的位置、编排与模式、开始时的设置、产出文件。
+- ``info.json``：开始（即打板）的准确日期时间、编排与模式、开始时的设置、产出文件。
 
-按下录制后录音立即开始，灯环和控制台同时进入 3、2、1 的倒计时；倒计时结束的瞬间灯环整圈闪亮、
-音箱发出一声短促的提示音，这一刻（打板）记进录制信息和会话数据。开始前检查剩余空间，录制中
-空间将尽时自动停止。录制的状态机在声音化的节拍线程里推进（``on_beat``）。
+按下录制后灯环和控制台进入 3、2、1 的倒计时，这时还不录；倒计时结束的瞬间灯环整圈闪亮、
+音箱在现场发出一声短促的提示音（打板），录音正好从这一刻开始。提示音只在现场响、不进录音
+（见 ``ScsynthBackend.slate``），文件开头就是演奏；剪辑时把录音文件的开头对到视频里那一声上即可。
+开始前检查剩余空间，录制中空间将尽时自动停止。录制的状态机在声音化的节拍线程里推进（``on_beat``）。
 """
 from __future__ import annotations
 
@@ -40,8 +41,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("soundmat.recorder")
 
-START_DELAY = 0.2           # 录音在请求后这么久开始（让合成器服务打开文件）
-COUNTDOWN = 3.0
+COUNTDOWN = 3.0             # 按下录制到打板（录音开始）的倒计时；这段时间也够合成器服务打开文件
 FLASH = 0.25
 MIN_FREE_SECONDS = 600      # 少于 10 分钟的空间：拒绝开始
 STOP_FREE_SECONDS = 60      # 录制中少于 1 分钟的空间：自动停止
@@ -57,7 +57,8 @@ class RecordingError(Conflict):
 @dataclass
 class Session:
     folder: Path
-    start_t: float                  # 录音开始的系统时间
+    countdown_t: float              # 按下录制、开始倒计时的系统时间
+    start_t: float                  # 打板、录音开始的系统时间（倒计时结束）
     started_wall: dt.datetime
     arrangement: dict
     settings: dict
@@ -193,8 +194,8 @@ class Recorder:
     def _begin(self, now: float) -> None:
         if self.session is not None:
             return
-        start_t = now + START_DELAY
-        wall = dt.datetime.now().astimezone() + dt.timedelta(seconds=START_DELAY)
+        start_t = now + COUNTDOWN
+        wall = dt.datetime.now().astimezone() + dt.timedelta(seconds=COUNTDOWN)
         arr = self._current_arrangement()
         folder = self.root / f"{wall:%Y-%m-%d_%H%M%S}_{arr.get('id') or 'none'}"
         folder.mkdir(parents=True, exist_ok=True)
@@ -209,11 +210,11 @@ class Recorder:
         if stems and not set(stems) & set(started):
             stems_dir.rmdir()                  # 合成器服务离线，一个分轨也没开始
         rel = [str(Path(files[k]).relative_to(folder)) for k in started]
-        self.session = Session(folder=folder, start_t=start_t, started_wall=wall, arrangement=arr,
+        self.session = Session(folder=folder, countdown_t=now, start_t=start_t, started_wall=wall, arrangement=arr,
                                settings=self.settings.snapshot(), channels=self._channels(),
                                files=rel + ["session.jsonl", "info.json"], audio=bool(started))
         self._was_audio_active = bool(started)
-        self.backend.slate(start_t + COUNTDOWN)
+        self.backend.slate(start_t)        # 在 start_recording 之后：排在录音节点之后，不进录音
         self.writer = SessionWriter(folder / "session.jsonl")
         self.writer.put({"t": _round(start_t), "type": "start", "arrangement": arr})
         self._last_snap_version = -1
@@ -226,7 +227,8 @@ class Recorder:
         s = self.session
         if s is None:
             return
-        self.backend.stop_recording(now + self.schedule_ahead)   # 已经排好、还没响的声音也录进去
+        # 已经排好、还没响的声音也录进去；倒计时中停止时，录音节点还没开始，停止不能排在它前面
+        self.backend.stop_recording(max(now + self.schedule_ahead, s.start_t))
         self.lights.set_system_layer("recording", None)
         s.stopped = reason
         if self.writer:
@@ -247,11 +249,11 @@ class Recorder:
         if s is None:
             self.event_queue.drain()
             return
-        el = now - s.start_t
+        el = now - s.countdown_t                 # 倒计时从按下开始，打板在 el = COUNTDOWN
         self._countdown_light(el)
         if not s.slate_done and el >= COUNTDOWN:
             s.slate_done = True
-            self.writer.put({"t": _round(s.start_t + COUNTDOWN), "type": "slate"})
+            self.writer.put({"t": _round(s.start_t), "type": "slate"})
         self._record_data(now, output)
         if s.audio and self._was_audio_active and not self.backend.recording_active():
             self._end(now, "synth")
@@ -267,7 +269,7 @@ class Recorder:
             self.state.set("status.recording", {
                 "state": state,
                 "count": max(1, 3 - int(max(0.0, el))) if el < COUNTDOWN else None,
-                "elapsed": round(max(0.0, el), 1),
+                "elapsed": round(max(0.0, now - s.start_t), 1),
                 "flash": COUNTDOWN <= el < COUNTDOWN + FLASH,
                 "folder": s.folder.name,
                 "audio": s.audio,
@@ -327,8 +329,9 @@ class Recorder:
         info = {
             "startedAt": s.started_wall.isoformat(timespec="milliseconds"),
             "startSystemTime": _round(s.start_t),
-            "slateOffsetSeconds": COUNTDOWN,
-            "slateSystemTime": _round(s.start_t + COUNTDOWN),
+            # 录音文件从打板那一刻开始（提示音本身不在文件里，只在现场响、被摄像机录到）
+            "slateOffsetSeconds": 0.0,
+            "slateSystemTime": _round(s.start_t),
             # 会话数据里有确定时刻的声音（events 的 time、声部的开始时刻）比记下的时刻晚这么多响
             "scheduleAheadSeconds": self.schedule_ahead,
             "arrangement": s.arrangement,

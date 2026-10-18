@@ -40,13 +40,17 @@ def test_full_recording_cycle(sup):
     beats(sup, 1.5, 3.4)
     assert sup.lights.system["recording"].alpha.sum() == pytest.approx(0.9 * 36)   # 剩一段
     assert sup.store.get("status.recording")["count"] == 1
-    beats(sup, 3.4, 4.37)
+    beats(sup, 3.4, 4.17)
     assert sup.lights.system["recording"].alpha.min() == 1.0      # 打板：整圈全亮
     assert sup.store.get("status.recording")["flash"] is True
-    assert sup.backend.of_kind("slate")[0].at == pytest.approx(1.1 + 0.2 + 3.0, abs=0.02)
+    # 打板在按下后 3 秒，录音也正好从这一刻开始；提示音在录音节点之后建立，不进录音
+    assert sup.backend.of_kind("slate")[0].at == pytest.approx(1.1 + 3.0, abs=0.02)
+    assert sup.backend.of_kind("start_recording")[0].at == sup.backend.of_kind("slate")[0].at
+    kinds = [c.kind for c in sup.backend.commands]
+    assert kinds.index("start_recording") < kinds.index("slate")
     for t in (1.2, 1.25):
         sup.perception.feed(sup.virtual.frame(t=t))   # 产生压力图与事件
-    beats(sup, 4.37, 5.0)
+    beats(sup, 4.17, 5.0)
     assert "recording" not in sup.lights.system
     assert sup.store.get("status.recording")["state"] == "recording"
     rec.request_stop()
@@ -57,8 +61,8 @@ def test_full_recording_cycle(sup):
     folder = rec.folder_of(item["name"])
     assert folder.name.endswith("_kyoto")
     info = json.loads((folder / "info.json").read_text())
-    assert info["slateOffsetSeconds"] == 3.0 and info["stopReason"] == "user"
-    assert info["duration"] == pytest.approx(5.0 - 1.3, abs=0.05)
+    assert info["slateOffsetSeconds"] == 0.0 and info["stopReason"] == "user"
+    assert info["duration"] == pytest.approx(5.0 - 4.1, abs=0.05)               # 从打板算起
     assert info["settings"]["sound"]["volume"] == 0.8
     assert info["files"] == ["session.jsonl", "info.json"]
     assert not (folder / "stems").exists()                        # 没有音频时不建分轨目录
@@ -126,3 +130,15 @@ def test_delete_recording(sup):
     assert any("删除了录制" in i["text"] for i in sup.store.get("status.log"))
     assert client.post(f"/api/recordings/{name}/delete").status_code == 404
     assert client.post("/api/recordings/..%2F..%2Fetc/delete").status_code == 404
+
+
+def test_stop_during_countdown_does_not_precede_the_start(sup):
+    """倒计时中就停止：录音节点在打板时刻才建立，停止不能排在它前面，否则会一直录下去。"""
+    rec = sup.recorder
+    rec.request_start()
+    beats(sup, 1.0, 1.5)
+    rec.request_stop()
+    beats(sup, 1.5, 1.6)
+    start = sup.backend.of_kind("start_recording")[0].at
+    assert sup.backend.of_kind("stop_recording")[0].at >= start
+    assert sup.store.get("status.recording") == {"state": "idle"}
