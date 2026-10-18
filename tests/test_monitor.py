@@ -25,6 +25,10 @@ def test_parse_cards_and_jack_device():
     jack["device"] = "hw:0"
     assert P.output_device(jack, cards) == {"name": "vc4-hdmi - vc4-hdmi-0", "usb": False}
     assert P.parse_jack_args(["jackd", "-d", "dummy", "-r", "48000"])["device"] == "dummy"
+    # Pi 3B 上第一版的写法：选项和值连写
+    jack = P.parse_jack_args(["/usr/bin/jackd", "-P75", "-t2000", "-dalsa", "-dhw:Audio", "-r44100", "-p2048", "-n2"])
+    assert jack == {"running": True, "device": "hw:Audio", "rate": 44100, "period": 2048, "periods": 2}
+    assert P.parse_jack_args(["jackd", "-P75"])["device"] is None
 
 
 def test_local_name_not_doubled():

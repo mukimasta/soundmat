@@ -1,0 +1,24 @@
+# SoundMat 合成器服务（docs/implementation/SYNTH.md「运行 scsynth」）
+#
+# JACK 就绪后启动 scsynth，作为 JACK 客户端；采样率由 JACK 决定。
+# SC_JACK_DEFAULT_OUTPUTS 让 scsynth 启动时自己把输出接到声卡，不再需要额外的 jack_connect。
+# 主机程序只通过 UDP 57110 与它通信；它异常退出时由这里重启，主机程序发现后重建混音结构。
+[Unit]
+Description=SoundMat synth server (scsynth)
+After=jackd.service
+Wants=jackd.service
+
+[Service]
+User=soundmat
+Group=audio
+SupplementaryGroups=audio
+Environment=SC_JACK_DEFAULT_OUTPUTS=system:playback_1,system:playback_2
+ExecStartPre=/bin/bash -c 'for i in $(seq 1 60); do /usr/bin/jack_lsp >/dev/null 2>&1 && exit 0; sleep 0.5; done; echo "JACK not ready"; exit 1'
+ExecStart=/usr/bin/scsynth -u 57110 -i 0 -o 2 -z 64
+LimitMEMLOCK=infinity
+LimitRTPRIO=95
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

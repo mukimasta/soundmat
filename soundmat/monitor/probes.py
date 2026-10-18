@@ -74,11 +74,28 @@ def jack() -> dict | None:
     return parse_jack_args(args)
 
 
+def _split_short_options(args: list[str]) -> list[str]:
+    """把连写的短选项拆开：``-dalsa`` → ``-d alsa``，``-r44100`` → ``-r 44100``（jackd 两种写法都接受）。"""
+    out = []
+    for a in args:
+        if len(a) > 2 and a[0] == "-" and a[1] != "-" and a[1].isalpha():
+            out += [a[:2], a[2:]]
+        else:
+            out.append(a)
+    return out
+
+
 def parse_jack_args(args: list[str]) -> dict:
+    """从 jackd 的命令行读出驱动、设备、采样率和缓冲；``-d`` 之前是服务器选项，之后是驱动选项。"""
     info: dict = {"running": True, "device": None, "rate": None, "period": None, "periods": None}
-    driver_args = args[args.index("-d") + 2:] if "-d" in args and args.index("-d") + 1 < len(args) else []
-    for i, a in enumerate(driver_args):
-        nxt = driver_args[i + 1] if i + 1 < len(driver_args) else None
+    args = _split_short_options(args)
+    if "-d" not in args:
+        return info
+    i = args.index("-d")
+    driver = args[i + 1] if i + 1 < len(args) else None
+    driver_args = args[i + 2:]
+    for j, a in enumerate(driver_args):
+        nxt = driver_args[j + 1] if j + 1 < len(driver_args) else None
         if a in ("-d", "--device", "-P", "--playback") and nxt:
             info["device"] = nxt
         elif a in ("-r", "--rate") and nxt:
@@ -87,7 +104,7 @@ def parse_jack_args(args: list[str]) -> dict:
             info["period"] = int(nxt)
         elif a in ("-n", "--nperiods") and nxt:
             info["periods"] = int(nxt)
-    if args[args.index("-d") + 1:args.index("-d") + 2] == ["dummy"]:
+    if driver == "dummy":
         info["device"] = "dummy"
     return info
 

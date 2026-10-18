@@ -35,11 +35,11 @@
 在开发机上运行部署脚本，参数是树莓派的地址（`soundmat-pi.local`，或它在 Tailscale 里的名字 `soundmat-pi`）。脚本通过 SSH 依次完成下面的工作。
 
 1. **系统软件包**：安装 SuperCollider 的合成器服务（scsynth）、JACK2、avahi、rsync 等。树莓派上不需要 sclang。
-2. **实时音频权限**：把 `soundmat` 用户加入 `audio` 组，并允许它以实时优先级运行音频服务。
+2. **实时音频权限**：把 `soundmat` 用户加入 `audio` 组，并允许它以实时优先级运行音频服务：JACK 的服务要有 `LimitRTPRIO=95`、`LimitMEMLOCK=infinity`，否则 JACK 会以普通优先级运行（日志里有 `Cannot use real-time scheduling`），容易卡顿；第一版在 Pi 3B 上就一直缺这一项。另外在 `/etc/systemd/logind.conf.d/` 里设 `RemoveIPC=no`：JACK 以普通用户 `soundmat` 运行，默认情况下这个用户最后一个登录会话（例如 SSH）退出时，systemd 会清掉它的共享内存和信号量，JACK 随即失效（`semop (Invalid argument)`）。
 3. **电源设置**：降压模块只输出 5V，不和 Pi 5 协商快充，Pi 5 默认会把 USB 总输出限制在 600 mA。在确认电源能提供足够电流的前提下，于 `/boot/firmware/config.txt` 打开 `usb_max_current_enable`，避免 USB 声卡和 ESP32 供电不足。
 4. **Python 环境**：安装 uv，由它安装 Python 和依赖，不使用系统自带的 Python。
 5. **程序与数据**：按下面「发布与更新」一节，从 GitHub 安装第一个发布包；把开发机的 `SoundMat/sound/` 用 rsync 同步到树莓派的声音素材目录（素材不经过 GitHub，见「声音素材」）。
-6. **系统服务**：安装 `system/systemd/` 下的三个服务，依次是 JACK、scsynth、主机程序，后一个依赖前一个，任何一个异常退出都会自动重启，并设为开机启动。
+6. **系统服务**：安装 `system/systemd/` 下的三个服务，依次是 JACK、scsynth（`soundmat-scsynth.service`）、主机程序（`soundmat.service`），后一个依赖前一个，任何一个异常退出都会自动重启，并设为开机启动。scsynth 用环境变量 `SC_JACK_DEFAULT_OUTPUTS` 在启动时自己把输出接到声卡，不再需要第一版那样另外运行 `jack_connect`。主机程序的服务每次启动前运行启动保护 `/usr/local/bin/soundmat-guard`（来自 `system/update/`）。
 7. **网络**：按下面「网络」一节建立 NetworkManager 连接，安装 `system/network/` 下的网络选择与兜底定时任务。avahi 随系统启用，局域网内可以用 `soundmat-pi.local` 访问。
 8. **Tailscale**：从 Tailscale 官方 apt 源安装，用密钥文件里的授权密钥加入网络；没有授权密钥时由 `tailscale up` 打印登录链接，在浏览器里授权。设备名 `soundmat-pi`。
 9. **设置**：树莓派上还没有设置文件时，写入一份默认设置；已有时保持不动。
