@@ -1,0 +1,13 @@
+{
+  "duration": 150,
+  "stones": [
+    {"ring": 0, "slot": 3, "on": 2.0, "off": null},
+    {"ring": 1, "slot": 5, "on": 2.5, "off": null},
+    {"ring": 2, "slot": 7, "on": 3.0, "off": null},
+    {"ring": 3, "slot": 9, "on": 3.5, "off": null},
+    {"ring": 4, "slot": 11, "on": 4.0, "off": null},
+    {"ring": 5, "slot": 13, "on": 4.5, "off": null},
+    {"ring": 6, "slot": 15, "on": 5.0, "off": null},
+    {"ring": 7, "slot": 17, "on": 5.5, "off": null}
+  ]
+}

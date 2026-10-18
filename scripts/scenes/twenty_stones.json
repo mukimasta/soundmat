@@ -1,0 +1,25 @@
+{
+  "duration": 150,
+  "stones": [
+    {"ring": 0, "slot": 2, "on": 2.0, "off": null},
+    {"ring": 0, "slot": 9, "on": 3.1, "off": null},
+    {"ring": 1, "slot": 5, "on": 4.2, "off": null},
+    {"ring": 2, "slot": 4, "on": 5.3, "off": null},
+    {"ring": 2, "slot": 20, "on": 6.4, "off": null},
+    {"ring": 3, "slot": 1, "on": 7.5, "off": null},
+    {"ring": 3, "slot": 17, "on": 8.6, "off": null},
+    {"ring": 4, "slot": 10, "on": 9.7, "off": null},
+    {"ring": 5, "slot": 0, "on": 10.8, "off": null},
+    {"ring": 5, "slot": 6, "on": 11.9, "off": null},
+    {"ring": 5, "slot": 12, "on": 13.0, "off": null},
+    {"ring": 5, "slot": 18, "on": 14.1, "off": null},
+    {"ring": 5, "slot": 24, "on": 15.2, "off": null},
+    {"ring": 6, "slot": 8, "on": 16.3, "off": null},
+    {"ring": 6, "slot": 25, "on": 17.4, "off": null},
+    {"ring": 7, "slot": 3, "on": 18.5, "off": null},
+    {"ring": 7, "slot": 11, "on": 19.6, "off": null},
+    {"ring": 7, "slot": 19, "on": 20.7, "off": null},
+    {"ring": 7, "slot": 27, "on": 21.8, "off": null},
+    {"ring": 7, "slot": 30, "on": 22.9, "off": null}
+  ]
+}

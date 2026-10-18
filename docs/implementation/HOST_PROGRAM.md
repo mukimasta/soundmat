@@ -9,9 +9,12 @@ uv sync                         # 安装 Python 3.12 与依赖
 uv run python scripts/compile_instruments.py   # 编译音色（需要 SuperCollider）
 uv run soundmat --virtual       # 用虚拟垫子运行；本机没有合成器服务时自己启动 scsynth
 uv run pytest                   # 测试
+uv run python scripts/render.py meditation scripts/scenes/twenty_stones.json out.wav --stats   # 离线渲染
 ```
 
 主机程序默认连接本机的 scsynth，开发机上没有在运行的就自己启动一个、退出时一起关掉（见 `SYNTH.md`「运行 scsynth」）；启动后打印控制台的网址：本机 `http://localhost:<端口>`，监听所有网卡时再加局域网名字（`<主机名>.local`）和出口地址。`--no-synth` 改用只记录指令、不发声的声音引擎。不带 `--virtual` 时连接控制器：`--port-serial` 指定串口，默认 `auto` 自动选择（规则见下文「设备连接」）。`--virtual` 用虚拟垫子代替控制器；`--config` 指定其他配置文件；`--data-dir` 指定本机数据目录（设置文件 `settings.json` 和录音，默认是程序目录下的 `data/`，树莓派上是 `/home/soundmat/data`）；`--host`、`--port` 覆盖控制接口的监听地址。控制台需要先在 `console/` 下构建（`npm ci && npm run build`），构建产物由控制接口直接提供；开发控制台时用 `npm run dev`，Vite 把 `/api` 和 `/ws` 转发到 8000 端口。
+
+`scripts/render.py` 不连合成器服务、不出声，按模拟时间运行真实的感知、模式和声音引擎，把一份编排在一张石头时间表上的演奏用 scsynth 非实时渲染成 WAV，并给出渲染用时（折算合成器服务的负载）、声部数、引擎计数，`--stats` 另给响度和电平；需要 SuperCollider 和编译好的音色。时间表格式、原理和负载的折算见 `SYNTH.md`「离线渲染」。
 
 ## 模块与文件
 
@@ -38,7 +41,7 @@ uv run pytest                   # 测试
 | 声音引擎 · 空间化 | `soundmat/sound/spatial.py` | 音箱布局预设与分配公式 |
 | 声音引擎 · 素材库 | `soundmat/sound/assets.py` | 读文件头估算内存、预算检查、引用计数、重启后重载 |
 | 声音引擎 · 合成器接口 | `soundmat/sound/backend.py` | 抽象指令接口；`RecordingBackend` 只记录指令 |
-| 声音引擎 · scsynth | `soundmat/sound/scsynth.py` + `instruments/` | 带时间戳的 OSC bundle、节点树与总线、重启检测、电平、录音；见 `SYNTH.md` |
+| 声音引擎 · scsynth | `soundmat/sound/scsynth.py` + `instruments/` | 指令翻译（`ScsynthCommands`：节点树与总线、混音结构、声部、素材、录音）与实时连接（`ScsynthBackend`：带时间戳的 OSC bundle、重启检测、电平）两层；离线渲染 `scripts/render.py` 用同一套翻译记成乐谱。见 `SYNTH.md` |
 | 灯光引擎 | `soundmat/light/` | 按 `light.refresh_hz`（30 Hz）分层合成、系统提示层、灯带偏移、控制台预览 |
 | 录制 | `soundmat/recorder/` | 空间检查、倒计时与打板、合成器服务内部录音、会话数据、录制信息、打包下载 |
 | 系统监测 | `soundmat/monitor/` | 每秒采集音频链路、控制器、机器、网络；状态指示与原因；最近的警告和错误（`log.py`） |

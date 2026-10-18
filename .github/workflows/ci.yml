@@ -30,7 +30,7 @@ jobs:
       - run: npm run build
       - run: npm test
 
-  # 编译音色，并用真实的 scsynth（JACK dummy 驱动，没有声卡）跑一遍
+  # 编译音色，并用真实的 scsynth（JACK dummy 驱动，没有声卡）跑一遍；离线渲染的测试也要编译好的音色
   synth:
     runs-on: ubuntu-24.04
     steps:
@@ -46,6 +46,6 @@ jobs:
           sleep 2
           scsynth -u 57110 -i 0 -o 2 &
           sleep 3
-      - run: uv run pytest -q tests/test_scsynth.py -rs
+      - run: uv run pytest -q tests/test_scsynth.py tests/test_render.py -rs
         env:
           SOUNDMAT_LIVE_SCSYNTH: "1"
