@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import threading
 import time
@@ -32,6 +33,7 @@ LOW_FPS = 20.0
 SLOW_PROBE_PERIOD = 10.0      # 较慢的探针（journal、tailscale、nmcli、systemctl、git）的间隔
 RECENT = 60.0                 # 秒：「最近 1 分钟」的节拍超时与迟到
 RESTART_WINDOW = 3600.0       # 秒：主机程序这么久之内被自动重启过，记为需要注意
+PROGRAM_CPU_LIMIT = 90.0      # 主机程序最近 10 秒平均占单核的百分比达到这个值：需要注意
 # 最近 1 分钟节拍「卡住」（晚到超过迟到容忍度）达到这个次数才提示；偶尔一次（例如切换编排）不提示。
 STALL_WARN = 3
 
@@ -47,6 +49,8 @@ class Probes:
     restarts: Callable[[str], int | None] = probes.systemd_restarts
     version: Callable[[Path], dict | None] = probes.version
     ap_clients: Callable[[str], int | None] = probes.ap_clients
+    process_cpu: Callable[[], float] = probes.process_cpu_seconds
+    system_cpu: Callable[[], tuple[int, int] | None] = probes.system_cpu_ticks
     platform_linux: bool = Path("/proc").is_dir()
 
 
@@ -81,6 +85,9 @@ class Monitor:
         self.started = time.time()
         self.load_history: deque[float] = deque(maxlen=60)
         self.fps_history: deque[float] = deque(maxlen=60)
+        self.program_cpu_history: deque[float] = deque(maxlen=60)
+        self._last_cpu: tuple[float, float] | None = None          # (时刻, 本进程 CPU 秒)
+        self._last_ticks: tuple[int, int] | None = None            # 整机（忙碌, 总计）
         self._slow: dict = {}
         self._next_slow = 0.0
         self._last_levels: dict[str, str] = {}
@@ -126,6 +133,8 @@ class Monitor:
             "loadHistory": list(self.load_history),
         }
         machine = self.probes.machine(self.data_dir)
+        machine.update(self._cpu(now))
+        machine["cores"] = os.cpu_count()
         machine["programUptime"] = probes.program_uptime(self.started)
         network = dict(self._slow.get("network") or {})
         network["localName"] = probes.local_name(machine.get("host"))
@@ -158,6 +167,23 @@ class Monitor:
             out[f"{k}Recent"] = None if v is None or oldest.get(k) is None else v - oldest[k]
         out["stallsAttention"] = (out["stallsRecent"] or 0) >= STALL_WARN
         out["lateAttention"] = bool(out["lateRecent"])
+        return out
+
+    def _cpu(self, now: float) -> dict:
+        """主机程序的 CPU（占单核的百分比，可超过 100%）和整机 CPU（所有核的平均），按两次采集之间的增量算。"""
+        out: dict = {"programCpu": None, "cpu": None, "programCpuHistory": list(self.program_cpu_history)}
+        cpu_s = self.probes.process_cpu()
+        if self._last_cpu is not None and now > self._last_cpu[0]:
+            pct = round((cpu_s - self._last_cpu[1]) / (now - self._last_cpu[0]) * 100, 1)
+            out["programCpu"] = pct
+            self.program_cpu_history.append(pct)
+            out["programCpuHistory"] = list(self.program_cpu_history)
+        self._last_cpu = (now, cpu_s)
+        ticks = self.probes.system_cpu()
+        if ticks is not None and self._last_ticks is not None and ticks[1] > self._last_ticks[1]:
+            busy, total = ticks[0] - self._last_ticks[0], ticks[1] - self._last_ticks[1]
+            out["cpu"] = round(busy / total * 100, 1)
+        self._last_ticks = ticks
         return out
 
     def _planned_start(self) -> bool:
@@ -238,6 +264,10 @@ class Monitor:
                                    f"{self.config.sound.late_tolerance * 1000:g} ms，定时声音可能迟到")
         if t.get("lateAttention"):
             return Indicator(WARN, f"最近 1 分钟有 {t['lateRecent']} 个定时事件迟到被丢弃")
+        recent = list(self.program_cpu_history)[-10:]
+        if len(recent) >= 5 and sum(recent) / len(recent) >= PROGRAM_CPU_LIMIT:
+            return Indicator(WARN, f"主机程序占满了一个 CPU 核（最近 10 秒平均 {sum(recent) / len(recent):.0f}%），"
+                                   "声音和灯光可能不稳")
         p = data.get("program") or {}
         if (p.get("restarts") and p.get("uptime") is not None and p["uptime"] < RESTART_WINDOW
                 and not p.get("plannedStart")):

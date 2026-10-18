@@ -115,7 +115,7 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
             </span>
           </div>
           <div className="load-col">
-            <span className="small" style={{ fontSize: 12 }}>运算负载</span>
+            <span className="small" style={{ fontSize: 12 }}>合成器运算负载</span>
             <Gauge value={load} max={100} limit={85} text={load === null ? '—' : `${Math.round(load)}%`}
               label={load === null ? '合成器服务运算负载未知' : `合成器服务运算负载 ${Math.round(load)}%，红线是峰值上限 85%`} />
             <Spark values={history} max={100} />
@@ -191,7 +191,8 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
 
   function MachineSection() {
     const m = g<{ host: string; model: string | null; tempC: number | null; throttled: boolean | null; memUsedMB: number | null;
-      memTotalMB: number | null; diskFreeGB: number | null; diskTotalGB: number | null; uptime: number | null; programUptime: number }>('status.machine');
+      memTotalMB: number | null; diskFreeGB: number | null; diskTotalGB: number | null; uptime: number | null; programUptime: number;
+      programCpu?: number | null; cpu?: number | null; cores?: number | null; programCpuHistory?: number[] }>('status.machine');
     if (!m) return null;
     const memFrac = m.memUsedMB != null && m.memTotalMB ? m.memUsedMB / m.memTotalMB : null;
     const diskFrac = m.diskFreeGB != null && m.diskTotalGB ? 1 - m.diskFreeGB / m.diskTotalGB : null;
@@ -210,8 +211,22 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
             <div><KV k="内存" v={m.memUsedMB != null ? `${(m.memUsedMB / 1024).toFixed(1)} / ${((m.memTotalMB ?? 0) / 1024).toFixed(1)} GB` : '—'} /><Segments frac={memFrac} /></div>
             <div><KV k="存储空间" v={m.diskFreeGB != null ? `${Math.round(m.diskFreeGB)} GB 可用` : '—'} /><Segments frac={diskFrac} warn={0.9} /></div>
             <KV k="还能录" v={storage?.minutes != null ? minutesText(storage.minutes) : '—'} />
+            <div data-cpu="program">
+              <KV k="主机程序 CPU" v={m.programCpu != null ? `${Math.round(m.programCpu)}% · 单核` : '—'} />
+              <Segments frac={m.programCpu != null ? Math.min(1, m.programCpu / 100) : null} warn={0.85} />
+            </div>
+            <div data-cpu="machine">
+              <KV k="整机 CPU" v={m.cpu != null ? `${Math.round(m.cpu)}%${m.cores ? ` · ${m.cores} 核` : ''}` : '—'} />
+              <Segments frac={m.cpu != null ? m.cpu / 100 : null} warn={0.85} />
+            </div>
           </div>
         </div>
+        {(m.programCpuHistory?.length ?? 0) > 1 && (
+          <>
+            <Spark values={m.programCpuHistory!} max={100} height={38} />
+            <span className="small">主机程序 CPU · 最近 1 分钟 · 按单核算，持续超过 90% 时声音和灯光可能卡顿</span>
+          </>
+        )}
         <div>
           <KV k="机器" v={m.model ?? m.host} />
           <KV k="降频" v={m.throttled == null ? '—' : m.throttled ? '有' : '无'} />

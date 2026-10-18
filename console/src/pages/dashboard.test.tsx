@@ -19,7 +19,8 @@ function state(health: Record<string, unknown>, extra: Record<string, unknown> =
   };
   st.status.network = { name: 'iPhone 热点', address: '172.20.10.3', tailscale: 'Running', tailscaleAddress: '100.101.33.8', localName: 'soundmat-pi.local', line: 'iPhone 热点 · soundmat-pi.local' };
   st.status.machine = { host: 'soundmat-pi', model: 'Raspberry Pi 5', tempC: 49, throttled: false, memUsedMB: 800, memTotalMB: 2048,
-    diskFreeGB: 52, diskTotalGB: 64, uptime: 9600, programUptime: 9000 };
+    diskFreeGB: 52, diskTotalGB: 64, uptime: 9600, programUptime: 9000, programCpu: 58.3, cpu: 20.4, cores: 4,
+    programCpuHistory: [55, 60, 58] };
   Object.assign(st.status, extra);
   return st;
 }
@@ -105,4 +106,7 @@ test('rhythm card, network kind, program and recording time', async () => {
   expect(within(machine).getByText('1 次')).toBeInTheDocument();
   expect(within(machine).getByText('2d09273 · 部署于 2026-10-17 15:04')).toBeInTheDocument();
   expect(within(machine).getByText('约 25 小时')).toBeInTheDocument();
+  expect(machine.querySelector('[data-cpu="program"]')!.textContent).toContain('58% · 单核');
+  expect(machine.querySelector('[data-cpu="machine"]')!.textContent).toContain('20% · 4 核');
+  expect(within(screen.getByRole('region', { name: '声音' })).getByText('合成器运算负载')).toBeInTheDocument();
 });

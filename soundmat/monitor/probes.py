@@ -263,3 +263,19 @@ def network_kind(n: dict, phone_hotspot: str, self_hotspot: str) -> str | None:
     if name == self_hotspot:
         return "selfHotspot"
     return "external"
+
+
+def process_cpu_seconds() -> float:
+    """本进程（主机程序，含所有线程）累计用掉的 CPU 时间（秒）。"""
+    t = os.times()
+    return t.user + t.system
+
+
+def system_cpu_ticks() -> tuple[int, int] | None:
+    """整机 CPU 的（忙碌, 总计）累计节拍数，来自 /proc/stat；不是 Linux 时为 None。"""
+    text = _read("/proc/stat")
+    if not text or not text.startswith("cpu "):
+        return None
+    vals = [int(x) for x in text.splitlines()[0].split()[1:]]
+    idle = vals[3] + (vals[4] if len(vals) > 4 else 0)      # idle + iowait
+    return sum(vals) - idle, sum(vals)

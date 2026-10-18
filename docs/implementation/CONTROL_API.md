@@ -42,7 +42,7 @@
 | `status.program` | 主机程序：`uptime`（秒）、`restarts`（systemd 自动重启次数，不在 systemd 下为 `null`）、`version`（`{commit, deployedAt, dirty, source}`，`source` 为 `deploy` 或 `git`；都读不到为 `null`） |
 | `status.update` | 软件更新：`enabled`（是否从发布包、在 systemd 下运行）、`state`（`idle` / `downloading` / `installing` / `restarting` / `error`）、`message`、`previous`（可以回到的上一版）、`pending`（待确认的新版本）、`failed`（启动失败被自动回退的版本） |
 | `status.storage` | 录音空间：`freeGB`、`minutes`（按当前声道数和分轨设置还能录的分钟数，不录音频时为 `null`） |
-| `status.machine` | `host`、`model`、`tempC`、`throttled`、`memUsedMB`、`memTotalMB`、`diskFreeGB`、`diskTotalGB`、`uptime`、`programUptime` |
+| `status.machine` | `host`、`model`、`tempC`、`throttled`、`memUsedMB`、`memTotalMB`、`diskFreeGB`、`diskTotalGB`、`uptime`、`programUptime`、`programCpu`（主机程序占单核的百分比，可超过 100%）、`programCpuHistory`（最近 60 秒）、`cpu`（整机所有核的平均百分比，不是 Linux 时为 `null`）、`cores` |
 | `status.network` | `name`、`type`、`address`、`tailscale`、`tailscaleAddress`、`localName`（局域网名字，主机名已带 `.local` 时不再追加）、`line`（垫面页顶部显示的一行）、`kind`（`phoneHotspot` / `selfHotspot` / `external` / `wired`，按配置 `[network]` 的连接名区分）、`apClients`（自建热点开着时大约连着的设备数，否则 `null`） |
 | `status.recording` | `{state}`，`state` 为 `idle` / `countdown` / `recording`；录制中另有 `count`（倒计时数字）、`flash`（打板的一瞬）、`elapsed`、`folder`、`audio`、`freeGB` |
 | `catalog.recordings` | `[{name, startedAt, title, duration, audio}]`，最新在前 |

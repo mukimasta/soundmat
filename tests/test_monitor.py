@@ -230,3 +230,23 @@ def test_restart_planned_by_update_is_not_an_error(rig, tmp_path):
     h = mon.step(0)
     assert h["sound"]["level"] == "ok"
     assert store.get("status.program.plannedStart") is True
+
+
+def test_program_and_machine_cpu(rig):
+    """主机程序 CPU 按单核算（两次采集之间的增量），整机 CPU 是所有核的平均；持续占满单核需要注意。"""
+    mon, store, fake, synth = rig
+    clock = {"cpu": 100.0, "busy": 1000, "total": 10000}
+    mon.probes.process_cpu = lambda: clock["cpu"]
+    mon.probes.system_cpu = lambda: (clock["busy"], clock["total"])
+    mon.step(0)
+    assert store.get("status.machine.programCpu") is None          # 第一次没有增量
+    clock.update(cpu=100.58, busy=1020, total=10100)
+    mon.step(1)
+    assert store.get("status.machine.programCpu") == 58.0
+    assert store.get("status.machine.cpu") == 20.0
+    assert store.get("status.health.sound.level") == "ok"
+    for i in range(2, 9):
+        clock["cpu"] += 0.95
+        h = mon.step(i)
+    assert h["sound"]["level"] == "warn" and "占满了一个 CPU 核" in h["sound"]["reason"]
+    assert store.get("status.machine.programCpuHistory")[-1] == 95.0
