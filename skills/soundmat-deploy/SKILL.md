@@ -82,14 +82,16 @@ sudo apt-get update -qq && sudo apt-get install -y -q tailscale
 | `system/systemd/soundmat-scsynth.service` | `/etc/systemd/system/` |
 | `system/systemd/soundmat.service` | `/etc/systemd/system/` |
 | `system/update/soundmat-guard` | `/usr/local/bin/`（755） |
+| `system/polkit/50-soundmat.rules` | `/etc/polkit-1/rules.d/`（644） |
 
 ```bash
-scp system/systemd/* system/update/soundmat-guard soundmat@<主机>:/tmp/
+scp system/systemd/* system/update/soundmat-guard system/polkit/50-soundmat.rules soundmat@<主机>:/tmp/
 # 在树莓派上
 sudo mkdir -p /etc/systemd/logind.conf.d
 sudo install -m 644 /tmp/logind-soundmat.conf /etc/systemd/logind.conf.d/soundmat.conf
 sudo install -m 644 /tmp/jackd.service /tmp/soundmat-scsynth.service /tmp/soundmat.service /etc/systemd/system/
 sudo install -m 755 /tmp/soundmat-guard /usr/local/bin/soundmat-guard
+sudo install -m 644 /tmp/50-soundmat.rules /etc/polkit-1/rules.d/50-soundmat.rules   # 控制台里的"重启"要用
 sudo systemctl daemon-reload && sudo systemctl restart systemd-logind
 sudo systemctl enable --now jackd soundmat-scsynth
 ```

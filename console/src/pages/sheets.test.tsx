@@ -121,3 +121,28 @@ test('sheets take focus, close on Escape and return focus to the opener', async 
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(menu).toHaveFocus();
 });
+
+test('menu → restart: each restart needs a second tap; sound problems offer a shortcut', async () => {
+  const { client, posts } = setup();
+  connect(client);
+  act(() => client.handle({ type: 'patch', changes: [
+    ['status.maintenance', { enabled: true }],
+    ['status.health', { sound: { level: 'error', reason: '合成器服务没有响应，音箱不会发声' }, mat: { level: 'ok', reason: '' },
+      net: { level: 'ok', reason: '' }, overall: 'error', issues: ['声音：合成器服务没有响应，音箱不会发声'] }],
+  ] }));
+  // 声音出问题：主页提示条上出现"重启"，点开就是重启面板
+  await userEvent.click(screen.getByRole('button', { name: '重启' }));
+  let sheet = screen.getByRole('dialog', { name: '重启' });
+  const sound = sheet.querySelector('[data-target="sound"]') as HTMLElement;
+  await userEvent.click(within(sound).getByRole('button', { name: '重启' }));
+  expect(posts.filter(([p]) => p === '/api/system/restart')).toEqual([]);          // 第一下只是确认
+  await userEvent.click(within(sound).getByRole('button', { name: '确认重启' }));
+  expect(posts).toContainEqual(['/api/system/restart', { target: 'sound' }]);
+  expect(within(sheet).getByRole('status').textContent).toBe('重启声音中…');
+  // 也可以从菜单进入
+  await userEvent.click(within(sheet).getByRole('button', { name: '关闭' }));
+  await userEvent.click(screen.getByRole('button', { name: '菜单' }));
+  await userEvent.click(within(screen.getByRole('dialog', { name: '菜单' })).getByRole('button', { name: /重启/ }));
+  sheet = screen.getByRole('dialog', { name: '重启' });
+  expect(sheet.querySelector('[data-target="machine"]')!.textContent).toContain('约 1 分钟后回来');
+});

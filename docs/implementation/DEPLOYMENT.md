@@ -14,6 +14,7 @@
 | `soundmat-net-fallback.timer` | `system/network/` | 每分钟按优先级选择网络、没网时开自建热点 |
 | `/etc/systemd/logind.conf.d/soundmat.conf` | `system/systemd/logind-soundmat.conf` | `RemoveIPC=no`，见「音频参数」 |
 | `/usr/local/bin/soundmat-guard` | `system/update/` | 新版本反复启动失败时切回上一版 |
+| `/etc/polkit-1/rules.d/50-soundmat.rules` | `system/polkit/` | 允许装置用户从控制台重启 JACK、合成器服务、主机程序和整台机器（只放开这几项） |
 
 三个主服务按 JACK → scsynth → 主机程序的顺序依赖，异常退出都会自动重启，开机自启。scsynth 是独立的服务而不是主机程序的子进程：主机程序重启（更新、出错后被拉起）时声音链路不中断，scsynth 出错时由 systemd 单独重启、主机程序发现后重建（`SYNTH.md`）。
 

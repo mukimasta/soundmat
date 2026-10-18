@@ -31,8 +31,8 @@ def _read(path: str) -> str | None:
         return None
 
 
-def _process_cmdline(name: str) -> list[str] | None:
-    """找一个正在运行的进程（按可执行文件名），返回它的命令行参数。"""
+def _process(name: str) -> tuple[Path, list[str]] | None:
+    """找一个正在运行的进程（按可执行文件名），返回它的 /proc 目录和命令行参数。"""
     proc = Path("/proc")
     if not proc.is_dir():
         return None
@@ -45,8 +45,27 @@ def _process_cmdline(name: str) -> list[str] | None:
             continue
         args = [a.decode(errors="replace") for a in raw.split(b"\0") if a]
         if args and os.path.basename(args[0]) == name:
-            return args
+            return d, args
     return None
+
+
+def _process_cmdline(name: str) -> list[str] | None:
+    found = _process(name)
+    return None if found is None else found[1]
+
+
+def _started_at(proc_dir: Path) -> float | None:
+    """进程启动的 Unix 时间：开机时刻（/proc/stat 的 btime）加上进程的启动节拍数。
+
+    不用 systemd 记的启动时间：树莓派没有电池时钟，开机时还没校时，那个时间可能差好几个小时。
+    """
+    try:
+        ticks = int((proc_dir / "stat").read_text().rsplit(")", 1)[1].split()[19])
+        btime = next(int(line.split()[1]) for line in Path("/proc/stat").read_text().splitlines()
+                     if line.startswith("btime "))
+        return btime + ticks / os.sysconf("SC_CLK_TCK")
+    except (OSError, ValueError, IndexError, StopIteration):
+        return None
 
 
 def sound_cards() -> list[dict] | None:
@@ -67,10 +86,12 @@ def jack() -> dict | None:
     """JACK 音频服务是否在运行，以及它打开的设备、采样率和缓冲设置（从 jackd 的命令行读出）。"""
     if not Path("/proc").is_dir():
         return None
-    args = _process_cmdline("jackd")
-    if args is None:
+    found = _process("jackd")
+    if found is None:
         return {"running": False}
-    return parse_jack_args(args)
+    info = parse_jack_args(found[1])
+    info["startedAt"] = _started_at(found[0])
+    return info
 
 
 def _split_short_options(args: list[str]) -> list[str]:
@@ -127,9 +148,9 @@ def output_device(jack_info: dict | None, cards: list[dict] | None) -> dict | No
     return {"name": name, "usb": usb}
 
 
-def xruns_last_hour() -> int | None:
-    """最近一小时音频卡顿次数：从 systemd journal 里 jackd 的 xrun 记录数出来。"""
-    out = _run(["journalctl", "--since", "-1h", "--no-pager", "-o", "cat", "_COMM=jackd"], timeout=3)
+def xruns_since(since: float) -> int | None:
+    """从 ``since``（Unix 时间）起的音频卡顿次数：从 systemd journal 里 jackd 的 xrun 记录数出来。"""
+    out = _run(["journalctl", "--since", f"@{int(since)}", "--no-pager", "-o", "cat", "_COMM=jackd"], timeout=3)
     if out is None:
         return None
     return sum(1 for line in out.splitlines() if "xrun" in line.lower())

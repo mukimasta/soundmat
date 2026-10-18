@@ -45,6 +45,11 @@ class Recordings(Protocol):
     def delete(self, name: str) -> None: ...
 
 
+class Restarts(Protocol):
+    """控制接口用到的维护功能（``soundmat.maintenance.Maintenance``）。"""
+    def restart(self, target: str) -> None: ...
+
+
 class Updates(Protocol):
     """控制接口用到的软件更新功能（``soundmat.updater.Updater``）。"""
     enabled: bool
@@ -67,6 +72,7 @@ class ControlContext:
     test_tone: Callable[[int], None]                 # 逐声道测试音
     recorder: Recordings
     updater: Updates
+    maintenance: Restarts
     virtual: VirtualMat | None = None                # 只在使用虚拟垫子时存在
     # 额外的高频数据源，例如灯环预览：消息类型 → 保存可 JSON 化 dict 的最新值容器
     streams: dict[str, Latest[dict]] = field(default_factory=dict)
@@ -114,6 +120,10 @@ class ZoneBody(BaseModel):
 
 class SettingsBody(BaseModel):
     changes: dict
+
+
+class RestartBody(BaseModel):
+    target: str
 
 
 class ToneBody(BaseModel):
@@ -206,6 +216,12 @@ def create_app(ctx: ControlContext, console_dist: Path | None = CONSOLE_DIST) ->
         folder = ctx.recorder.folder_of(name)
         return StreamingResponse(zip_stream(folder), media_type="application/zip",
                                  headers={"Content-Disposition": f"attachment; filename*=UTF-8''{folder.name}.zip"})
+
+    @app.post("/api/system/restart", status_code=202)
+    def system_restart(body: RestartBody) -> dict:
+        """重启声音、主机程序或整台机器（控制台里再点一次确认后才会发来）。"""
+        ctx.maintenance.restart(body.target)
+        return {"ok": True}
 
     @app.get("/api/update")
     def update_info(request: Request) -> dict:

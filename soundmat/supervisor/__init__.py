@@ -22,6 +22,7 @@ from ..device import DeviceLink, RawFrame
 from ..exchange import Latest
 from ..intent import LightIntent
 from ..light import LightEngine
+from ..maintenance import Maintenance
 from ..monitor import Monitor, Probes, Sources
 from ..monitor import probes
 from ..monitor.log import EventLog
@@ -129,9 +130,11 @@ class Supervisor:
         self.updater = Updater(self.store, self.events, cfg.update.repo, opts.data_dir,
                                version["commit"] if version else None, layout=detect_layout(),
                                restart=opts.restart or _exit_for_restart)
+        self.maintenance = Maintenance(self.store, self.events)
         self.control = ControlContext(
             config=cfg, store=self.store, mat=self.perception.snapshot, settings=self.settings,
             play=self.catalog.play, test_tone=self.test_tone, recorder=self.recorder, updater=self.updater,
+            maintenance=self.maintenance,
             virtual=self.virtual,
             streams={"leds": self.lights.preview, "levels": self.sonification.levels},
         )

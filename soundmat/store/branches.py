@@ -14,6 +14,7 @@ BRANCHES: dict[str, str] = {
     "status.assets": "当前编排用到的声音素材（sonification）",
     "status.recording": "录制（recorder）",
     "status.update": "软件更新（updater）",
+    "status.maintenance": "能否从控制台重启（maintenance.py）",
     "status.log": "最近的警告和错误（monitor/log.py）",
     "status.health": "状态指示（monitor）",
     "status.mat": "控制器链路（monitor）",

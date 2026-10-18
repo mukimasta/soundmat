@@ -328,6 +328,7 @@ system/pi/soundmat/
 │   ├── store/               状态中心；branches.py 登记每段状态的唯一写入者
 │   ├── control/             控制接口
 │   ├── updater/             软件更新：发布包格式、从 GitHub 安装、切换版本
+│   ├── maintenance.py       维护：从控制台重启声音、主机程序或整台机器
 │   ├── errors.py            给人看的错误，控制接口统一转成 HTTP 状态码
 │   └── exchange.py、periodic.py、rates.py   线程间容器、定时任务、实测帧率
 ├── config/                  配置：校准、对齐、声部预算等部署参数

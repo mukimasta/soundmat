@@ -33,7 +33,8 @@ OK, WARN, ERROR, UNKNOWN = "ok", "warn", "error", "unknown"
 SEVERITY = {OK: 0, UNKNOWN: 1, WARN: 2, ERROR: 3}
 PEAK_LOAD_LIMIT = 85.0
 LOW_FPS = 20.0
-SLOW_PROBE_PERIOD = 10.0      # 较慢的探针（journal、tailscale、nmcli、systemctl、git）的间隔
+SLOW_PROBE_PERIOD = 10.0
+XRUN_WINDOW = 3600.0          # 秒：卡顿最多统计这么久（主机程序或 JACK 启动不到这么久时，从启动算起）      # 较慢的探针（journal、tailscale、nmcli、systemctl、git）的间隔
 RECENT = 60.0                 # 秒：「最近 1 分钟」的节拍超时与迟到
 RESTART_WINDOW = 3600.0       # 秒：主机程序这么久之内被自动重启过，记为需要注意
 PROGRAM_CPU_LIMIT = 90.0      # 主机程序最近 10 秒平均占单核的百分比达到这个值：需要注意
@@ -48,7 +49,7 @@ class Probes:
     """可替换的探针，测试时换成假的。"""
     jack: Callable[[], dict | None] = probes.jack
     cards: Callable[[], list | None] = probes.sound_cards
-    xruns: Callable[[], int | None] = probes.xruns_last_hour
+    xruns: Callable[[float], int | None] = probes.xruns_since
     synth_late: Callable[[], int | None] = probes.synth_late_last_minute
     machine: Callable[[Path], dict] = probes.machine
     network: Callable[[], dict] = probes.network
@@ -129,7 +130,12 @@ class Monitor:
 
     def refresh_slow(self, now: float | None = None) -> None:
         """较慢的探针：最近一小时的卡顿、网络、systemd 重启次数、版本。"""
-        self._slow = {"xruns": self.probes.xruns(), "synthLate": self.probes.synth_late(),
+        # 卡顿从主机程序和 JACK 里较晚的那次启动算起、最长一小时：重启之前的卡顿不再算作现在的问题
+        hour_ago = time.time() - XRUN_WINDOW
+        jack = self.probes.jack() or {}
+        since = max(hour_ago, self.started_wall, jack.get("startedAt") or 0)
+        self._slow = {"xruns": self.probes.xruns(since), "xrunsSinceStart": since > hour_ago,
+                      "synthLate": self.probes.synth_late(),
                       "network": self.probes.network(),
                       "restarts": self.probes.restarts(self.config.system.service),
                       "version": self.probes.version(ROOT)}
@@ -167,6 +173,7 @@ class Monitor:
             "buffer": None if not jack or not jack.get("running") or jack.get("period") is None
             else {"period": jack["period"], "periods": jack.get("periods"), "driver": "JACK"},
             "xruns": self._slow.get("xruns"),
+            "xrunsSinceStart": self._slow.get("xrunsSinceStart"),
             "loadHistory": list(self.load_history),
         }
         machine = self.probes.machine(self.data_dir)
@@ -293,7 +300,8 @@ class Monitor:
         if (s.get("peakLoad") or 0) > PEAK_LOAD_LIMIT:
             return Indicator(WARN, f"合成器服务运算负载峰值 {s['peakLoad']:.0f}%，超过 {PEAK_LOAD_LIMIT:.0f}%")
         if a["xruns"]:
-            return Indicator(WARN, f"最近一小时音频卡顿 {a['xruns']} 次")
+            window = "启动以来" if a.get("xrunsSinceStart") else "最近一小时"
+            return Indicator(WARN, f"{window}音频卡顿 {a['xruns']} 次")
         timing = self._indicate_timing(data)
         if timing is not None:
             return timing
@@ -346,7 +354,7 @@ class Monitor:
         audio = data["audio"]
         self.state.update({
             **{f"status.audio.{k}": audio[k] for k in ("service", "usbCard", "synth", "outputDevice", "channels",
-                                                         "buffer", "xruns", "loadHistory")},
+                                                         "buffer", "xruns", "xrunsSinceStart", "loadHistory")},
             "status.mat": data["mat"],
             "status.matHistory": data["matHistory"],
             "status.machine": data["machine"],

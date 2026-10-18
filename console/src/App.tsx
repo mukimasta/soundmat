@@ -11,9 +11,10 @@ import { MenuSheet } from './pages/MenuSheet';
 import { RecordingsSheet } from './pages/RecordingsSheet';
 import { SettingsSheet } from './pages/SettingsSheet';
 import { UpdateSheet } from './pages/UpdateSheet';
+import { RestartSheet } from './pages/RestartSheet';
 
 type Page = 'mat' | 'dash';
-type SheetKind = 'none' | 'arr' | 'menu' | 'set' | 'recs' | 'upd';
+type SheetKind = 'none' | 'arr' | 'menu' | 'set' | 'recs' | 'upd' | 'restart';
 
 export function App() {
   const s = useConsole();
@@ -57,16 +58,21 @@ export function App() {
       )}
       {!s.connected && <DisconnectedBanner />}
       {page === 'mat' && alert && (
-        <button type="button" className="alert" onClick={() => setPage('dash')}
-          style={{ background: alert.level === 'error' ? 'var(--red-bg)' : 'var(--amber-bg)',
-            color: alert.level === 'error' ? 'var(--red-line)' : 'var(--amber-line)' }}>
-          <span style={{ flex: 'none', width: 10, height: 10, borderRadius: 3, background: sel.LOOK[alert.level].sq }} />
-          <span className="txt">{alert.text}</span>
-          <span className="go">看板
-            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2"
-              strokeLinecap="round" strokeLinejoin="round"><path d="M9.5 6l6 6-6 6" /></svg>
-          </span>
-        </button>
+        <div className="alert" style={{ background: alert.level === 'error' ? 'var(--red-bg)' : 'var(--amber-bg)',
+          color: alert.level === 'error' ? 'var(--red-line)' : 'var(--amber-line)' }}>
+          <button type="button" className="alert-main" onClick={() => setPage('dash')}>
+            <span style={{ flex: 'none', width: 10, height: 10, borderRadius: 3, background: sel.LOOK[alert.level].sq }} />
+            <span className="txt">{alert.text}</span>
+            <span className="go">看板
+              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2"
+                strokeLinecap="round" strokeLinejoin="round"><path d="M9.5 6l6 6-6 6" /></svg>
+            </span>
+          </button>
+          {/* 声音出问题时就近给出重启入口（打开重启面板，仍要再确认一次） */}
+          {alert.text.startsWith('声音') && (
+            <button type="button" className="alert-act" onClick={() => setSheet('restart')}>重启</button>
+          )}
+        </div>
       )}
       {page === 'mat' ? (
         <>
@@ -92,6 +98,7 @@ export function App() {
       {sheet === 'recs' && <RecordingsSheet onClose={close} onBack={() => setSheet('menu')} />}
       {sheet === 'set' && <SettingsSheet onClose={close} onBack={() => setSheet('menu')} />}
       {sheet === 'upd' && <UpdateSheet onClose={close} onBack={() => setSheet('menu')} />}
+      {sheet === 'restart' && <RestartSheet onClose={close} onBack={() => setSheet('menu')} />}
     </div>
   );
 }

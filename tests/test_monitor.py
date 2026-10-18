@@ -55,7 +55,7 @@ class Fake:
         self.clients = 2
 
     def probes(self):
-        return Probes(jack=lambda: self.jack, cards=lambda: self.cards, xruns=lambda: self.xruns,
+        return Probes(jack=lambda: self.jack, cards=lambda: self.cards, xruns=lambda since: self.xruns,
                       synth_late=lambda: self.synth_late,
                       machine=lambda d: {"host": "soundmat-pi", "tempC": 49.0}, network=lambda: self.network,
                       restarts=lambda svc: self.restarts, version=lambda root: self.version,
@@ -269,3 +269,23 @@ def test_program_and_machine_cpu(rig):
         h = mon.step(i)
     assert h["sound"]["level"] == "warn" and "占满了一个 CPU 核" in h["sound"]["reason"]
     assert store.get("status.machine.programCpuHistory")[-1] == 95.0
+
+
+def test_xruns_counted_since_the_later_start(rig):
+    """卡顿从主机程序和 JACK 里较晚的那次启动算起、最长一小时：重启之前的卡顿不算作现在的问题。"""
+    import time as _time
+
+    mon, store, fake, synth = rig
+    asked = []
+    mon.probes.xruns = lambda since: asked.append(since) or 4
+    fake.jack["startedAt"] = _time.time() - 120                  # JACK 两分钟前重启过
+    h = mon.step(0)
+    assert asked[-1] == pytest.approx(fake.jack["startedAt"])
+    assert store.get("status.audio.xrunsSinceStart") is True
+    assert h["sound"]["reason"] == "启动以来音频卡顿 4 次"
+    fake.jack["startedAt"] = _time.time() - 7200
+    mon.started_wall -= 7200                                     # 都已运行两小时：只看最近一小时
+    mon._next_slow = 0
+    h = mon.step(20)
+    assert asked[-1] == pytest.approx(_time.time() - 3600, abs=5)
+    assert h["sound"]["reason"] == "最近一小时音频卡顿 4 次"

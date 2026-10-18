@@ -43,6 +43,7 @@ uv run pytest                   # 测试
 | 系统监测 | `soundmat/monitor/` | 每秒采集音频链路、控制器、机器、网络；状态指示与原因；最近的警告和错误（`log.py`） |
 | 状态中心 | `soundmat/store/` | 状态树、按路径修改、变化通知；每段的唯一写入者（`branches.py`）；设置的默认值、校验与原子写入（`settings.py`） |
 | 软件更新 | `soundmat/updater/` | 发布包的格式（`package.py`）；从 GitHub 下载、校验、安装成版本目录、切换 `current`、重启与确认；发布命令是 `scripts/release.py`，启动保护是 `system/update/soundmat-guard`，见 `DEPLOYMENT.md`「发布与更新」 |
+| 维护 | `soundmat/maintenance.py` | 从控制台重启声音、主机程序或整台机器：交给 `systemctl --no-block`，需要系统权限规则 `system/polkit/50-soundmat.rules` |
 | 控制接口 | `soundmat/control/` | FastAPI：WebSocket 推送、命令与设置、录制打包下载（`download.py`）、提供控制台 |
 | 配置 | `soundmat/config.py` + `config/soundmat.toml` | 启动时读取，未知键报错 |
 | 线程间容器 | `soundmat/exchange.py` | `Latest`、`EventQueue`、`EventHub` |
@@ -128,7 +129,7 @@ uv run pytest                   # 测试
 |---|---|
 | 音频服务是否运行、打开的设备、采样率、缓冲 | 在 `/proc` 里找到 `jackd` 进程，读它的命令行（`-d alsa -d hw:… -r -p -n`） |
 | USB 声卡、实际输出设备 | `/proc/asound/cards`，把 JACK 打开的 `hw:` 设备对应到声卡名字；名字或描述里有 USB 即为 USB 声卡 |
-| 卡顿次数 | 最近一小时 systemd journal 里 jackd 的 xrun 记录数 |
+| 卡顿次数 | systemd journal 里 jackd 的 xrun 记录数，从主机程序和 JACK 里较晚的那次启动算起、最长一小时（JACK 的启动时刻从 `/proc` 算：树莓派没有电池时钟，systemd 记的启动时间可能还没校时）。重启之前的卡顿不算作现在的问题 |
 | 合成器服务收到太晚的指令 | 最近 1 分钟 systemd journal 里 scsynth 的 `late` 记录数（scsynth 每遇到一条就记一行）；达到 5 条时声音一项需要注意 |
 | 合成器服务 | `/status.reply`：是否在线、音色是否加载、采样率、平均与峰值负载（另保留最近 60 秒的负载曲线） |
 | CPU | 主机程序：`os.times()` 的用户态加内核态时间，两次采集之间的增量除以经过的时间，即占单核的百分比（含所有线程）；整机：`/proc/stat` 第一行的忙碌与总计节拍的增量 |

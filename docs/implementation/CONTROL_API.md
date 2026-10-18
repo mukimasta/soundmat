@@ -35,11 +35,12 @@
 | `status.audio.service`、`status.audio.usbCard` | 音频服务是否运行、是否有 USB 声卡（未知为 `null`） |
 | `status.audio.synth` | 合成器服务：`online`、`synthdefsLoaded`、`sampleRate`、`avgLoad`、`peakLoad` |
 | `status.audio.outputDevice` | 实际输出设备 `{name, usb}` |
-| `status.audio.channels`、`status.audio.buffer`、`status.audio.xruns`、`status.audio.loadHistory` | 声道数、缓冲 `{period, periods, driver}`、最近一小时卡顿次数、最近 60 秒负载 |
+| `status.audio.channels`、`status.audio.buffer`、`status.audio.xruns`、`status.audio.xrunsSinceStart`、`status.audio.loadHistory` | 声道数、缓冲 `{period, periods, driver}`、卡顿次数（从主机程序和 JACK 里较晚的那次启动算起、最长一小时；`xrunsSinceStart` 为真时表示不满一小时、从启动算起）、最近 60 秒负载 |
 | `status.matHistory` | 最近 60 秒的实测传感帧率 |
 | `status.rates` | 各条链路的帧率，每项为 `{actual, expected}`（次/秒，没有这条链路或没有数据时为 `null`）：`sensing`（控制器传感）、`perception`（垫面解读）、`beat`（声音化节拍）、`light`（灯光引擎）、`ledWrites`（写给控制器的灯光帧）、`pushMat`、`pushLeds`（推送到控制台，取所有连接里最高的一个；只在有变化时推送，期望值是上限） |
 | `status.timing` | `stalls`（节拍晚到超过迟到容忍度）、`late`、`yields`、`rejected` 的累计数，各自带 `…Recent`（最近 1 分钟的增加量）；`maxLagMs`（最近 1 分钟最大的节拍延迟）；`synthLate`（最近 1 分钟合成器服务收到太晚的指令数，读不到日志时为 `null`）；`stallsAttention`、`lateAttention`、`synthLateAttention`（是否达到需要注意的程度） |
 | `status.program` | 主机程序：`uptime`（秒）、`restarts`（systemd 自动重启次数，不在 systemd 下为 `null`）、`version`（`{commit, deployedAt, dirty, source}`，`source` 为 `deploy` 或 `git`；都读不到为 `null`） |
+| `status.maintenance` | `{enabled}`：能否从控制台重启（只在 systemd 下运行时） |
 | `status.update` | 软件更新：`enabled`（是否从发布包、在 systemd 下运行）、`state`（`idle` / `downloading` / `installing` / `restarting` / `error`）、`message`、`previous`（可以回到的上一版）、`pending`（待确认的新版本）、`failed`（启动失败被自动回退的版本） |
 | `status.storage` | 录音空间：`freeGB`、`minutes`（按当前声道数和分轨设置还能录的分钟数，不录音频时为 `null`） |
 | `status.machine` | `host`、`model`、`tempC`、`throttled`、`memUsedMB`、`memTotalMB`、`diskFreeGB`、`diskTotalGB`、`uptime`、`programUptime`、`programCpu`（主机程序占单核的百分比，可超过 100%）、`programCpuHistory`（最近 60 秒）、`cpu`（整机所有核的平均百分比，不是 Linux 时为 `null`）、`cores` |
@@ -66,6 +67,7 @@
 | `GET /api/update` | — | `{allowed, enabled, available, error}`：`available` 是 GitHub 上的发布包 `[{tag, commit, branch, builtAt, current}]`，最新在前，只在 `allowed` 时列出；`allowed` 只对本机和 Tailscale（100.64.0.0/10）的请求为真 |
 | `POST /api/update` | `{"tag": "build-<短提交号>"}` | 在后台下载、安装并切换到这个版本，之后主机程序重新启动；不是本机或 Tailscale 来的请求返回 403，不能更新或正在更新返回 409 |
 | `POST /api/update/rollback` | — | 切回上一版并重新启动；权限与返回同上 |
+| `POST /api/system/restart` | `{"target": "sound" \| "program" \| "machine"}` | 重启声音（JACK 和合成器服务）、主机程序或整台机器，交给 systemd 执行，返回 202；不在 systemd 下运行（开发机）或系统权限不足返回 409 和原因，不认识的对象返回 422 |
 | `POST /api/recording/start` | — | 开始录制；空间不足、已在录制或合成器服务没有响应时返回 409 和原因 |
 | `POST /api/recording/stop` | — | 停止录制 |
 | `GET /api/recordings` | — | 录制列表 |

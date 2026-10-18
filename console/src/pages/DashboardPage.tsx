@@ -121,7 +121,8 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
           </div>
         </div>
         <div className="grid2">
-          <Tile label="卡顿 · 最近 1 小时" value={xruns ?? '—'} unit={xruns == null ? '' : '次'}
+          <Tile label={g<boolean>('status.audio.xrunsSinceStart') ? '卡顿 · 启动以来' : '卡顿 · 最近 1 小时'}
+            value={xruns ?? '—'} unit={xruns == null ? '' : '次'}
             sub={xruns == null ? '无法读取' : xruns ? `${CROSS}声音断过` : `${CHECK}没有断过`} tone={xruns ? 'warn' : xruns === 0 ? 'ok' : undefined} />
           <Tile label="迟到 · 最近 1 分钟" value={late ?? '—'} unit={late == null ? '' : '次'}
             sub={late == null ? undefined : late ? `${CROSS}有音没按时响` : `${CHECK}每个音都准时`}

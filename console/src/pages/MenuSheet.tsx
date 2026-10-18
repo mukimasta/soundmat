@@ -7,10 +7,10 @@ const chevron = (
     strokeLinecap="round" strokeLinejoin="round"><path d="M9.5 6l6 6-6 6" /></svg>
 );
 
-/** 菜单：已录制、设置与软件更新。 */
+/** 菜单：已录制、设置、软件更新与重启。 */
 export function MenuSheet({ onClose, onOpen, recordingsText }: {
   onClose: () => void;
-  onOpen: (sheet: 'recs' | 'set' | 'upd') => void;
+  onOpen: (sheet: 'recs' | 'set' | 'upd' | 'restart') => void;
   recordingsText?: string;
 }) {
   const s = useConsole();
@@ -47,6 +47,15 @@ export function MenuSheet({ onClose, onOpen, recordingsText }: {
           </svg>
           <span className="grow">软件更新</span>
           <span className="mono-sub">{version ?? ''}</span>
+          {chevron}
+        </button>
+        <div className="sep" />
+        <button type="button" onClick={() => onOpen('restart')}>
+          <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 12a7 7 0 1 1-2.05-4.95 M19 4.5V8h-3.5" />
+          </svg>
+          <span className="grow">重启</span>
+          <span className="mono-sub">声音 · 程序 · 机器</span>
           {chevron}
         </button>
       </div>
