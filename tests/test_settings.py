@@ -45,3 +45,23 @@ def test_unchanged_defaults_follow_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("SOUNDMAT_SOUND", "/second")
     s = Settings(Store(), tmp_path)
     assert s.get("run.soundLibrary") == "/second" and s.get("sound.volume") == 0.5
+
+
+def test_directory_settings_must_be_absolute(tmp_path):
+    """录音位置和素材库位置必须是绝对路径：相对路径会落进装置上当前版本的目录，更新后被清掉。"""
+    import json
+
+    import pytest
+
+    from soundmat.errors import InvalidRequest
+
+    s = Settings(Store(), tmp_path)
+    assert s.get("recording.path") == str(tmp_path / "recordings")
+    with pytest.raises(InvalidRequest, match="绝对路径"):
+        s.update({"recording.path": "data/recordings"})
+    with pytest.raises(InvalidRequest, match="绝对路径"):
+        s.update({"run.soundLibrary": "sound"})
+    s.update({"recording.path": str(tmp_path / "rec")})
+    # 设置文件里已有的相对路径：读取时当作无效，回到默认值
+    (tmp_path / "settings.json").write_text(json.dumps({"recording": {"path": "data/recordings"}}))
+    assert Settings(Store(), tmp_path).get("recording.path") == str(tmp_path / "recordings")

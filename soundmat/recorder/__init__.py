@@ -154,7 +154,7 @@ class Recorder:
 
     @property
     def root(self) -> Path:
-        return Path(self.settings.get("recording.path", "data/recordings"))
+        return Path(self.settings.get("recording.path"))      # 绝对路径，默认是数据目录下的 recordings/
 
     def bytes_per_second(self, stems: int | None = None) -> int:
         """录音每秒写多少字节（总输出加分轨）；不录音频时为 0。"""

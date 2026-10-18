@@ -83,6 +83,15 @@ def _text(v: Any) -> str:
     return v.strip()
 
 
+def _abs_path(v: Any) -> str:
+    """目录位置必须是绝对路径：相对路径会按主机程序的工作目录算，装置上那是当前版本的目录，
+    更新几次之后旧版本目录被清理，里面的东西（例如录音）就跟着没了。"""
+    text = _text(v)
+    if not Path(text).expanduser().is_absolute():
+        raise ValueError("应为绝对路径，例如 /home/soundmat/data/recordings")
+    return str(Path(text).expanduser())
+
+
 def _bool(v: Any) -> bool:
     if not isinstance(v, bool):
         raise ValueError("应为是或否")
@@ -94,8 +103,8 @@ VALIDATORS: dict[str, Callable[[Any], Any]] = {
     "sound.orientation": _orientation,
     "sound.volume": _number(0, 1),
     "run.defaultArrangement": _text,
-    "run.soundLibrary": _text,
-    "recording.path": _text,
+    "run.soundLibrary": _abs_path,
+    "recording.path": _abs_path,
     "recording.stems": _bool,
 }
 
