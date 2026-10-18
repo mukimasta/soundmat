@@ -7,17 +7,20 @@
 """
 from __future__ import annotations
 
+import math
 from typing import Iterable, Sequence
 
 import numpy as np
 
-from ..intent import LightLayer
-from ..perception.zones import OUTER_ZONES
+from ..intent import LightIntent, LightLayer
+from ..perception.zones import OUTER_ZONES, ZONES
 
 RING_COLORS = (
     (100, 108, 128), (148, 112, 88), (88, 72, 210), (32, 188, 148),
     (48, 152, 255), (200, 72, 168), (218, 158, 48), (255, 108, 32),
 )
+
+WARM = (255, 180, 90)
 
 Color = Sequence[float]
 
@@ -146,3 +149,14 @@ class Canvas:
 
 def _clip(x: float) -> float:
     return max(0.0, min(1.0, float(x)))
+
+
+def breathing_marks(t: float, occupied: Iterable[int], led_count: int) -> LightIntent:
+    """Ambient 一类模式的灯光：暖色的整体呼吸作底色，有石头的位置叠加这一环颜色的淡淡标记。"""
+    breath = 0.25 + 0.2 * (0.5 + 0.5 * math.sin(t * 0.9))
+    base = Canvas(led_count, WARM, breath)
+    marks = Canvas(led_count)
+    marks.add(m for z in occupied
+              for m in span(led_for_angle(ZONES[z].center_deg, led_count), 3, RING_COLORS[ZONES[z].ring], 0.55,
+                            led_count))
+    return LightIntent((base.layer("base", 0), marks.layer("stones", 10)))

@@ -2,7 +2,7 @@
 
 ``Sonification`` 在时钟的每一拍读取最新的垫面快照，取走上一拍之后积累的全部事件，
 调用当前模式实例，把声音意图交给声音引擎、灯光意图交给灯光引擎、模式状态交给状态中心。
-切换编排时新旧两个实例同时运行，声音引擎在两组输出之间交叉淡化，淡化结束后停止旧实例。
+切换编排时新编排立即开始，旧编排在很短的时间里淡出（只为避免咔嗒声）后停止，不交叉淡化。
 
 节拍线程只做演奏本身：模式、声音引擎、灯光意图，以及自己的状态（状态中心的 ``status.current``、
 ``status.engine``、``status.assets``）。电平由别的线程按需采样（``sample_levels``），
@@ -32,7 +32,8 @@ if TYPE_CHECKING:   # 素材库引用了编排的 LoadError，运行时从这里
 log = logging.getLogger("soundmat.sonification")
 
 ModeFactory = Callable[[Arrangement, ModeContext], Mode]
-STATUS_PERIOD = 0.25  # 秒：引擎状态与切换进度写入状态中心的间隔
+STATUS_PERIOD = 0.25  # 秒：引擎状态写入状态中心的间隔
+STOP_FADE = 0.3       # 秒：切换编排时旧编排淡出的时长，只为避免咔嗒声
 
 
 @dataclass
@@ -50,7 +51,7 @@ class ModeInstance:
 class Sonification:
     def __init__(self, engine: SoundEngine, assets: AssetLibrary, perception: Perception, store: Store,
                  events: EventLog, light: Latest[LightIntent], modes: dict[str, ModeFactory],
-                 ctx: ModeContext, crossfade: float):
+                 ctx: ModeContext):
         self.engine = engine
         self.assets = assets
         self.perception = perception
@@ -59,22 +60,20 @@ class Sonification:
         self.light = light
         self.modes = modes
         self.ctx = ctx
-        self.crossfade = crossfade
         self.instances: list[ModeInstance] = []
-        # 正在演奏的实例（切换期间是新的那个）。只在节拍线程里改，其他线程可以直接读这个引用
+        # 正在演奏的实例。只在节拍线程里改，其他线程可以直接读这个引用
         self.active: ModeInstance | None = None
         self.levels: Latest[dict] = Latest()   # 总输出和每根电平条的电平，见 sample_levels
         self._events = perception.events.subscribe()
         self._pending: queue.Queue = queue.Queue()
         self._ids = itertools.count(1)
         self._next_status = 0.0
-        self._switch_started: float | None = None
         self._last_status: ModeStatus | None = None
         # 每拍结束时调用 fn(now, 当前实例这一拍的输出)，例如录制把它写进会话数据
         self.after_beat: list[Callable[[float, BeatOutput | None], None]] = []
         self.state.set("status.current", {
             "virtual": perception.source == "virtual", "arrangement": None, "mode": None,
-            "modeStatus": None, "switching": None, "meters": []})
+            "modeStatus": None, "meters": []})
         self.state.set("status.assets", {"missing": []})
 
     # ── 命令（任意线程）─────────────────────────────────────────────────
@@ -178,18 +177,15 @@ class Sonification:
                                          "state": self.assets.status()})
         if missing:
             self.log.warning(f"{a.title}：缺少 {len(missing)} 个声音素材，用到它们的声音不会发声")
-        previous = [i for i in self.instances if not i.retiring]
-        fade = self.crossfade if previous else 0.0
-        self.engine.add_instance(inst.id, inst.plan.buses, now, fade, inst.plan.fx, gain=10 ** (a.level / 20))
-        for old in previous:
+        for old in [i for i in self.instances if not i.retiring]:
             old.retiring = True
-            self.engine.retire_instance(old.id, now, fade)
+            self.engine.retire_instance(old.id, now, STOP_FADE)
+        self.engine.add_instance(inst.id, inst.plan.buses, now, inst.plan.fx, gain=10 ** (a.level / 20))
         inst.mode.start(now)
         self.instances.append(inst)
         self.active = inst
         self._last_status = None
         self.perception.set_control_zones(inst.plan.control_zones)
-        self._switch_started = now if previous else None
         self.state.update({
             "status.current.arrangement": a.id,
             "status.current.mode": a.mode,
@@ -204,17 +200,4 @@ class Sonification:
             self.assets.release(inst.id, now)
 
     def _publish_status(self, now: float) -> None:
-        switching = None
-        active = self.active
-        if self._switch_started is not None and active is not None:
-            p = (now - self._switch_started) / self.crossfade if self.crossfade > 0 else 1.0
-            if p >= 1.0 or not any(i.retiring for i in self.instances):
-                self._switch_started = None
-            else:
-                old = next((i for i in self.instances if i.retiring), None)
-                switching = {"from": old.arrangement.id if old else None,
-                             "to": active.arrangement.id, "progress": round(p, 3)}
-        self.state.update({
-            "status.current.switching": switching,
-            "status.engine": self.engine.status(),
-        })
+        self.state.set("status.engine", self.engine.status())

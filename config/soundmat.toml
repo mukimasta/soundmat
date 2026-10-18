@@ -46,8 +46,6 @@ schedule_ahead = 0.15
 late_tolerance = 0.05
 # 声音素材的内存预算（MB）；Pi 5 内存 2 GB
 asset_memory_mb = 768
-# 交叉淡化时长（秒）：切换编排、重建混音结构时使用
-crossfade_seconds = 3.0
 # 期望的合成器服务状态，系统监测据此判断是否一致
 expected_sample_rate = 48000
 expected_output_device = "USB"

@@ -52,7 +52,7 @@ export function playingState(extra: Record<string, unknown> = {}) {
     status: {
       current: {
         virtual: true, arrangement: 'kyoto', mode: 'ambient',
-        modeStatus: { text: '每环一层 · 左右两只音箱', reading: null, transport: null }, switching: null,
+        modeStatus: { text: '每环一层 · 左右两只音箱', reading: null, transport: null },
         meters: KYOTO_METERS,
       },
       log: [{ at: 1760000000, level: 'warning', text: '京都岚山：缺少 2 个声音素材，用到它们的声音不会发声' }],

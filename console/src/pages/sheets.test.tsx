@@ -29,13 +29,8 @@ test('arrangement sheet: switch, missing hint; volume on the mat page', async ()
   await userEvent.click(within(dialog).getByRole('button', { name: /Lo-Fi Loop/ }));
   expect(posts).toContainEqual(['/api/arrangements/lofi_1/play', undefined]);
 
-  act(() => client.handle({ type: 'patch', changes: [
-    ['status.current.arrangement', 'lofi_1'],
-    ['status.current.switching', { from: 'kyoto', to: 'lofi_1', progress: 0.37 }],
-  ] }));
-  expect(within(dialog).getByText('正在交叉淡化 37%')).toBeInTheDocument();
-  expect(within(dialog).getByText('正在淡出')).toBeInTheDocument();
-  expect(screen.getByText('正在切换到 Lo-Fi Loop · Progression 1 · 37%')).toBeInTheDocument();
+  act(() => client.handle({ type: 'patch', changes: [['status.current.arrangement', 'lofi_1']] }));
+  expect(within(within(dialog).getByRole('button', { name: /Lo-Fi Loop/ })).getByText('正在演奏')).toBeInTheDocument();
 
   expect(within(dialog).queryByLabelText('总音量')).toBeNull();      // 总音量在主页上，不在编排面板里
   const slider = screen.getByLabelText('总音量');

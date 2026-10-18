@@ -36,6 +36,7 @@ from ..sonification.ambient import AmbientMode
 from ..sonification.arrangements import ARRANGEMENTS_DIR
 from ..sonification.catalog import Catalog
 from ..sonification.jam import JamMode
+from ..sonification.pool import PoolMode
 from ..sonification.mode import ModeContext
 from ..sound.assets import AssetLibrary
 from ..sound.backend import Backend, RecordingBackend
@@ -48,7 +49,7 @@ from ..updater import Updater, detect_layout
 
 log = logging.getLogger("soundmat")
 
-MODES: dict[str, ModeFactory] = {"ambient": AmbientMode, "jam": JamMode}
+MODES: dict[str, ModeFactory] = {"ambient": AmbientMode, "jam": JamMode, "pool": PoolMode}
 LEVELS_PERIOD = 0.1    # 秒：电平采样的间隔（只供控制台显示）
 
 
@@ -116,7 +117,6 @@ class Supervisor:
             modes=opts.modes,
             ctx=ModeContext(led_count=cfg.light.led_count, setting=self.settings.get, seed=opts.seed,
                             heard_after=cfg.sound.schedule_ahead),
-            crossfade=cfg.sound.crossfade_seconds,
         )
         self.catalog = Catalog(self.store, self.events, self.sonification, self.assets, opts.arrangements_dir)
         self.clock = BeatClock(cfg.sound.tick_hz, self.sonification.on_beat, name="sonification",

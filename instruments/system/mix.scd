@@ -2,9 +2,9 @@
 //
 // 每个模式实例：各环总线与分组总线（最多 12 条，in0..in11，未用的指向一条静音总线）按各自增益
 // gain0..gain11 相加，加上共用效果的返回（fxIn × fxGain），经过模式总处理（Lo-Fi：cutoff、drive、
-// lofiGain），再乘交叉淡化增益（mixGain，按 mixFade 秒过渡），写到总输出总线。
+// lofiGain），再乘编排电平（mixGain，按 mixFade 秒过渡；切换编排时旧的一组在这里淡出），写到总输出总线。
 // 各输入的电平以 10 次/秒用 /sm_peak 回报（replyID = 输入序号），供控制台的每环电平使用。
-// 录制分轨：每条输入（乘过总线增益和交叉淡化增益、未经模式总处理）另外加到 stem0..stem11 指定的
+// 录制分轨：每条输入（乘过总线增益和编排电平、未经模式总处理）另外加到 stem0..stem11 指定的
 // 全局分轨总线上，效果返回加到 stemFx；切换编排时新旧两个实例一起汇入，分轨不中断。未用的指向一条废弃总线。
 (
 var maxIn = 12;
@@ -44,6 +44,13 @@ var maxIn = 12;
         ~jamToneReverb2.value(sig[i], sig[i + 1], 1.0, \decay.kr(1.4), \preDelay.kr(0.02))
     }.flatten;
     Out.ar(\out.kr(0), out * \amp.kr(1));
+});
+
+// 共用效果：冥想的主混响（网页 Tone.Reverb decay 7、wet 0.4），每个声道一个、互不相关。
+// 干声已经由声部按 cos 写到各自的总线（instruments/lib/pool_common.scd），这里只加回湿声。
+~smDef.("sm_fx_pool", {
+    var sig = In.ar(\in.kr(0), ~numCh);
+    Out.ar(\out.kr(0), ~toneReverb.(sig.asArray, 7) * ~poolWet * \amp.kr(1));
 });
 
 // 总输出：系统音量、限幅（-1 dB），写到硬件输出 0..N-1；输出电平用 /sm_peak 回报（replyID 100）

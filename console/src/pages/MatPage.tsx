@@ -17,9 +17,7 @@ export function MatPage({ onOpenArrangements, overlay }: { onOpenArrangements: (
   const hostLine = getPath<string>(s.state, 'status.network.line') ?? '';
   const cur = sel.current(s);
   const st = sel.modeStatus(s);
-  const sw = sel.switching(s);
   const lv = s.connected ? sel.levels(s) : null;
-  const target = sw ? sel.arrangements(s).find((a) => a.id === sw.to) : null;
 
   let left = '';
   let right = '';
@@ -30,9 +28,7 @@ export function MatPage({ onOpenArrangements, overlay }: { onOpenArrangements: (
     const out = lv?.output?.length ? Math.max(...lv.output) : undefined;
     right = st.reading ?? `输出 ${sel.dbText(out)} dB`;
   }
-  const line = sw && target
-    ? `正在切换到 ${target.title} · ${Math.round(sw.progress * 100)}%`
-    : cur ? `${cur.modeLabel} · ${sel.transportWord(st)}` : '';
+  const line = cur ? `${cur.modeLabel} · ${sel.transportWord(st)}` : '';
 
   return (
     <>
@@ -83,7 +79,6 @@ export function MatPage({ onOpenArrangements, overlay }: { onOpenArrangements: (
             <span className="np-text">
               <span className="np-title">{cur.title}</span>
               <span className="np-line">{line}</span>
-              {sw && <span className="progress"><span style={{ width: `${Math.round(sw.progress * 100)}%` }} /></span>}
             </span>
             <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#A49D91" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d="M6.5 14.5L12 9l5.5 5.5" />

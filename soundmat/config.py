@@ -48,7 +48,6 @@ class SoundConfig:
     schedule_ahead: float = 0.15
     late_tolerance: float = 0.05
     asset_memory_mb: float = 768.0
-    crossfade_seconds: float = 3.0
     expected_sample_rate: int = 48000
     expected_output_device: str = "USB"
 
@@ -147,7 +146,7 @@ def load_config(path: Path | str | None = None) -> Config:
     light = take("light", {k: k for k in ("led_count", "led_offset", "refresh_hz")})
     sound = take("sound", {k: k for k in (
         "tick_hz", "voice_budget_total", "voice_budget_categories", "schedule_ahead",
-        "late_tolerance", "asset_memory_mb", "crossfade_seconds",
+        "late_tolerance", "asset_memory_mb",
         "expected_sample_rate", "expected_output_device",
     )})
     synth = take("synth", {"host": "host", "port": "port", "synthdefs": "synthdefs"})

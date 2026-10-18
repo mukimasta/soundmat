@@ -3,6 +3,7 @@ import pytest
 
 from soundmat.perception.model import PressureMap
 from soundmat.perception.zones import NUM_ZONES
+from soundmat.sonification import STOP_FADE
 from soundmat.sonification.mode import LoadError
 
 
@@ -49,26 +50,26 @@ def test_load_failure_keeps_current(sup):
     assert any("无法加载" in item["text"] for item in sup.store.get("status.log"))
 
 
-def test_switch_crossfades_then_stops_old(sup, config):
+def test_switch_starts_new_at_once_and_stops_old_quickly(sup):
     son, be = sup.sonification, sup.backend
     sup.sonification.play(arrangement("a", control=[1, 2]))
     son.on_beat(beat(0, 1.0))
     assert sup.perception.interpreter._control_mask[[1, 2]].all()
     old = son.active
+    be.clear()
     sup.sonification.play(arrangement("b", synth="bell"))
     son.on_beat(beat(1, 2.0))
     assert son.active.arrangement.id == "b"
     assert len(son.instances) == 2 and old.retiring
     assert sup.perception.interpreter._control_mask is None
-    son.on_beat(beat(2, 2.5))
-    sw = sup.store.get("status.current.switching")
-    assert sw["to"] == "b" and 0 < sw["progress"] < 1
-    fade = config.sound.crossfade_seconds
-    son.on_beat(beat(3, 2.0 + fade + 0.1))
+    # 不交叉淡化：新编排直接是全音量，旧编排只用极短的时间淡出（避免咔嗒声）
+    gains = {c.args["instance"]: (c.args["gain"], c.args["fade"]) for c in be.of_kind("set_mix_gain")}
+    assert gains[son.active.id] == (1.0, 0.0)
+    assert gains[old.id] == (0.0, STOP_FADE)
+    son.on_beat(beat(2, 2.0 + STOP_FADE + 0.05))
     assert [i.arrangement.id for i in son.instances] == ["b"]
-    son.on_beat(beat(4, 2.0 + fade + 0.5))
-    assert sup.store.get("status.current.switching") is None
     assert [c.args["instance"] for c in be.of_kind("free_mix")] == [old.id]
+    assert "switching" not in sup.store.get("status.current")
 
 
 def test_mode_error_keeps_previous_intent(sup):

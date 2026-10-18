@@ -23,7 +23,7 @@ from ...clock import Beat
 from ...perception.model import MatEvent, MatSnapshot
 from ...perception.zones import RING_CENTERS, MAT_RADIUS, ZONES, zones_in_ring
 from ...intent import BeatOutput, Event, LightIntent, ModeStatus, Position, SoundIntent, Source, Voice
-from ..lights import RING_COLORS, Canvas, led_for_angle, span
+from ..lights import breathing_marks
 from ..mode import LoadError, LoadPlan, Mode
 
 BEHAVIORS = ("sustained", "intermittent", "trigger")
@@ -32,7 +32,6 @@ RESERVED = {"behavior", "instrument", "samples", "tiers", "interval", "position"
 DEFAULT_POSITION = {"sustained": "none", "intermittent": "random", "trigger": "zone"}
 # 声部超出预算时：持续的底层高于触发，触发高于间歇的点缀
 DEFAULT_PRIORITY = {"sustained": 2, "trigger": 1, "intermittent": 0}
-WARM = (255, 180, 90)
 
 
 @dataclass
@@ -141,7 +140,7 @@ class AmbientMode(Mode):
 
     def start(self, t: float) -> None:
         self.rng = random.Random(self.ctx.seed)
-        # 事件标识的前缀：同一份编排交叉淡化切换到自己时，两个实例的事件标识也不会相同
+        # 事件标识的前缀：同一份编排切换到自己时，两个实例的事件标识也不会相同
         self.prefix = f"{self.arrangement.id}.{uuid.uuid4().hex[:6]}"
         self.next_fire: dict[str, float] = {}
         self.fired = 0
@@ -271,13 +270,7 @@ class AmbientMode(Mode):
         return "左右两只音箱" if n == 2 else f"{n} 只音箱"
 
     def _light(self, t: float, snapshot: MatSnapshot) -> LightIntent:
-        n = self.ctx.led_count
-        breath = 0.25 + 0.2 * (0.5 + 0.5 * math.sin(t * 0.9))
-        base = Canvas(n, WARM, breath)
-        marks = Canvas(n)
-        marks.add(m for z in snapshot.state.occupied
-                  for m in span(led_for_angle(ZONES[z].center_deg, n), 3, RING_COLORS[ZONES[z].ring], 0.55, n))
-        return LightIntent((base.layer("base", 0), marks.layer("stones", 10)))
+        return breathing_marks(t, snapshot.state.occupied, self.ctx.led_count)
 
 
 def _numeric(params: dict) -> dict[str, float]:

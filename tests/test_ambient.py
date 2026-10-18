@@ -174,7 +174,7 @@ def test_lights_match_per_led_reference(seed):
     import math
     import random
 
-    from soundmat.sonification.ambient import WARM
+    from soundmat.sonification.lights import WARM
     from soundmat.sonification.lights import RING_COLORS, led_for_angle
 
     rnd = random.Random(seed)

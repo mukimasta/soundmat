@@ -9,7 +9,7 @@ var outDir = here +/+ "compiled";
 var files = [];
 File.mkdir(outDir);
 (outDir +/+ "*.scsyndef").pathMatch.do { |f| File.delete(f) };
-["players", "ambient", "jam", "system"].do { |dir|
+["players", "ambient", "jam", "pool", "system"].do { |dir|
     files = files ++ (here +/+ dir +/+ "*.scd").pathMatch.sort;
 };
 [2, 4, 8].do { |n|
@@ -17,6 +17,8 @@ File.mkdir(outDir);
     ~synthDefs = [];
     (here +/+ "lib/common.scd").load;
     (here +/+ "lib/jam_common.scd").load;
+    (here +/+ "lib/tone.scd").load;
+    (here +/+ "lib/pool_common.scd").load;
     files.do { |f| f.load };
     ~synthDefs.do { |d| d.writeDefFile(outDir) };
     ("% 声道：% 个音色".format(n, ~synthDefs.size)).postln;

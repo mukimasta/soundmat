@@ -27,13 +27,14 @@ uv run pytest                   # 测试
 | 时间基准 | `soundmat/timebase.py` | 系统时间（单调时钟）；不依赖任何模块，谁都能导入 |
 | 时钟 | `soundmat/clock/` | `BeatClock` 固定节拍线程、节拍延迟与卡住次数 |
 | 意图 | `soundmat/intent.py` | 持续声部、定时事件、全局参数、灯光层、模式状态；声音化与声音引擎、灯光引擎、录制之间的约定，所以放在声音化之外 |
-| 声音化 · 模式框架 | `soundmat/sonification/mode.py`、`sonification/__init__.py` | 模式生命周期、编排头部、每拍调度、交叉淡化切换、出错时保持上一拍、编排素材的加载与释放、电平采样 |
+| 声音化 · 模式框架 | `soundmat/sonification/mode.py`、`sonification/__init__.py` | 模式生命周期、编排头部、每拍调度、切换编排（新的立即开始，旧的 0.3 秒淡出）、出错时保持上一拍、编排素材的加载与释放、电平采样 |
 | 声音化 · 编排文件 | `soundmat/sonification/arrangements.py` + `arrangements/` | 读取与校验，格式见 `ARRANGEMENTS.md` |
 | 声音化 · 编排目录 | `soundmat/sonification/catalog.py` | 列出全部编排及缺少的素材（`catalog.arrangements`）、按标识开始演奏、开机进入默认编排 |
 | 声音化 · Ambient | `soundmat/sonification/ambient/` | 持续 / 间歇 / 触发、分档、条件、位置策略、灯光 |
+| 声音化 · 声池 | `soundmat/sonification/pool/` | 网页原型 Ambient 的移植：底音与远处的音、五度圈换调、每颗石头的低音与和声、整环节奏的音符与钟声、天气与雷、鸟鸣与水滴 |
 | 声音化 · Jam | `soundmat/sonification/jam/` | 走带、Lo-Fi、和声 / 鼓 / 扫描命中的精确时刻、预听、灯光；理论与时间方案移植自第一版 |
-| 声音化 · 灯光工具 | `soundmat/sonification/lights.py` | 各模式共用的向量化画布：铺底、覆盖、石头标记的依次叠加（`blend`、`add`）、多处光取最强（`Glow`）后混合或替换；角度和扇区到灯珠位置的换算 |
-| 声音引擎 | `soundmat/sound/engine.py` | 对账、声部预算、定时与去重、混音结构与交叉淡化、重启后重建 |
+| 声音化 · 灯光工具 | `soundmat/sonification/lights.py` | 各模式共用的向量化画布：铺底、覆盖、石头标记的依次叠加（`blend`、`add`）、多处光取最强（`Glow`）后混合或替换；角度和扇区到灯珠位置的换算；Ambient 与声池共用的"呼吸加石头标记"（`breathing_marks`） |
+| 声音引擎 | `soundmat/sound/engine.py` | 对账、声部预算、定时与去重、混音结构与编排电平、重启后重建 |
 | 声音引擎 · 空间化 | `soundmat/sound/spatial.py` | 音箱布局预设与分配公式 |
 | 声音引擎 · 素材库 | `soundmat/sound/assets.py` | 读文件头估算内存、预算检查、引用计数、重启后重载 |
 | 声音引擎 · 合成器接口 | `soundmat/sound/backend.py` | 抽象指令接口；`RecordingBackend` 只记录指令 |
@@ -97,7 +98,7 @@ uv run pytest                   # 测试
 
 ## 声音引擎的实现
 
-引擎通过 `sound/backend.py` 的 `Backend` 接口发出抽象指令：建立和释放一个模式实例的混音结构、设置它的交叉淡化增益和全局参数、开始/修改/淡出/强制释放一个声部、加载和释放素材、设置总输出。声部编号由引擎从 1000 开始分配，正好可以直接用作 scsynth 的节点号。每条指令都带执行时刻：有确定时刻的声音是意图里的时刻加上 `sound.schedule_ahead`（Pi 3B 上 0.15 秒，按 JACK 缓冲取），其余的（没有时刻的预听、参数、淡出、音量）是当前时刻，即立即执行；有时刻的声音主机交出时已经晚过 `sound.late_tolerance`（50 ms）就丢弃。规则见 `system_design/SOUND_ENGINE.md`「定时事件」。之前所有指令都只推后 30 ms，比 Pi 3B 上 85 ms 的音频缓冲还短，scsynth 实测每秒记下约 27 条收到太晚的指令，有节奏的声音因此忽早忽晚；改为现在的规则后降到接近 0。
+引擎通过 `sound/backend.py` 的 `Backend` 接口发出抽象指令：建立和释放一个模式实例的混音结构、设置它的编排电平和全局参数、开始/修改/淡出/强制释放一个声部、加载和释放素材、设置总输出。声部编号由引擎从 1000 开始分配，正好可以直接用作 scsynth 的节点号。每条指令都带执行时刻：有确定时刻的声音是意图里的时刻加上 `sound.schedule_ahead`（Pi 3B 上 0.15 秒，按 JACK 缓冲取），其余的（没有时刻的预听、参数、淡出、音量）是当前时刻，即立即执行；有时刻的声音主机交出时已经晚过 `sound.late_tolerance`（50 ms）就丢弃。规则见 `system_design/SOUND_ENGINE.md`「定时事件」。之前所有指令都只推后 30 ms，比 Pi 3B 上 85 ms 的音频缓冲还短，scsynth 实测每秒记下约 27 条收到太晚的指令，有节奏的声音因此忽早忽晚；改为现在的规则后降到接近 0。
 
 `RecordingBackend` 是不发声的实现：照单记录指令，并模拟合成器服务的通知——淡出的声部在淡出时长之后结束，单次声音在固定的 2 秒后结束，`simulate_restart()` 模拟合成器服务重启。测试用它检查对账和调度的结果。
 
@@ -157,7 +158,7 @@ uv run pytest                   # 测试
 | 文件 | 内容 |
 |---|---|
 | `master.wav` | 总输出（硬件输出总线 0…N−1，经过系统音量和限幅），24 位整数 WAV |
-| `stems/<总线>.wav` | 各环总线、分组总线和效果返回 `fx`，在模式总处理之前、乘过交叉淡化增益；可能超过 0 dBFS，所以是 32 位浮点 WAV |
+| `stems/<总线>.wav` | 各环总线、分组总线和效果返回 `fx`，在模式总处理之前、乘过编排电平；可能超过 0 dBFS，所以是 32 位浮点 WAV |
 | `session.jsonl` | 每行一条，带系统时间 `t`：`start`、`pressure`（最多 30 次/秒，压力 × 1000 和有石头的区域）、`event`（放下、拿起）、`sound`（持续声部与全局参数，变化时）、`events`（交出的定时事件）、`light`（灯环颜色，与控制台预览相同的十六进制字符串，每颗灯 6 个字符 rrggbb；最多 10 次/秒）、`slate`、`stop` |
 | `info.json` | `startedAt`（带时区的开始时间）、`startSystemTime`、`slateOffsetSeconds`（打板在录音中的位置，固定为 0：文件从打板开始）、`slateSystemTime`、编排、声道数、采样率、格式、开始时的设置、文件清单、`duration`、`endedAt`、`stopReason` |
 

@@ -1,0 +1,23 @@
+# 《冥想》 · 声池模式
+#
+# 网页原型的 Ambient（Sound Pool，web/soundmat/src/soundmat/SoundMat.jsx）移植过来的声音世界。
+# 声音全部是合成的，不用素材；规则和数值在 soundmat/sonification/pool/，音色在 instruments/pool/。
+# 格式见 docs/implementation/ARRANGEMENTS.md「声池编排」。
+
+title = "冥想"
+mode = "pool"
+mode_label = "Ambient · 氛围"
+description = "网页原型的 Ambient。五声音阶，每 5–8 分钟沿五度圈换调；空垫子时也有底音。由内到外：低音 → 中音 → 和声 → 中音符 → 高音符 → 天气 → 钟声 → 自然。"
+ring_labels = ["低音", "中音", "和声", "中音符", "高音符", "天气", "钟声", "自然"]
+
+[music]
+key_dwell = [300, 480]          # 每个调停留多久（秒），之后沿五度圈换到下一个调
+
+# 由内到外每环放哪一层，每层最多一环：
+#   low_drone 低音    mid_drone 中音    pad 和声          mid_notes 中音符
+#   high_notes 高音符 weather 天气      bells 钟声        nature 自然（鸟鸣、水滴）
+rings = ["low_drone", "mid_drone", "pad", "mid_notes", "high_notes", "weather", "bells", "nature"]
+
+[[meters.background]]
+label = "底音"
+buses = ["bed"]

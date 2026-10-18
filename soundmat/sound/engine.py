@@ -102,16 +102,14 @@ class SoundEngine:
 
     # ── 混音结构与模式实例 ──────────────────────────────────────────────
 
-    def add_instance(self, instance: str, buses: Sequence[str], now: float, fade: float = 0.0,
+    def add_instance(self, instance: str, buses: Sequence[str], now: float,
                      fx: str | None = None, gain: float = 1.0) -> None:
-        """为一个模式实例建立混音结构，按 ``fade`` 秒淡入到 ``gain``（切换编排时的交叉淡化）。
-
-        ``fx`` 是共用效果的音色；``gain`` 是这份编排的整体电平（线性），让各编排的响度一致。
-        """
+        """为一个模式实例建立混音结构。``fx`` 是共用效果的音色；``gain`` 是这份编排的整体电平（线性），
+        让各编排的响度一致。"""
         rec = InstanceRecord(instance, list(buses), fx=fx, gain=gain)
         self.instances[instance] = rec
         self.backend.create_mix(instance, rec.buses, self.layout.channels, now, fx)
-        self.backend.set_mix_gain(instance, gain, fade, now)
+        self.backend.set_mix_gain(instance, gain, 0.0, now)
 
     def retire_instance(self, instance: str, now: float, fade: float) -> None:
         """让一个模式实例的输出在 ``fade`` 秒内淡出，之后整体释放。"""

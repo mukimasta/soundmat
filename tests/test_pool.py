@@ -1,0 +1,192 @@
+import math
+
+import numpy as np
+import pytest
+
+from soundmat.clock import Beat
+from soundmat.perception.model import MatEvent, MatSnapshot, MatState, PressureMap
+from soundmat.perception.zones import NUM_ZONES, ZONES, zone
+from soundmat.sonification.arrangements import ARRANGEMENTS_DIR, load_arrangement
+from soundmat.sonification.mode import Arrangement, LoadError, ModeContext
+from soundmat.sonification.pool import INSTRUMENTS, KEY_SEMITONES, PENTATONIC_C, PoolMode
+
+CTX = ModeContext(led_count=108, seed=5)
+
+
+def snap(t, zones):
+    counts = [0] * 8
+    for z in zones:
+        counts[ZONES[z].ring] += 1
+    return MatSnapshot(
+        pressure=PressureMap(t, 0, np.zeros(NUM_ZONES, dtype=np.float32)),
+        state=MatState(t, frozenset(zones), tuple(counts), None),
+    )
+
+
+def meditation(**content):
+    arr = load_arrangement(ARRANGEMENTS_DIR / "meditation")
+    if content:
+        arr = Arrangement(id=arr.id, title=arr.title, mode=arr.mode, content={**arr.content, **content})
+    m = PoolMode(arr, CTX)
+    m.plan = m.load()
+    m.start(0.0)
+    return m
+
+
+class Run:
+    """按 60 拍/秒驱动模式；stones 是 {区域: (放下时刻, 拿起时刻或 None)}。"""
+
+    def __init__(self, mode, stones=None):
+        self.mode, self.stones, self.prev, self.i = mode, dict(stones or {}), set(), 0
+
+    def until(self, t_end):
+        outs = []
+        while self.i / 60 <= t_end + 1e-9:
+            t = self.i / 60
+            occ = {z for z, (on, off) in self.stones.items() if on <= t and (off is None or t < off)}
+            evs = [MatEvent("place", z, t) for z in sorted(occ - self.prev)]
+            evs += [MatEvent("lift", z, t) for z in sorted(self.prev - occ)]
+            self.prev = occ
+            outs.append(self.mode.tick(Beat(self.i, t, 1 / 60), snap(t, occ), evs))
+            self.i += 1
+        return outs
+
+
+def events(outs, name):
+    return [e for o in outs for e in o.sound.events if f":{name}#" in e.id]
+
+
+def test_meditation_plan():
+    m = meditation()
+    assert m.plan.instruments == INSTRUMENTS
+    assert m.plan.buses == ("bed",) + tuple(f"ring{r}" for r in range(8))
+    assert m.plan.fx == "sm_fx_pool" and m.plan.assets == frozenset()
+
+
+@pytest.mark.parametrize("content, message", [
+    ({"rings": ["pad"] * 8}, "两次"),
+    ({"rings": ["low_drone"]}, "8 项"),
+    ({"rings": ["low_drone", "mid_drone", "pad", "mid_notes", "high_notes", "weather", "bells", "rain"]}, "未知的层"),
+    ({"music": {"key_dwell": [10]}}, "key_dwell"),
+])
+def test_load_errors(content, message):
+    with pytest.raises(LoadError, match=message):
+        meditation(**content)
+
+
+def test_bed_plays_on_an_empty_mat_and_distant_notes_follow_its_volume():
+    outs = Run(meditation()).until(40.0)
+    assert all(any(v.id == "bed" and v.bus == "bed" for v in o.sound.voices) for o in outs)
+    assert outs[0].sound.voices[0].params == {"t": 1.0}
+    distant = events(outs, "distant")
+    assert 1 <= len(distant) <= 3                       # 每 15–30 秒一声
+    d = distant[0]
+    assert d.bus == "bed" and d.position is None
+    expect = (2 * math.pi * 0.015 * d.time) % (2 * math.pi)
+    assert d.params["volPhase"] == pytest.approx(expect)
+    assert outs[-1].status.text.startswith("五声 C 调 · ")
+
+
+def test_drones_follow_stones_keep_pitch_per_zone_and_change_with_key():
+    m = meditation()
+    z = zone(0, 5)
+    run = Run(m, {z.index: (0.5, 2.0)})
+    out = run.until(1.0)[-1]
+    (drone,) = [v for v in out.sound.voices if v.id.startswith("low_drone.")]
+    assert drone.source.name == "pool_drone_tri" and drone.bus == "ring0"
+    assert drone.params["freq"] in PENTATONIC_C[2]
+    assert drone.position.angle == pytest.approx(z.center_deg)
+    assert (drone.fade_in, drone.fade_out, drone.category) == (3.0, 1.5, "melodic")
+    # 拿起（2 秒）再放下（3 秒）：同一个调里音高不变
+    assert not [v for v in run.until(2.5)[-1].sound.voices if v.id.startswith("low_drone.")]
+    run.stones[z.index] = (3.0, None)
+    again = [v for v in run.until(3.5)[-1].sound.voices if v.id.startswith("low_drone.")][0]
+    assert again.id == drone.id and again.params == drone.params
+    # 换调：标识换代，音高取新调的五声
+    m.key.next_change = 4.0
+    out = run.until(4.1)[-1]
+    (new,) = [v for v in out.sound.voices if v.id.startswith("low_drone.")]
+    assert new.id != drone.id and m.key.index == 1
+    factor = 2 ** (KEY_SEMITONES[1] / 12)
+    assert new.params["freq"] in [pytest.approx(f * factor) for f in PENTATONIC_C[2]]
+    assert out.status.text.startswith("五声 G 调")
+
+
+def test_pads_start_a_note_at_once_and_then_every_interval():
+    m = meditation()
+    z = zone(2, 9)
+    outs = Run(m, {z.index: (0.0, None)}).until(20.0)
+    pads = [[v for v in o.sound.voices if v.id.startswith("pad.")][0] for o in outs]
+    assert pads[0].params["n"] == 1.0 and pads[0].fade_in == 2.0 and pads[0].category == "melodic"
+    changes = [(i / 60, p.params["n"]) for i, p in enumerate(pads) if i and p.params["n"] != pads[i - 1].params["n"]]
+    interval = m.layers[2].pads[z.index]["interval"]
+    assert 4 <= interval <= 8
+    assert [n for _, n in changes] == [2.0, 3.0, 4.0][:len(changes)] and len(changes) >= 2
+    assert changes[0][0] == pytest.approx(interval, abs=1 / 60)
+    assert all(p.params["freq"] in PENTATONIC_C[4] for p in pads)
+
+
+def test_bells_ring_when_placed_then_every_six_seconds():
+    m = meditation()
+    a, b = zone(6, 3), zone(6, 4)                          # 一颗石头压到相邻两个区域
+    outs = Run(m, {a.index: (1.0, None), b.index: (1.05, None)}).until(14.0)
+    bells = events(outs, "bells")
+    assert bells[0].time is None and bells[0].position.angle == pytest.approx(a.center_deg)
+    assert bells[0].source.name == "pool_bell" and 10 <= bells[0].params["decay"] <= 18
+    assert len([e for e in bells if e.time is None]) == 1  # 0.3 秒内第二个放下不再立即响，节奏也不变
+    later = [e.time for e in bells if e.time is not None]
+    assert later and all(5.5 <= t2 - t1 <= 6.5 for t1, t2 in zip([1.0] + later, later))
+
+
+def test_high_notes_echo_and_mid_notes_use_triangle():
+    outs = Run(meditation(), {zone(3, 1).index: (0.0, None), zone(4, 1).index: (0.0, None)}).until(10.0)
+    (mid, *_), (high, *_) = events(outs, "mid_notes"), events(outs, "high_notes")
+    assert mid.source.name == "pool_note" and mid.params["tri"] == 1.0
+    assert high.source.name == "pool_note_echo" and high.params["tri"] == 0.0
+
+
+def test_weather_mix_follows_stone_count_and_three_to_four_brings_thunder():
+    m = meditation()
+    zs = [zone(5, k).index for k in (0, 6, 12, 18, 24)]
+    stones = {z: (1.0 + i, None) for i, z in enumerate(zs[:4])}
+    run = Run(m, stones)
+    out = run.until(1.1)[-1]
+    w = next(v for v in out.sound.voices if v.id == "weather")
+    assert (w.params["windMix"], w.params["rain"]) == (1.0, 0.0) and w.position is None
+    out = run.until(3.1)[-1]
+    w = next(v for v in out.sound.voices if v.id == "weather")
+    assert w.params["windMix"] == pytest.approx(1 / 3) and w.params["rain"] == pytest.approx(2 / 3)
+    outs = run.until(4.1)
+    thunder = events(outs, "thunder")
+    assert len(thunder) == 1 and thunder[0].time == pytest.approx(4.0, abs=0.02)
+    w = next(v for v in outs[-1].sound.voices if v.id == "weather")
+    assert w.params["windMix"] == 0.0 and w.params["rain"] == 1.0
+    assert 1.5 <= w.params["boost"] <= 2.25                  # 雷声时雨声加强
+    p = thunder[0].params
+    out = run.until(4.0 + p["tAtk"] + p["sus"] + 0.05)[-1]
+    w = next(v for v in out.sound.voices if v.id == "weather")
+    assert w.params["boost"] == 1.0 and w.params["boostTime"] == pytest.approx(p["tRel"] + 0.6)
+
+
+def test_nature_drop_on_placement_then_birds_and_drops():
+    m = meditation()
+    zs = [zone(7, k).index for k in (2, 9, 16, 23, 30)]
+    outs = Run(m, {z: (1.0, None) for z in zs}).until(60.0)
+    drops = events(outs, "drop")
+    assert drops[0].time is None and drops[0].source.name == "pool_drop"
+    assert len([d for d in drops if d.time is None]) == 1   # 同一拍放下五颗，只立即响一滴
+    chirps = events(outs, "chirp")
+    assert chirps and all(c.position is None and c.bus == "ring7" for c in chirps)
+    assert all(0.06 <= c.params["decay"] for c in chirps)
+    # 一问一答：后面几声和第一声在同一拍交出，带着之后的准确时刻
+    ahead = [e.time - i / 60 for i, o in enumerate(outs) for e in o.sound.events if ":chirp#" in e.id]
+    assert max(ahead) >= 0.5
+
+
+def test_layers_react_only_to_their_own_ring():
+    """网页上放任何一颗石头都会重建所有层；这里放在别的环不会让钟声提前响。"""
+    m = meditation()
+    bell = zone(6, 0).index
+    run = Run(m, {bell: (0.0, None), zone(0, 4).index: (3.0, None), zone(5, 4).index: (3.2, None)})
+    bells = [e for e in events(run.until(5.4), "bells")]
+    assert len(bells) == 1                                 # 只有放下时那一声，下一声在 5.5–6.5 秒

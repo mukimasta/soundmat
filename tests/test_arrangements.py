@@ -41,3 +41,22 @@ def test_level_header(tmp_path):
     (tmp_path / "x" / "arrangement.toml").write_text('title = "X"\nmode = "jam"\nlevel = "loud"\n')
     with pytest.raises(LoadError, match="level"):
         load_arrangement(tmp_path / "x")
+
+
+def test_repo_arrangements_use_defined_instruments():
+    """每份编排用到的音色（和共用效果）都在 instruments/ 的源码里定义过：名字拼错时这里就能发现，
+    不用等到装置上没声音。"""
+    import re
+
+    from soundmat.config import ROOT
+    from soundmat.sonification.mode import ModeContext
+    from soundmat.supervisor import MODES
+
+    source = "\n".join(p.read_text() for p in (ROOT / "instruments").rglob("*.scd"))
+    defined = set(re.findall(r'~smDef\.\("(\w+)"', source)) | set(re.findall(r"\\(\w+)", source))
+    found, _ = discover(ARRANGEMENTS_DIR)
+    for arr in found.values():
+        mode = MODES[arr.mode](arr, ModeContext(led_count=108))
+        plan = mode.load()
+        missing = (set(plan.instruments) | {plan.fx}) - defined
+        assert not missing, f"{arr.id} 用到未定义的音色：{sorted(missing)}"

@@ -25,7 +25,6 @@
 | `status.current.virtual` | 是否使用虚拟垫子 |
 | `status.current.arrangement`、`status.current.mode` | 当前编排标识与模式名 |
 | `status.current.modeStatus` | 模式状态 `{text, reading, transport}` |
-| `status.current.switching` | 切换中为 `{from, to, progress}`，否则 `null` |
 | `status.current.meters` | 当前编排的电平条 `[{id, label, group, ring, color}]`：`group` 为 `background` 或 `placed`，背景组在前；`ring` 是只对应一个环时的环号（控制台用这一环的颜色），否则为 `null`；`color` 是编排指定的 `#rrggbb` 或 `null` |
 | `status.engine` | 声音引擎：在响声部数 `voices`、预算 `budget`、各类别在响数 `categories`、让位 `yields`、放弃 `rejected`、迟到 `late`、去重 `duplicates`、合成器服务重启 `restarts` |
 | `status.log` | 最近的警告和错误：`[{at, level, text, count?}]`，最新在前 |

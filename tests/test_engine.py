@@ -159,12 +159,12 @@ def test_naturally_ended_voice_not_restarted_until_it_leaves_intent():
 def test_retire_frees_everything_after_fade():
     eng, be = make()
     eng.apply("A", SoundIntent((v("a"), v("b"))), now=1.0)
-    eng.add_instance("B", ["ring0"], now=1.0, fade=3.0)
-    eng.retire_instance("A", now=1.0, fade=3.0)
+    eng.retire_instance("A", now=1.0, fade=0.3)
+    eng.add_instance("B", ["ring0"], now=1.0)
     gains = be.of_kind("set_mix_gain")
-    assert [(c.args["instance"], c.args["gain"], c.args["fade"]) for c in gains] == [("B", 1.0, 3.0), ("A", 0.0, 3.0)]
-    assert eng.tick(2.0) == []
-    assert eng.tick(4.1) == ["A"]
+    assert [(c.args["instance"], c.args["gain"], c.args["fade"]) for c in gains] == [("A", 0.0, 0.3), ("B", 1.0, 0.0)]
+    assert eng.tick(1.2) == []
+    assert eng.tick(1.31) == ["A"]
     assert eng.voices == {} and "A" not in eng.instances
     assert be.of_kind("free_mix")[0].args["instance"] == "A"
 

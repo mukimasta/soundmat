@@ -56,9 +56,6 @@ export const current = (s: ConsoleState) => {
 
 export const modeStatus = (s: ConsoleState) => getPath<ModeStatus | null>(s.state, 'status.current.modeStatus') ?? null;
 
-export const switching = (s: ConsoleState) =>
-  getPath<{ from: string | null; to: string; progress: number } | null>(s.state, 'status.current.switching') ?? null;
-
 export const isVirtual = (s: ConsoleState) => getPath<boolean>(s.state, 'status.current.virtual') === true;
 
 export const logs = (s: ConsoleState) => getPath<LogItem[]>(s.state, 'status.log') ?? [];
