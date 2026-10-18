@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 import shutil
 import threading
@@ -137,7 +138,8 @@ class Monitor:
         timing = self._timing(now, rt.get("counters") or {})
         timing["maxLagMs"] = rt.get("maxLagMs")
         uptime = probes.program_uptime(self.started)
-        program = {"uptime": uptime, "restarts": self._slow.get("restarts"), "version": self._slow.get("version")}
+        program = {"uptime": uptime, "restarts": self._slow.get("restarts"), "version": self._slow.get("version"),
+                   "plannedStart": self._planned_start()}
         storage = self._storage(machine, rt)
         return {"audio": audio, "machine": machine, "network": network, "matHistory": list(self.fps_history),
                 "rates": rt.get("rates"), "timing": timing, "program": program, "storage": storage}
@@ -157,6 +159,14 @@ class Monitor:
         out["stallsAttention"] = (out["stallsRecent"] or 0) >= STALL_WARN
         out["lateAttention"] = bool(out["lateRecent"])
         return out
+
+    def _planned_start(self) -> bool:
+        """这次启动是不是软件更新安排的（更新切换版本后主机程序有意退出，由 systemd 拉起）。"""
+        try:
+            planned = json.loads((self.data_dir / "update.json").read_text()).get("plannedAt")
+        except (OSError, ValueError):
+            return False
+        return isinstance(planned, (int, float)) and 0 <= self.started - planned < 120
 
     def _storage(self, machine: dict, rt: dict) -> dict:
         """录音空间：可用空间，以及按当前声道数和分轨设置估算还能录多少分钟（不录音频时为 None）。"""
@@ -229,7 +239,8 @@ class Monitor:
         if t.get("lateAttention"):
             return Indicator(WARN, f"最近 1 分钟有 {t['lateRecent']} 个定时事件迟到被丢弃")
         p = data.get("program") or {}
-        if p.get("restarts") and p.get("uptime") is not None and p["uptime"] < RESTART_WINDOW:
+        if (p.get("restarts") and p.get("uptime") is not None and p["uptime"] < RESTART_WINDOW
+                and not p.get("plannedStart")):
             return Indicator(WARN, f"主机程序最近一小时内被自动重启过（共 {p['restarts']} 次），可能在反复出错")
         return None
 

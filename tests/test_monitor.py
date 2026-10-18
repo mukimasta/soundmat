@@ -217,3 +217,16 @@ def test_recent_restart_needs_attention(rig):
     mon.started -= 7200                                         # 已经稳定运行了两小时
     mon._next_slow = 0
     assert mon.step(20)["sound"]["level"] == "ok"
+
+
+
+def test_restart_planned_by_update_is_not_an_error(rig, tmp_path):
+    """更新切换版本后的重启是有意的：systemd 的重启计数会增加，但不算出错。"""
+    import json as _json
+    import time as _time
+    mon, store, fake, synth = rig
+    fake.restarts = 2
+    (mon.data_dir / "update.json").write_text(_json.dumps({"plannedAt": _time.time() - 3}))
+    h = mon.step(0)
+    assert h["sound"]["level"] == "ok"
+    assert store.get("status.program.plannedStart") is True

@@ -113,6 +113,7 @@ def test_update_installs_switches_and_restarts(tmp_path, device):
     new = device.releases / "bbbbbbb"
     assert (new / ".ready").exists() and (new / ".venv").is_dir() and (new / "VERSION").exists()
     st = json.loads((tmp_path / "data" / "update.json").read_text())
+    assert isinstance(st.pop("plannedAt"), float)              # 有意的重启，系统监测不当成出错
     assert st == {"pending": "bbbbbbb", "previous": "aaaaaaa", "attempts": 0}
     assert restarts == [1]
 

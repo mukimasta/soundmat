@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -203,7 +204,8 @@ class Updater:
     def _switch(self, name: str, message: str) -> None:
         current = self.layout.current_name()
         st = self._read_state()
-        st.update({"pending": name, "previous": current, "attempts": 0})
+        # plannedAt：这次退出是更新安排的，系统监测据此不把接下来的重启当成出错
+        st.update({"pending": name, "previous": current, "attempts": 0, "plannedAt": time.time()})
         st.pop("failed", None)
         self._write_state(st)
         switch_link(self.layout, name)
