@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """在开发机上发布一个版本，并让装置更新到它（docs/implementation/DEPLOYMENT.md「发布与更新」）。
 
-    uv run python scripts/release.py [--device soundmat-pi] [--no-update]
+    uv run python scripts/release.py [--device soundmat-pi] [--no-update] [--no-sound]
 
 依次：检查工作区没有未提交的改动 → 推送当前分支 → 编译音色（源码没变时跳过）→ 构建控制台 →
 打包 → 作为 GitHub 预发布版本 build-<短提交号> 的附件上传（已存在时跳过）→ 删除最近 20 个以外的旧版本 →
-通过 Tailscale 通知装置更新，等它报告新版本已运行。需要 gh（已登录）和 npm。
+把编排引用的声音素材用 rsync 直接同步到装置（素材不经过 GitHub；没变化的不传，不删除装置上的文件）→
+通过 Tailscale 通知装置更新，等它报告新版本已运行。需要 gh（已登录）、npm，以及到装置的 SSH 密钥登录。
 """
 from __future__ import annotations
 
@@ -25,7 +26,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from soundmat.store.settings import default_sound_library  # noqa: E402
 from soundmat.updater.package import TAG_PREFIX, BuildInfo, build_package  # noqa: E402
+from soundmat.updater.samples import referenced_samples  # noqa: E402
 
 KEEP = 20
 STAMP = ROOT / "instruments" / "compiled" / ".source-hash"
@@ -102,6 +105,32 @@ def prune(repo: str) -> None:
         run("gh", "release", "delete", r["tag_name"], "--repo", repo, "--yes", "--cleanup-tag", capture=True)
 
 
+def sync_sound(device: str, user: str, remote_dir: str) -> None:
+    """把所有编排引用的素材同步到装置的素材库（``<remote_dir>/samples/``）。"""
+    refs, errors = referenced_samples()
+    for e in errors:
+        print(f"  注意：{e}", flush=True)
+    library = Path(default_sound_library()) / "samples"
+    missing = [r for r in refs if not (library / r).is_file()]
+    for r in missing:
+        print(f"  开发机上缺少素材：{r}", flush=True)
+    present = [r for r in refs if r not in missing]
+    if not present:
+        step("没有需要同步的声音素材")
+        return
+    size = sum((library / r).stat().st_size for r in present)
+    step(f"同步声音素材到 {device}：{len(present)} 个文件，共 {size / 1e6:.0f} MB（没变化的不传）")
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as lst:
+        lst.write("\n".join(present) + "\n")
+    t0 = time.monotonic()
+    p = subprocess.run(["rsync", "-a", f"--files-from={lst.name}", f"{library}/",
+                        f"{user}@{device}:{remote_dir}/samples/"], text=True, capture_output=True)
+    if p.returncode != 0:
+        sys.exit(f"同步声音素材失败：{(p.stderr or p.stdout).strip()[-400:]}\n"
+                 "发布包已在 GitHub 上；装置连上后重新运行，或加 --no-sound 跳过素材")
+    print(f"  完成，用时 {time.monotonic() - t0:.0f} 秒", flush=True)
+
+
 def http(method: str, url: str, body: dict | None = None, timeout: float = 5.0) -> dict:
     data = None if body is None else json.dumps(body).encode()
     req = urllib.request.Request(url, data=data, method=method, headers={"Content-Type": "application/json"})
@@ -147,7 +176,10 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--device", default="soundmat-pi", help="装置的名字或地址（Tailscale），默认 soundmat-pi")
     ap.add_argument("--port", type=int, default=8000, help="装置控制接口的端口")
-    ap.add_argument("--no-update", action="store_true", help="只发布到 GitHub，不通知装置")
+    ap.add_argument("--no-update", action="store_true", help="只发布到 GitHub，不同步素材也不通知装置")
+    ap.add_argument("--no-sound", action="store_true", help="不同步声音素材")
+    ap.add_argument("--ssh-user", default="soundmat", help="登录装置的用户，默认 soundmat")
+    ap.add_argument("--sound-dir", default="/home/soundmat/sound", help="装置上的声音素材库，默认 /home/soundmat/sound")
     args = ap.parse_args()
 
     if run("git", "status", "--porcelain", "--untracked-files=no", capture=True):
@@ -171,6 +203,8 @@ def main() -> None:
     if args.no_update:
         print(f"✓ 已发布 {info.tag}", flush=True)
         return
+    if not args.no_sound:
+        sync_sound(args.device, args.ssh_user, args.sound_dir)
     notify(args.device, args.port, info)
 
 

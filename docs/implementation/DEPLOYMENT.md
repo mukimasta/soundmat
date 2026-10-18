@@ -69,7 +69,7 @@
 uv run python scripts/release.py
 ```
 
-它依次检查工作区没有未提交的改动，推送当前分支，编译音色（源码没变时跳过），构建控制台，打包并上传，然后通过 Tailscale 通知装置（默认 `soundmat-pi`，`--device` 指定其他名字，`--no-update` 只发布不通知）更新到这个版本，等装置报告新版本已运行后结束。前后约 20–30 秒。CI 照常在 GitHub 上跑测试，装置不等它。
+它依次检查工作区没有未提交的改动，推送当前分支，编译音色（源码没变时跳过），构建控制台，打包并上传，同步声音素材（见下面「声音素材」），然后通过 Tailscale 通知装置（默认 `soundmat-pi`，`--device` 指定其他名字）更新到这个版本，等装置报告新版本已运行后结束。前后约 20–30 秒（第一次同步素材另需一两分钟）。`--no-update` 只发布到 GitHub，不碰装置；`--no-sound` 跳过素材。CI 照常在 GitHub 上跑测试，装置不等它。
 
 **在装置上**，程序目录按版本存放：
 
@@ -87,11 +87,7 @@ uv run python scripts/release.py
 
 ## 声音素材
 
-声音素材（`SoundMat/sound/`，约 1.3 GB）不放进发布包，也不经过 GitHub：它很少变化，而且仓库是公开的。第一次部署或增加素材时，从开发机同步：
-
-```bash
-rsync -a --delete ~/Projects/SoundMat/sound/ soundmat@soundmat-pi:/home/soundmat/sound/
-```
+声音素材不放进发布包，也不经过 GitHub：体积大、很少变化，而且仓库是公开的。发布命令每次用 rsync 从开发机直接同步到装置的 `/home/soundmat/sound/samples/`，只同步所有编排实际引用到的文件（`soundmat/updater/samples.py` 从编排里读出，当前 14 个、约 326 MB）。开发机的素材库 `SoundMat/sound/` 有 1.3 GB，其余是原始录音（`raw/`）和待整理的素材，装置用不到。没有变化的文件不传，之后的发布这一步只要一两秒；不删除装置上已有的文件，换掉的旧素材留在装置上也不影响。新编排引用了新素材时，正常发布就会带过去。
 
 编排缺少素材时照常运行，看板和编排面板会列出缺了哪些。
 

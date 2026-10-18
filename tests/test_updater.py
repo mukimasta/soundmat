@@ -197,3 +197,13 @@ def test_guard_ignores_missing_or_confirmed_state(tmp_path, device):
 ])
 def test_only_local_or_tailscale_may_update(host, ok):
     assert may_update(host) is ok
+
+
+def test_referenced_samples_are_what_arrangements_use():
+    """发布时同步到装置的素材：所有编排引用到的文件，相对于素材库的 samples/。"""
+    from soundmat.updater.samples import referenced_samples
+
+    refs, errors = referenced_samples()
+    assert errors == []
+    assert refs == sorted(refs) and len(refs) == len(set(refs))
+    assert refs and all(r.startswith("kyoto/") and r.endswith(".wav") for r in refs)   # Lo-Fi 全是合成音色
