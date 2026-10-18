@@ -26,9 +26,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from soundmat.store.settings import default_sound_library  # noqa: E402
 from soundmat.updater.package import TAG_PREFIX, BuildInfo, build_package  # noqa: E402
-from soundmat.updater.samples import referenced_samples  # noqa: E402
 
 KEEP = 20
 STAMP = ROOT / "instruments" / "compiled" / ".source-hash"
@@ -107,6 +105,10 @@ def prune(repo: str) -> None:
 
 def sync_sound(device: str, user: str, remote_dir: str) -> None:
     """把所有编排引用的素材同步到装置的素材库（``<remote_dir>/samples/``）。"""
+    # 用到时才导入：这两个模块会带入整个主机程序，单独先导入设置模块会循环导入
+    from soundmat.store.settings import default_sound_library
+    from soundmat.updater.samples import referenced_samples
+
     refs, errors = referenced_samples()
     for e in errors:
         print(f"  注意：{e}", flush=True)
