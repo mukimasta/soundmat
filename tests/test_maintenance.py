@@ -27,3 +27,15 @@ def test_restart_endpoint_refuses_off_device_and_unknown_targets(make_sup):
     sup.maintenance.run = lambda args: None
     assert client.post("/api/system/restart", json={"target": "program"}).status_code == 202
     assert client.post("/api/system/restart", json={"target": "everything"}).status_code == 422
+
+
+def test_only_enabled_inside_soundmat_service(tmp_path):
+    """只看自己是不是 soundmat.service：CI 的机器也由 systemd 运行，不能因此真的去重启系统服务。"""
+    from soundmat.maintenance import running_as_service
+
+    cg = tmp_path / "cgroup"
+    cg.write_text("0::/system.slice/soundmat.service\n")
+    assert running_as_service(cg)
+    cg.write_text("0::/system.slice/actions.runner.mukimasta-soundmat.service\n")
+    assert not running_as_service(cg)
+    assert not running_as_service(tmp_path / "missing")
