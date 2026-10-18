@@ -339,7 +339,8 @@ system/pi/soundmat/
 ├── system/                  装进树莓派系统的配置
 │   ├── systemd/             JACK、scsynth、主机程序三个服务，logind 设置
 │   ├── network/             网络选择与自建热点兜底
-│   └── update/              启动保护 soundmat-guard
+│   ├── update/              启动保护 soundmat-guard
+│   └── polkit/              允许装置用户从控制台重启服务和机器的系统权限规则
 ├── skills/                  操作手册（通用的 Agent Skill 格式）：soundmat-deploy 部署、更新与排错
 └── tests/
 ```
