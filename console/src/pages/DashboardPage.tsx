@@ -224,6 +224,8 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
         <div>
           <KV k="机器" v={m.model ?? m.host} />
           <KV k="降频" v={m.throttled == null ? '—' : m.throttled ? '有' : '无'} tone={m.throttled ? 'warn' : undefined} />
+          <KV k="系统时间" v={m.clockSynced == null ? '—' : m.clockSynced ? '开机时已校准' : '未校准（开机时没网，录音的日期时间可能不准）'}
+            tone={m.clockSynced === false ? 'warn' : undefined} />
           <KV k="机器已运行" v={m.uptime != null ? duration(m.uptime) : '—'} />
           <KV k="主机程序已运行" v={program?.uptime != null ? duration(program.uptime) : '—'} />
           <KV k="自动重启" v={program?.restarts == null ? '未知' : `${program.restarts} 次`} />
@@ -304,7 +306,8 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
   function machine() {
     return g<{ host: string; model: string | null; tempC: number | null; throttled: boolean | null; memUsedMB: number | null;
       memTotalMB: number | null; diskFreeGB: number | null; diskTotalGB: number | null; uptime: number | null; programUptime: number;
-      programCpu?: number | null; cpu?: number | null; cores?: number | null; programCpuHistory?: number[] }>('status.machine');
+      programCpu?: number | null; cpu?: number | null; cores?: number | null; programCpuHistory?: number[];
+      clockSynced?: boolean | null }>('status.machine');
   }
 }
 

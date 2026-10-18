@@ -51,6 +51,7 @@ class Probes:
     cards: Callable[[], list | None] = probes.sound_cards
     xruns: Callable[[float], int | None] = probes.xruns_since
     synth_late: Callable[[], int | None] = probes.synth_late_last_minute
+    clock: Callable[[], bool | None] = probes.clock_status
     machine: Callable[[Path], dict] = probes.machine
     network: Callable[[], dict] = probes.network
     restarts: Callable[[str], int | None] = probes.systemd_restarts
@@ -180,6 +181,7 @@ class Monitor:
         machine.update(self._cpu(now))
         machine["cores"] = os.cpu_count()
         machine["programUptime"] = self.uptime()
+        machine["clockSynced"] = self.probes.clock()
         network = dict(self._slow.get("network") or {})
         network["localName"] = probes.local_name(machine.get("host"))
         network["line"] = " · ".join(p for p in (network.get("name"), network["localName"]) if p)

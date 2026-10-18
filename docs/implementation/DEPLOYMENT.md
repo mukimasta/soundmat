@@ -8,6 +8,7 @@
 
 | 服务 / 配置 | 来自 | 作用 |
 |---|---|---|
+| `soundmat-clock.service`、`/usr/local/bin/soundmat-clock` | `system/clock/` | 开机时先等系统时钟校准再启动声音，之后这次开机不再校时，见「时钟」 |
 | `jackd.service` | `system/systemd/` | JACK 驱动 USB 声卡（48 kHz，实时优先级） |
 | `soundmat-scsynth.service` | `system/systemd/` | 合成器服务，JACK 就绪后启动，自己把输出接到声卡 |
 | `soundmat.service` | `system/systemd/` | 主机程序，从 `current` 指向的版本目录启动；启动前运行 `soundmat-guard` |
@@ -16,7 +17,7 @@
 | `/usr/local/bin/soundmat-guard` | `system/update/` | 新版本反复启动失败时切回上一版 |
 | `/etc/polkit-1/rules.d/50-soundmat.rules` | `system/polkit/` | 允许装置用户从控制台重启 JACK、合成器服务、主机程序和整台机器（只放开这几项） |
 
-三个主服务按 JACK → scsynth → 主机程序的顺序依赖，异常退出都会自动重启，开机自启。scsynth 是独立的服务而不是主机程序的子进程：主机程序重启（更新、出错后被拉起）时声音链路不中断，scsynth 出错时由 systemd 单独重启、主机程序发现后重建（`SYNTH.md`）。
+三个主服务按 JACK → scsynth → 主机程序的顺序依赖（开机时 JACK 之前还有一步等时钟，见「时钟」），异常退出都会自动重启，开机自启。scsynth 是独立的服务而不是主机程序的子进程：主机程序重启（更新、出错后被拉起）时声音链路不中断，scsynth 出错时由 systemd 单独重启、主机程序发现后重建（`SYNTH.md`）。
 
 系统环境：Raspberry Pi OS Lite 64 位；`jackd2`、`supercollider-server`（不装 sclang，音色在开发机编译）；uv 管理的 Python 3.12；Tailscale（设备名 `soundmat-pi`）。
 
@@ -84,6 +85,14 @@
 自建热点需要 `wifi-sec.proto rsn`、`pairwise ccmp`、`group ccmp`、`pmf disable`，以适配树莓派的无线芯片。
 
 **实测耗时**（2026-10-17，Pi 5）：已连 Avocado 时打开手机热点，下一次运行即切换，连接用时约 4 秒。关掉手机热点后，NetworkManager 先重试约 80 秒（两次各 25 秒的关联超时），之后下一次运行开启自建热点，1 秒内就绪；按 60 秒间隔，从断网到热点出现最多约 2 分 20 秒。自建热点开着时可以正常扫描，已知网络回来后下一次运行即切回。开机时周围没有已知网络，NetworkManager 不会尝试连接，60 秒后热点出现。
+
+## 时钟
+
+树莓派没有电池时钟：开机时用上次关机时存下的时间，联网校时会让时钟一下跳几分钟到几天。合成器服务按墙钟时间执行带时间戳的指令，时钟在它运行时跳变会打乱定时；2026-10-18 在 Pi 3B 上，校时跳了 276 秒，合成器约 20 秒后才跟上，期间带时间戳的"开始"被压住、立即的"停止"先执行，留下停不下来的和声铺底，负载升到 97%（`DECISION.md` 第 12 条）。
+
+所以开机时 `soundmat-clock` 排在 JACK 之前运行一次：有网就等到校准完成（通常开机后约 30 秒），最多等 45 秒；开机 20 秒后还没有任何网络连接（没有默认路由，例如只有自建热点）就不再等。然后停掉 `systemd-timesyncd`：声音启动之后，这次开机不再校时，时钟不会再跳；下次开机照常校时。开机没网时，这次开机用的是上次关机时存下的旧时间，录音文件夹上的日期时间可能不准，看板「机器」里的"系统时间"会写明未校准。
+
+这一步让开机到出声多了约 20–45 秒。主机程序另有一层保护：发现墙钟跳变（例如有人手动改时间）时，之后 25 秒内所有指令立即执行，不会留下停不下来的声音。
 
 ## 音频参数
 

@@ -167,6 +167,15 @@ def synth_late_last_minute() -> int | None:
     return sum(1 for line in out.splitlines() if line.startswith("late "))
 
 
+def clock_status(path: str = "/run/soundmat-clock") -> bool | None:
+    """这次开机时系统时钟是否校准过：开机服务 soundmat-clock 等校时后写下结论，之后不再校时
+    （system/clock/）。没有这个文件（开发机，或没装这个服务）时为 None。"""
+    text = _read(path)
+    if not text:
+        return None
+    return text.split()[0] == "synced"
+
+
 def machine(data_dir: Path) -> dict:
     info: dict = {"host": socket.gethostname(), "model": None, "tempC": None, "throttled": None,
                   "memUsedMB": None, "memTotalMB": None, "diskFreeGB": None, "diskTotalGB": None,

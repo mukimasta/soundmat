@@ -1,0 +1,16 @@
+# SoundMat：开机时等系统时钟校准，再启动声音（JACK → 合成器服务 → 主机程序）；之后这次开机不再校时。
+# 见 soundmat-clock 脚本开头的说明和 docs/implementation/DEPLOYMENT.md「时钟」。
+[Unit]
+Description=SoundMat: wait for the clock to be set before starting sound, then stop time sync
+After=systemd-timesyncd.service NetworkManager.service
+Wants=systemd-timesyncd.service
+Before=jackd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/soundmat-clock
+TimeoutStartSec=90
+
+[Install]
+WantedBy=multi-user.target

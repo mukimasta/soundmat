@@ -83,18 +83,25 @@ sudo apt-get update -qq && sudo apt-get install -y -q tailscale
 | `system/systemd/soundmat.service` | `/etc/systemd/system/` |
 | `system/update/soundmat-guard` | `/usr/local/bin/`（755） |
 | `system/polkit/50-soundmat.rules` | `/etc/polkit-1/rules.d/`（644） |
+| `system/clock/soundmat-clock` | `/usr/local/bin/`（755） |
+| `system/clock/soundmat-clock.service` | `/etc/systemd/system/` |
 
 ```bash
-scp system/systemd/* system/update/soundmat-guard system/polkit/50-soundmat.rules soundmat@<主机>:/tmp/
+scp system/systemd/* system/update/soundmat-guard system/polkit/50-soundmat.rules system/clock/* soundmat@<主机>:/tmp/
 # 在树莓派上
 sudo mkdir -p /etc/systemd/logind.conf.d
 sudo install -m 644 /tmp/logind-soundmat.conf /etc/systemd/logind.conf.d/soundmat.conf
 sudo install -m 644 /tmp/jackd.service /tmp/soundmat-scsynth.service /tmp/soundmat.service /etc/systemd/system/
 sudo install -m 755 /tmp/soundmat-guard /usr/local/bin/soundmat-guard
 sudo install -m 644 /tmp/50-soundmat.rules /etc/polkit-1/rules.d/50-soundmat.rules   # 控制台里的"重启"要用
+sudo install -m 755 /tmp/soundmat-clock /usr/local/bin/soundmat-clock                 # 开机等时钟校准再启动声音
+sudo install -m 644 /tmp/soundmat-clock.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl restart systemd-logind
+sudo systemctl enable soundmat-clock
 sudo systemctl enable --now jackd soundmat-scsynth
 ```
+
+开机时 `soundmat-clock` 排在 JACK 之前：有网等到校时完成（最多 45 秒），20 秒没网就不等；然后停掉 `systemd-timesyncd`，这次开机不再校时（原因见 `docs/implementation/DEPLOYMENT.md`「时钟」）。看它这次等了多久、校没校上：`journalctl -b -u soundmat-clock -o cat`，或 `cat /run/soundmat-clock`。
 
 验证控制台"重启"的权限（`rules.d` 目录只有 root 能读，普通用户用 `ls` 看不到，用 `pkcheck` 问；它只检查、不会真的重启）：
 
@@ -252,6 +259,8 @@ ssh soundmat@<主机> 'P=$(systemctl show -p MainPID --value soundmat); top -H -
 | 看板「缺少 N 个声音素材」 | 当前编排要素材（京都岚山），装置上没有：发布时不要加 `--no-sound`。Pi 3B 上是有意不放素材的（内存放不下京都岚山），不用管 |
 | 切到京都岚山后机器卡死、合成器服务被内核结束（`journalctl -k \| grep -i "out of memory"`） | 内存不够：京都岚山的素材解码后约 415 MB，Pi 3B 共 905 MB，其他部分已用约 330 MB。Pi 3B 只跑 Jam，Ambient 用 Pi 5 |
 | 节奏忽早忽晚，看板「节奏」里"合成器收到太晚"不为 0 | 定时声音的提前量 `sound.schedule_ahead` 小于 JACK 的音频缓冲（改过 JACK 的 `-p`/`-n` 却没改它）：按第 4 节的算法改配置、重新发布。直接看：`journalctl _COMM=scsynth --since -1min -o cat \| grep -c ^late` |
+| 开机后放 Jam 一两分钟突然卡、之后一直卡，scsynth 里留着很多 `jam_chord_pad`、负载很高 | 声音运行时系统时钟跳变了（开机联网校时）。确认装了 `soundmat-clock`：`systemctl is-enabled soundmat-clock`、`cat /run/soundmat-clock`。临时处理：控制台重启声音（清掉残留节点）。`journalctl -b \| grep -E "Initial clock synchronization\|系统时钟跳变"` 看是否跳过 |
+| 开机后要等半分钟到一分钟才出声 | 正常：`soundmat-clock` 在等系统时钟校准（有网时最多 45 秒，没网 20 秒） |
 | 控制台重启时提示"systemd 拒绝了这次重启" | 没装或没装对权限规则：按第 4 节安装 `50-soundmat.rules`，用 `pkcheck` 验证 |
 | 控制台重启按钮是灰的，写着"不是由 systemd 运行的装置" | 主机程序不是作为 `soundmat.service` 运行的（例如开发机，或在终端里手动启动的）：`systemctl status soundmat` |
 | 看板「主机程序最近一小时内被自动重启过」 | 真的在反复崩溃时：`journalctl -u soundmat -b -o cat \| grep -B2 -A20 Traceback`。更新导致的重启不算（更新时写下 `plannedAt`），从控制台手动重启也不算（systemd 只统计自动重启） |

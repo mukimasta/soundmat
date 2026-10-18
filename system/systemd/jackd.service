@@ -4,9 +4,11 @@
 # 48 kHz 与声音素材一致；每块 2048 帧、两块缓冲是 Pi 3B 上验证过的设置，Pi 5 可按看板上的卡顿次数往下调。
 # LimitRTPRIO 让 JACK 真正以实时优先级运行（第一版缺这一项，JACK 一直在普通优先级下跑）。
 # 另需 /etc/systemd/logind.conf.d/ 里 RemoveIPC=no，否则 soundmat 退出登录时 JACK 的信号量会被清掉。
+# 开机时排在 soundmat-clock 之后：先等系统时钟校准（或确认没网），声音启动后时钟就不再跳变。
 [Unit]
 Description=JACK for SoundMat (USB DAC hw:Audio)
-After=sound.target
+After=sound.target soundmat-clock.service
+Wants=soundmat-clock.service
 Before=soundmat-scsynth.service
 
 [Service]

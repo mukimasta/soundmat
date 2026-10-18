@@ -56,7 +56,7 @@ class Fake:
 
     def probes(self):
         return Probes(jack=lambda: self.jack, cards=lambda: self.cards, xruns=lambda since: self.xruns,
-                      synth_late=lambda: self.synth_late,
+                      synth_late=lambda: self.synth_late, clock=lambda: True,
                       machine=lambda d: {"host": "soundmat-pi", "tempC": 49.0}, network=lambda: self.network,
                       restarts=lambda svc: self.restarts, version=lambda root: self.version,
                       ap_clients=lambda iface: self.clients, platform_linux=True)
@@ -289,3 +289,13 @@ def test_xruns_counted_since_the_later_start(rig):
     h = mon.step(20)
     assert asked[-1] == pytest.approx(_time.time() - 3600, abs=5)
     assert h["sound"]["reason"] == "最近一小时音频卡顿 4 次"
+
+
+def test_clock_status_file(tmp_path):
+    """开机服务写下的结论：synced / unsynced；没有文件时未知。"""
+    f = tmp_path / "clock"
+    assert P.clock_status(str(f)) is None
+    f.write_text("synced 28\n")
+    assert P.clock_status(str(f)) is True
+    f.write_text("unsynced 20\n")
+    assert P.clock_status(str(f)) is False
