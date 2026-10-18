@@ -97,7 +97,11 @@ class LightEngine:
             self._thread.join(timeout=2.0)
 
     def _run(self) -> None:
-        """有新意图就合成；没有新意图时最迟每个刷新周期合成一次。两帧之间至少间隔半个周期，不超过刷新率太多。"""
+        """有新意图就合成；没有新意图时最迟每个刷新周期合成一次。
+
+        刷新率同时是上限：两帧之间至少间隔周期的 75%（留出意图到达时间的抖动，否则 60 Hz 时会漏帧）。刷新率与声音化相同（60）时每份新意图都会合成；
+        设得更低（例如 Pi 3B 上的 30）时，多出来的意图只保留最新的一份。
+        """
         period = 1.0 / self.cfg.refresh_hz
         last = 0.0
         while not self._stop.is_set():
@@ -105,8 +109,8 @@ class LightEngine:
             if self._stop.is_set():
                 break
             gap = system_time() - last
-            if gap < period / 2:
-                self._stop.wait(period / 2 - gap)
+            if gap < period * 0.75:
+                self._stop.wait(period * 0.75 - gap)
             self._fresh.clear()
             last = system_time()
             self.render(last)

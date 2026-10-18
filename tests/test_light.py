@@ -75,3 +75,22 @@ def test_running_engine_renders_every_new_intent():
     finally:
         eng.stop()
     assert [c for c in seen if c != "000000"] == [f"{i:02x}0000" for i in range(1, 31)]
+
+
+def test_refresh_rate_caps_frames_even_with_60_hz_intents():
+    """刷新率设成 30 时，即使声音化每秒交出 60 份新意图，灯光也只合成约 30 帧。"""
+    import time
+
+    intent = Latest(LightIntent())
+    eng = LightEngine(LightConfig(led_count=108, led_offset=0, refresh_hz=30), intent)
+    eng.start()
+    try:
+        t0 = time.monotonic()
+        i = 0
+        while time.monotonic() - t0 < 1.0:
+            i += 1
+            intent.set(LightIntent((layer("base", 0, ((i % 255) / 255, 0, 0), 1.0),)))
+            time.sleep(1 / 60)
+    finally:
+        eng.stop()
+    assert 25 <= eng.frames <= 42          # 约 30 帧（上限留了抖动余量），远低于 60
