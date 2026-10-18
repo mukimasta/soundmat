@@ -36,5 +36,6 @@ SOUNDMAT_SOUND=/path/to/sound uv run soundmat --virtual
 - `docs/ARCHITECTURE.md`：整个系统的结构
 - `docs/design/`、`docs/system_design/`、`docs/implementation/`：设计链
 - `docs/implementation/HOST_PROGRAM.md`：主机程序的工程实现与运行方式
-- `docs/implementation/DEPLOYMENT.md`：树莓派部署
+- `docs/implementation/DEPLOYMENT.md`：部署好的树莓派是什么样（服务、目录、发布与更新、网络、验收标准）
+- `skills/soundmat-deploy/SKILL.md`：**部署、更新和排查树莓派时先读这份**。从空白存储卡到装置能演奏的每一步命令、日常发布（`scripts/release.py`）、验收和常见故障；格式是通用的 Agent Skill（`SKILL.md`），任何 Agent 或人都可以照着做
 - `AGENTS.md`：Agent 工作协议

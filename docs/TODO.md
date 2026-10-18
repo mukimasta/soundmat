@@ -12,6 +12,6 @@
 
 ### Waiting
 
-- [ ] 在 Pi 5 上按 `implementation/DEPLOYMENT.md` 完成部署并逐项验证（第二步的系统服务、第一个发布包、第三步验证），进度见 `implementation/DEPLOYMENT_202610.md` — 等待 USB-C 供电头（10-18 到）焊好
+- [ ] 在 Pi 5 上按部署 skill（`skills/soundmat-deploy/SKILL.md`）完成部署：系统服务、第一个发布包，并按 `implementation/DEPLOYMENT.md`「验收标准」逐项验证，进度记在 `implementation/DEPLOYMENT_202610.md` — 等待 USB-C 供电头（10-18 到）焊好
 - [ ] 执行多石头性能评估 `evaluation/implementation/multi_stone_performance/`（Pi 3B 上的初步结果已记录） — 等待 Pi 5 部署完成
 - [ ] 实测 UW MPSK：Pi 上的 `uw-mpsk` 连接已建好（优先级 50，固定出厂 MAC），尚未填密码。登记后执行 `sudo nmcli con modify uw-mpsk wifi-sec.psk <密码>`，在 UW 确认能自动连上、Tailscale 可达 — 约 2026-10-19 在 UW 测

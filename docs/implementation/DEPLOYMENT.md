@@ -1,56 +1,36 @@
 # Deployment
 
-本文说明怎样从一块空白存储卡得到一台可以演奏的 SoundMat 主机，以及之后怎样更新。全部步骤只依赖本仓库和开发机上的声音素材库 `SoundMat/sound/`。系统环境和服务在树莓派上按下面的步骤逐步安装，每一步装完就验证，要装进系统的配置文件都在 `system/`；基础环境（JACK、scsynth、uv、Tailscale）的做法也整理成了 Claude 的 skill `soundmat-pi-env`（SoundMat 总文件夹的 `.claude/skills/`）。主机程序本身不手工安装，用「发布与更新」一节的发布命令从 GitHub 安装和更新。
+本文说明部署好的 SoundMat 主机是什么样、为什么这样安排：装了哪些服务、文件放在哪、程序怎样经 GitHub 更新、网络怎样选择、音频和电源的参数，以及交付前的验收标准。从空白存储卡开始的操作步骤、命令和排错，写在部署 skill **`skills/soundmat-deploy/SKILL.md`** 里（2026-10 在 Pi 5 和 Pi 3B 上实际走通）。
 
-每一步都可以重复执行；更新程序不会覆盖设置和录音。
+部署出来的主机只依赖本仓库（经 GitHub 的发布包）和开发机的声音素材库 `SoundMat/sound/`；系统里所有配置文件都来自仓库的 `system/`。
 
-## 准备
+## 组成
 
-**开发机**需要：本仓库、`SoundMat/sound/` 声音素材库、uv、SuperCollider（用 sclang 编译音色）、一对 SSH 密钥。
+| 服务 / 配置 | 来自 | 作用 |
+|---|---|---|
+| `jackd.service` | `system/systemd/` | JACK 驱动 USB 声卡（48 kHz，实时优先级） |
+| `soundmat-scsynth.service` | `system/systemd/` | 合成器服务，JACK 就绪后启动，自己把输出接到声卡 |
+| `soundmat.service` | `system/systemd/` | 主机程序，从 `current` 指向的版本目录启动；启动前运行 `soundmat-guard` |
+| `soundmat-net-fallback.timer` | `system/network/` | 每分钟按优先级选择网络、没网时开自建热点 |
+| `/etc/systemd/logind.conf.d/soundmat.conf` | `system/systemd/logind-soundmat.conf` | `RemoveIPC=no`，见「音频参数」 |
+| `/usr/local/bin/soundmat-guard` | `system/update/` | 新版本反复启动失败时切回上一版 |
 
-**硬件**：Raspberry Pi 5（配主动散热器，装置的空腔是封闭的）、存储卡、USB 声卡、ESP32 控制器、音箱。
+三个主服务按 JACK → scsynth → 主机程序的顺序依赖，异常退出都会自动重启，开机自启。scsynth 是独立的服务而不是主机程序的子进程：主机程序重启（更新、出错后被拉起）时声音链路不中断，scsynth 出错时由 systemd 单独重启、主机程序发现后重建（`SYNTH.md`）。
 
-**密码**：手机热点和自建热点的名称和密码是固定的，写在下面的「网络」一节（`DECISION.md` 第 6 条）。UW MPSK 为这台设备登记得到的密码、家里 Wi-Fi 的密码不进仓库，由人在树莓派上用 `nmcli con modify <连接名> wifi-sec.psk ...` 填入。Tailscale 用浏览器登录授权。**sudo**：需要 sudo 的步骤，先由人运行一次 `ssh -t soundmat@<树莓派> 'sudo -v'`；树莓派系统的 sudo 缓存在各个会话之间共享（`/etc/sudoers.d/010_global-tty`），约 15 分钟内其他 SSH 命令都能用。
+系统环境：Raspberry Pi OS Lite 64 位；`jackd2`、`supercollider-server`（不装 sclang，音色在开发机编译）；uv 管理的 Python 3.12；Tailscale（设备名 `soundmat-pi`）。
 
-## 第一步：烧录系统
+## 树莓派上的目录
 
-用 Raspberry Pi Imager 烧录 Raspberry Pi OS Lite（64 位），并在烧录设置里预先填好：
+| 内容 | 位置 |
+|---|---|
+| 主机程序、编排、音色、控制台（按版本） | `/home/soundmat/soundmat/releases/<短提交号>/`，`current` 指向正在用的版本 |
+| 声音素材 | `/home/soundmat/sound/` |
+| 更新状态 | `/home/soundmat/data/update.json` |
+| 设置 | `/home/soundmat/data/settings.json` |
+| 录音 | `/home/soundmat/data/recordings/` |
+| 日志 | systemd journal |
 
-1. 主机名 `soundmat-pi`，用户名 `soundmat`。
-2. 只允许 SSH 密钥登录，填入开发机的公钥。
-3. Wi-Fi 填手机热点，保证第一次开机就能连上网络。
-4. 时区设为 America/Los_Angeles，录制信息里的时间依赖它。
-
-插卡通电，等一两分钟，在开发机上确认能用 `ssh soundmat@soundmat-pi.local` 登录。
-
-在 UW 使用 UW MPSK 前，需要用这台设备无线网卡的固定 MAC 地址登记（地址可以在 `/sys/class/net/wlan0/address` 查到）。部署脚本会让这个连接始终使用固定地址，不做随机化，否则登记会失效。
-
-## 第二步：安装系统环境与服务
-
-在开发机上通过 SSH（`soundmat-pi.local`，或 Tailscale 里的 `soundmat-pi`）依次完成下面的工作。
-
-1. **系统软件包**：安装 SuperCollider 的合成器服务（scsynth）、JACK2、avahi、rsync 等。树莓派上不需要 sclang。
-2. **实时音频权限**：把 `soundmat` 用户加入 `audio` 组，并允许它以实时优先级运行音频服务：JACK 的服务要有 `LimitRTPRIO=95`、`LimitMEMLOCK=infinity`，否则 JACK 会以普通优先级运行（日志里有 `Cannot use real-time scheduling`），容易卡顿；第一版在 Pi 3B 上就一直缺这一项。另外在 `/etc/systemd/logind.conf.d/` 里设 `RemoveIPC=no`：JACK 以普通用户 `soundmat` 运行，默认情况下这个用户最后一个登录会话（例如 SSH）退出时，systemd 会清掉它的共享内存和信号量，JACK 随即失效（`semop (Invalid argument)`）。
-3. **电源**：降压模块输出 5 V（调在约 5.06 V），一路给灯带，一路经 USB 头给树莓派；Pi 5 用焊上去的 USB-C 公头（CC 脚带 56 kΩ 电阻），和给 Pi 3B 的 Micro USB 头并联在降压模块输出上。降压模块不和 Pi 5 协商快充，Pi 5 因此把 USB 总输出限制在 600 mA；**保持这个限制**，不打开 `usb_max_current_enable`：USB 声卡加 ESP32 只要约 0.2–0.5 A，限制还能防止 USB 设备多抽电、减轻接头的负担。实测 5 V 总线（含灯带）在 Jam 中约 0.8 A，开机灯带全亮时约 3.8 A。装好后用 `vcgencmd pmic_read_adc EXT5V_V` 和 `vcgencmd get_throttled` 在负载下确认输入电压不低于 4.9 V、没有欠压。
-4. **Python 环境**：安装 uv，由它安装 Python 和依赖，不使用系统自带的 Python。
-5. **程序与数据**：第一个版本手工安装：从 GitHub 下载最新的发布包，解压到 `/home/soundmat/soundmat/releases/<短提交号>/`，在里面运行 `uv sync --frozen --no-dev`，建一个空文件 `.ready`，再把 `current` 链接到它；之后的版本都用「发布与更新」一节的发布命令。把开发机的 `SoundMat/sound/` 用 rsync 同步到树莓派的声音素材目录（素材不经过 GitHub，见「声音素材」）。
-6. **系统服务**：安装 `system/systemd/` 下的三个服务，依次是 JACK（`jackd.service`）、scsynth（`soundmat-scsynth.service`）、主机程序（`soundmat.service`），并把 `logind-soundmat.conf` 放进 `/etc/systemd/logind.conf.d/`。三个服务按这个顺序依赖，任何一个异常退出都会自动重启，并设为开机启动。scsynth 用环境变量 `SC_JACK_DEFAULT_OUTPUTS` 在启动时自己把输出接到声卡，不再需要第一版那样另外运行 `jack_connect`。主机程序的服务每次启动前运行启动保护 `/usr/local/bin/soundmat-guard`（来自 `system/update/`）。
-7. **网络**：按下面「网络」一节建立 NetworkManager 连接，安装 `system/network/` 下的网络选择与兜底定时任务。avahi 随系统启用，局域网内可以用 `soundmat-pi.local` 访问。
-8. **Tailscale**：从 Tailscale 官方 apt 源安装，由 `tailscale up` 打印登录链接，在浏览器里授权。设备名 `soundmat-pi`。
-9. **设置**：不需要预先写。主机程序第一次运行时使用默认设置，在控制台里改过的项保存在 `/home/soundmat/data/settings.json`（例如把默认编排设为要拍的那一份）。
-10. **收尾**：确认三个服务都在运行（`systemctl is-active jackd soundmat-scsynth soundmat`），`jack_lsp -c` 里 scsynth 的输出已经接到声卡，控制台能打开，看板没有异常。
-
-## 第三步：验证
-
-部署完成后逐项确认，全部通过才算这台主机可以交付：
-
-1. 三个系统服务都在运行。
-2. 在局域网里用 `http://soundmat-pi.local:8000` 能打开控制台；在别处通过 Tailscale 也能打开。
-3. 看板上声音、垫子、网络三项都正常；合成器服务实际使用的是 USB 声卡，采样率和声道数与设置一致；垫子一栏显示实测传感帧率。
-4. 逐声道测试音从对应的音箱发出。
-5. 在垫子上放一颗石头，听到声音、看到灯光反馈。
-6. 断电后重新上电，装置自己进入默认编排，看板恢复正常。
-7. 关掉手机热点后重启，等待超时后自建热点出现，手机连上它能打开控制台；再打开手机热点，一分钟左右树莓派切回手机热点。
+`releases/` 只由更新写入，`data/` 下的内容只由装置自己写入，更新从不碰 `data/` 下的设置和录音。程序目录不在 `sound/` 旁边，所以主机程序的服务用环境变量 `SOUNDMAT_SOUND=/home/soundmat/sound` 和 `--data-dir /home/soundmat/data` 指定这两个位置。
 
 ## 发布与更新
 
@@ -58,13 +38,7 @@
 
 **发布包**是一个 `tar.gz`，包含主机程序（`soundmat/`）、编排、配置、编译好的音色（`instruments/compiled/`）、构建好的控制台（`console/dist/`）、`pyproject.toml` 与 `uv.lock`、`system/`，以及 `VERSION` 文件（第一行提交号，第二行构建时间）。压缩后不到 1 MB。它作为 GitHub 上一个预发布版本的附件存放：标签 `build-<短提交号>`，说明里写分支、完整提交号、构建时间和包的 SHA-256。只保留最近 20 个，更早的连同标签自动删除。
 
-**在开发机上发布**：提交并推送后运行
-
-```bash
-uv run python scripts/release.py
-```
-
-它依次检查工作区没有未提交的改动，推送当前分支，编译音色（源码没变时跳过），构建控制台，打包并上传，同步声音素材（见下面「声音素材」），然后通过 Tailscale 通知装置（默认 `soundmat-pi`，`--device` 指定其他名字）更新到这个版本，等装置报告新版本已运行后结束。前后约 20–30 秒（第一次同步素材另需一两分钟）。`--no-update` 只发布到 GitHub，不碰装置；`--no-sound` 跳过素材。CI 照常在 GitHub 上跑测试，装置不等它。
+**发布**由开发机上的 `scripts/release.py` 完成：推送、编译音色（没变时跳过）、构建控制台、打包上传、同步素材、通知装置更新，前后约 20–40 秒（用法见部署 skill）。CI 照常在 GitHub 上跑测试，装置不等它。
 
 **在装置上**，程序目录按版本存放：
 
@@ -86,25 +60,6 @@ uv run python scripts/release.py
 
 编排缺少素材时照常运行，看板和编排面板会列出缺了哪些。
 
-## 树莓派上的目录
-
-| 内容 | 位置 |
-|---|---|
-| 主机程序、编排、音色、控制台（按版本） | `/home/soundmat/soundmat/releases/<短提交号>/`，`current` 指向正在用的版本 |
-| 声音素材 | `/home/soundmat/sound/` |
-| 更新状态 | `/home/soundmat/data/update.json` |
-| 设置 | `/home/soundmat/data/settings.json` |
-| 录音 | `/home/soundmat/data/recordings/` |
-| 日志 | systemd journal |
-
-`releases/` 只由更新写入，`data/` 下的内容只由装置自己写入，更新从不碰 `data/` 下的设置和录音。程序目录不在 `sound/` 旁边，所以主机程序的服务用环境变量 `SOUNDMAT_SOUND=/home/soundmat/sound` 和 `--data-dir /home/soundmat/data` 指定这两个位置。
-
-## 音频参数
-
-采样率使用 48 kHz，与声音素材库一致，避免实时重采样。
-
-JACK 先使用在 Pi 3B 上验证过的设置：每块 2048 帧、两块缓冲。Pi 5 性能更强，应在看板上观察音频卡顿次数，逐步降到 1024 或 512 以减少延迟。scsynth 的内部块大小保持默认的 64：调大会让包络和鼓的起音变得阶梯化，省下的计算很少（见系列文档第 16 篇）。CPU 紧张时优先降低声部预算，最后才加大 JACK 缓冲。
-
 ## 网络
 
 树莓派按优先级选择网络：先连手机热点，再按外部网络列表连接场地或开发用的 Wi-Fi，都没有时自建热点。插网线时有线网络始终可用。
@@ -112,8 +67,8 @@ JACK 先使用在 Pi 3B 上验证过的设置：每块 2048 帧、两块缓冲�
 | 连接名 | SSID | 密码 | 自动连接 / 优先级 | 用途 |
 |---|---|---|---|---|
 | `phone-hotspot` | `soundmat` | `soundmat` | 是 / 100 | 手机热点，展出时的主网络 |
-| `uw-mpsk` | `UW MPSK` | 登记得到，放在密钥文件 | 是 / 50 | 外部网络：UW 实验室。固定使用网卡出厂 MAC（`cloned-mac-address=permanent`），避免登记失效 |
-| `netplan-wlan0-Avocado` | `Avocado` | 烧录时写入 | 是 / 40 | 外部网络：开发用的家庭 Wi-Fi，由 Raspberry Pi Imager 写入，netplan 管理 |
+| `uw-mpsk` | `UW MPSK` | 用网卡 MAC 在 UW 登记得到，不进仓库 | 是 / 50 | 外部网络：UW 实验室。固定使用网卡出厂 MAC（`cloned-mac-address=permanent`），避免登记失效 |
+| `netplan-wlan0-Avocado`（Pi 3B 上叫 `Avocado`） | `Avocado` | 家里的 Wi-Fi 密码，不进仓库 | 是 / 40 | 外部网络：开发用的家庭 Wi-Fi，由 Raspberry Pi Imager 写入，netplan 管理 |
 | `netplan-eth0` | — | — | 是 | 有线网络 |
 | `soundmat-ap` | `SoundMat-AP` | `soundmat` | 否 | 自建热点，2.4 GHz 信道 6，树莓派地址 `10.42.0.1`，为连上的设备分配地址 |
 
@@ -125,8 +80,33 @@ JACK 先使用在 Pi 3B 上验证过的设置：每块 2048 帧、两块缓冲�
 2. 已连着 Wi-Fi 时，看到优先级更高的已知网络（例如手机热点刚打开）就切过去。NetworkManager 自己只在建立连接时比较优先级，已连上后不会主动切换。
 3. Wi-Fi 和有线都没有连接、也不在连接中时，开启自建热点。
 
-安装：脚本放到 `/usr/local/sbin/soundmat-net-fallback`，`.service` 和 `.timer` 放到 `/etc/systemd/system/`，启用 `soundmat-net-fallback.timer`。建立连接时可以先不填密码，再用 `nmcli con modify <连接名> wifi-sec.psk <密码>` 补上。自建热点需要 `wifi-sec.proto rsn`、`pairwise ccmp`、`group ccmp`、`pmf disable`，以适配树莓派的无线芯片。
+自建热点需要 `wifi-sec.proto rsn`、`pairwise ccmp`、`group ccmp`、`pmf disable`，以适配树莓派的无线芯片。
 
 **实测耗时**（2026-10-17，Pi 5）：已连 Avocado 时打开手机热点，下一次运行即切换，连接用时约 4 秒。关掉手机热点后，NetworkManager 先重试约 80 秒（两次各 25 秒的关联超时），之后下一次运行开启自建热点，1 秒内就绪；按 60 秒间隔，从断网到热点出现最多约 2 分 20 秒。自建热点开着时可以正常扫描，已知网络回来后下一次运行即切回。开机时周围没有已知网络，NetworkManager 不会尝试连接，60 秒后热点出现。
 
-改网络配置可能让 SSH 断开。不插网线时，切换前先用 `sudo systemd-run --on-active=8m nmcli con modify ...` 预约一次回滚。
+## 音频参数
+
+采样率使用 48 kHz，与声音素材库一致，避免实时重采样。
+
+JACK 先使用在 Pi 3B 上验证过的设置：每块 2048 帧、两块缓冲。Pi 5 性能更强，应在看板上观察音频卡顿次数，逐步降到 1024 或 512 以减少延迟。scsynth 的内部块大小保持默认的 64：调大会让包络和鼓的起音变得阶梯化，省下的计算很少（见系列文档第 16 篇）。CPU 紧张时优先降低声部预算，最后才加大 JACK 缓冲。
+
+JACK 以实时优先级运行：服务里必须有 `LimitRTPRIO=95`、`LimitMEMLOCK=infinity`，否则 JACK 退回普通优先级（日志 `Cannot use real-time scheduling`），容易卡顿；第一版在 Pi 3B 上一直缺这一项。JACK 以普通用户 `soundmat` 运行，所以 logind 要设 `RemoveIPC=no`：默认情况下这个用户最后一个登录会话（例如 SSH）结束时，systemd 会清掉它的共享内存和信号量，JACK 随即失效（`semop (Invalid argument)`）。
+
+## 电源
+
+装置的电源是 USB-C PD 诱骗到 20 V，经降压模块得到 5 V（约 5.06 V），分两路：一路给灯带（独立供电，两端接入），一路经 USB 头给树莓派。Pi 5 用 USB-C 公头（CC 脚带 56 kΩ 电阻），和给 Pi 3B 的 Micro USB 头并联在降压模块输出上。降压模块不和 Pi 5 协商快充，Pi 5 因此把 USB 总输出限制在 600 mA；保持这个限制：USB 声卡加 ESP32 只要约 0.2–0.5 A，限制还能防止 USB 设备多抽电、减轻接头的负担。实测 5 V 总线（含灯带）在 Jam 中约 0.8 A，开机时固件让灯带全亮约 5 秒，约 3.8 A。
+
+灯带的信号线只接数据和地（灯带一侧的红线已剪断），信号接头插反不会短路。
+
+## 验收标准
+
+部署完成后全部满足，这台主机才可以交付（检查方法见部署 skill）：
+
+1. JACK、scsynth、主机程序三个服务和网络定时任务都在运行；JACK 以实时优先级运行，scsynth 的输出接到了声卡。
+2. 局域网 `http://soundmat-pi.local:8000` 和 Tailscale `http://soundmat-pi:8000` 都能打开控制台。
+3. 看板一切正常：合成器服务使用 USB 声卡、48 kHz、音色全部加载；控制器已连接，传感帧率 25–30；网络正常。
+4. 逐声道测试音从对应的音箱发出。
+5. 在垫子上放石头，听到声音、看到灯光反馈，控制台垫面上的位置与实物一致。
+6. 断电后重新上电，装置自己进入默认编排，看板恢复正常。
+7. 关掉手机热点后，自建热点在约 2 分钟内出现，手机连上能打开控制台；再打开手机热点，约一分钟内切回。
+8. Pi 5 在负载下输入电压不低于 4.9 V，没有欠压；连续运行一小时温度低于 80°C。
