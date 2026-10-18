@@ -137,6 +137,7 @@ uv run pytest                   # 测试
 | 网络 | `nmcli` 当前连接、出口地址、`tailscale status --json`；连接类型按配置 `[network]` 的连接名区分；自建热点开着时，用 `ip -4 neigh show dev wlan0` 数仍有效的邻居条目（约数：离开的设备几分钟后才消失） |
 | 主机程序 | 运行时间；自动重启次数来自 `systemctl show -p NRestarts`，服务名是配置 `system.service`，只在 systemd 启动时（有 `INVOCATION_ID` 环境变量）读取；版本先读程序目录的 `VERSION` 文件（部署时写入），没有时用 `git rev-parse` 并标出未提交的改动 |
 | 帧率与计时 | 各模块的 `rates()` 与 `counters()`（见上文「线程与数据交换」）、`BeatClock` 的节拍延迟（每拍比计划晚开始多久，最近 1 分钟的最大值）和卡住次数（延迟超过 `sound.late_tolerance`）；监测保留最近 1 分钟的样本，算出增加量。几毫秒的节拍延迟无害：在 Mac 上常见，来自线程等待多睡的几毫秒和 Python 全局锁的轮换，声音都带时间戳并有前瞻和输出延迟，听不出来，所以只统计超过迟到容忍度的「卡住」 |
+| 系统时间 | 开机服务 `soundmat-clock` 写下的 `/run/soundmat-clock`：这次开机时系统时钟是否校准过（之后不再校时，见 `DEPLOYMENT.md`「时钟」）；没有这个文件时为未知 |
 | 录音空间 | 录音保存位置所在磁盘的可用空间，除以录制的数据速率（当前声道数、是否录分轨） |
 
 状态指示的规则（按顺序，第一条成立的即为结果）：
