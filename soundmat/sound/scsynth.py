@@ -5,7 +5,8 @@ scsynth 是独立的系统服务（TECH_STACK「合成器服务」），主机�
 - 每一拍里引擎发出的指令按执行时刻分组，一拍结束时整批发出；时刻是系统时间（单调时钟），
   发送时换算成墙钟时间作为 bundle 的时间戳。每次发送时现算换算关系，开机后 NTP 校时让墙钟
   跳变也不影响。时刻已到的指令用"立即执行"的时间戳，避免 scsynth 记录迟到警告。
-- 每 0.5 秒查询一次 ``/status``，并确认根组还在。连不上时什么都不发；重新连上（包括第一次
+- 每 0.5 秒查询一次 ``/status``，并确认根组还在。发出的查询超过 2 秒没有回复才算离线：按"问了没回"
+  判断，主机自己的线程偶尔卡住几秒（没有发出查询）不会被误判成合成器服务停了。连不上时什么都不发；重新连上（包括第一次
   连上和 scsynth 重启）后加载音色、建立根组，并报告"重新启动过"，由引擎重建混音结构并重新对账。
 - 用 ``/notify`` 订阅节点结束通知（``/n_end``），声部自然结束时通知引擎。
 - 各模式实例混音结构里的电平（``/sm_peak``）供控制台的每环电平和看板的输出电平使用。
@@ -121,6 +122,7 @@ class ScsynthBackend:
         self.defs_loaded = False
         self.ever_online = False
         self._last_reply = -1e9
+        self._unanswered_since: float | None = None    # 最早一次还没收到回复的 /status 查询的时刻
         self._next_status = 0.0
         self._restarted = False
         self._ended: list[int] = []
@@ -192,9 +194,12 @@ class ScsynthBackend:
         if now >= self._next_status:
             self._next_status = now + STATUS_PERIOD
             self._send_now(_msg("/status"))
+            if self._unanswered_since is None:
+                self._unanswered_since = now
             if self.state == "ready":
                 self._send_now(_msg("/n_query", ROOT_GROUP))
-        if self.state != "offline" and now - self._last_reply > OFFLINE_AFTER:
+        waiting = self._unanswered_since
+        if self.state != "offline" and waiting is not None and now - waiting > OFFLINE_AFTER:
             log.warning("合成器服务没有响应")
             self._go_offline()
         for item in [d for d in self._deferred if d[0] <= now]:
@@ -227,6 +232,7 @@ class ScsynthBackend:
     def _handle(self, addr: str, args: list, now: float) -> None:
         if addr == "/status.reply":
             self._last_reply = now
+            self._unanswered_since = None
             keys = ("ugens", "synths", "groups", "defs", "avgCPU", "peakCPU", "nominalSampleRate", "actualSampleRate")
             self.info = dict(zip(keys, args[1:9]))
             if self.state == "offline":

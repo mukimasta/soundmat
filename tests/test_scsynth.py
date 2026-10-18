@@ -130,6 +130,19 @@ def test_restart_detected_by_lost_root_group_and_offline(rig):
     assert be.mixes
 
 
+def test_host_stall_is_not_mistaken_for_synth_offline(rig):
+    """主机的节拍线程卡住几秒（期间没有发查询）：恢复后不应判定合成器服务离线、重建混音结构、停掉录音。"""
+    fake, be, eng = rig
+    eng.add_instance("A", ["ring0"], system_time())
+    assert pump(eng, be, 2, until=lambda: be.state == "ready" and be.mixes)
+    restarts = eng.stats.restarts
+    time.sleep(0.2)                     # 最后一次查询的回复到了
+    eng.tick(system_time())
+    time.sleep(3.0)                     # 卡住 3 秒：超过 2 秒的离线判定，但期间没有发出任何查询
+    pump(eng, be, 0.5)
+    assert be.state == "ready" and be.online and eng.stats.restarts == restarts
+
+
 def test_levels_per_meter(rig):
     """每根电平条取它的各条总线、所有声道的最大峰值；不认识的实例或总线是静音。"""
     fake, be, eng = rig

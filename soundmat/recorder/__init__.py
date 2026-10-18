@@ -11,7 +11,10 @@
 按下录制后灯环和控制台进入 3、2、1 的倒计时，这时还不录；倒计时结束的瞬间灯环整圈闪亮、
 音箱在现场发出一声短促的提示音（打板），录音正好从这一刻开始。提示音只在现场响、不进录音
 （见 ``ScsynthBackend.slate``），文件开头就是演奏；剪辑时把录音文件的开头对到视频里那一声上即可。
-开始前检查剩余空间，录制中空间将尽时自动停止。录制的状态机在声音化的节拍线程里推进（``on_beat``）。
+开始前检查剩余空间，录制中空间将尽时自动停止。录制的状态机在声音化的节拍线程里推进（``on_beat``），
+但节拍线程从不读写存储卡：建文件夹在按下录制的那一刻、在调用方的线程里完成；会话数据、录制信息、
+关闭文件和刷新录制列表都由这段录制自己的写文件线程（``SessionWriter``）完成。存储卡忙的时候
+（例如刚发布完新版本，正在写回大量文件）一次建文件夹都可能卡住好几秒，放在节拍线程里会让演奏停顿。
 """
 from __future__ import annotations
 
@@ -23,7 +26,7 @@ import shutil
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 
@@ -55,6 +58,16 @@ class RecordingError(Conflict):
 
 
 @dataclass
+class Prepared:
+    """按下录制时、在调用方线程里准备好的东西：文件夹已建好，写文件线程已开始。"""
+    folder: Path
+    started_wall: dt.datetime
+    arrangement: dict
+    files: dict[str, str]              # "master" 或分轨总线名 → 文件路径
+    writer: "SessionWriter"
+
+
+@dataclass
 class Session:
     folder: Path
     countdown_t: float              # 按下录制、开始倒计时的系统时间
@@ -70,28 +83,50 @@ class Session:
 
 
 class SessionWriter:
-    """后台线程把会话数据逐行写进 JSON Lines 文件，不阻塞节拍线程。"""
+    """一段录制的写文件线程：按顺序把会话数据逐行写进 JSON Lines 文件，并执行交给它的文件操作
+    （写录制信息、收尾）。调用方只往队列里放东西，从不等待存储卡。"""
+
+    _CLOSE = object()
 
     def __init__(self, path: Path):
+        self.path = path
         self.q: queue.Queue = queue.Queue()
-        self.f = open(path, "w", encoding="utf-8")
         self.t = threading.Thread(target=self._run, name="session-writer", daemon=True)
         self.t.start()
 
     def put(self, record: dict) -> None:
+        """追加一行会话数据。"""
         self.q.put(record)
 
-    def close(self) -> None:
+    def call(self, fn: Callable[[], None]) -> None:
+        """在写文件线程里执行一次文件操作（排在之前放进来的会话数据之后）。"""
+        self.q.put(fn)
+
+    def finish(self, then: Callable[[], None] | None = None) -> None:
+        """写完已经放进来的内容后关闭文件，再执行 ``then``。不等待。"""
+        if then is not None:
+            self.q.put(self._CLOSE)
+            self.q.put(then)
         self.q.put(None)
-        self.t.join(timeout=5)
-        self.f.close()
 
     def _run(self) -> None:
-        while True:
-            rec = self.q.get()
-            if rec is None:
-                break
-            self.f.write(json.dumps(rec, ensure_ascii=False, separators=(",", ":")) + "\n")
+        f = open(self.path, "w", encoding="utf-8")
+        try:
+            while True:
+                item = self.q.get()
+                if item is None:
+                    break
+                if item is self._CLOSE:
+                    f.close()
+                elif callable(item):
+                    try:
+                        item()
+                    except Exception:
+                        log.exception("录制的文件操作出错")
+                elif not f.closed:
+                    f.write(json.dumps(item, ensure_ascii=False, separators=(",", ":")) + "\n")
+        finally:
+            f.close()
 
 
 def _round(x: float, n: int = 4) -> float:
@@ -133,6 +168,7 @@ class Recorder:
         self._next_status = 0.0
         self._last_sound: dict | None = None
         self._was_audio_active = False
+        self._starting = False             # 已经按下、还没在节拍线程里开始
         self.state.set("status.recording", {"state": "idle"})
         self.refresh_list()
         sonification.after_beat.append(self.on_beat)
@@ -175,8 +211,9 @@ class Recorder:
     # ── 命令（任意线程）─────────────────────────────────────────────────
 
     def request_start(self) -> None:
+        """检查空间，建好文件夹，再交给节拍线程开始倒计时。读写存储卡都在这里（调用方的线程）。"""
         with self._lock:
-            if self.session is not None:
+            if self.session is not None or self._starting:
                 raise RecordingError("已经在录制")
             need = self.bytes_per_second() * MIN_FREE_SECONDS + MARGIN_BYTES
             free = self.free_bytes()
@@ -184,43 +221,53 @@ class Recorder:
                 raise RecordingError(f"剩余空间 {free / 1e9:.1f} GB，不足以录制 10 分钟（需要约 {need / 1e9:.1f} GB）")
             if self.backend.records_audio and not self.backend.online:
                 raise RecordingError("合成器服务没有响应，无法录音")
-        self.sonification.run_in_beat(self._begin)
+            self._starting = True
+        try:
+            prep = self._prepare()
+        except Exception:
+            with self._lock:
+                self._starting = False
+            raise
+        self.sonification.run_in_beat(lambda now: self._begin(now, prep))
+
+    def _prepare(self) -> Prepared:
+        wall = dt.datetime.now().astimezone() + dt.timedelta(seconds=COUNTDOWN)
+        arr = self._current_arrangement()
+        folder = self.root / f"{wall:%Y-%m-%d_%H%M%S}_{arr.get('id') or 'none'}"
+        folder.mkdir(parents=True, exist_ok=True)
+        files = {"master": str(folder / "master.wav")}
+        stems = self.backend.recordable_stems() if self.settings.get("recording.stems", True) else []
+        if stems:                              # scsynth 不建目录，要先建好
+            (folder / "stems").mkdir(exist_ok=True)
+            for name in stems:
+                files[name] = str(folder / "stems" / f"{name}.wav")
+        return Prepared(folder, wall, arr, files, SessionWriter(folder / "session.jsonl"))
 
     def request_stop(self) -> None:
         self.sonification.run_in_beat(lambda now: self._end(now, "user"))
 
     # ── 节拍线程 ────────────────────────────────────────────────────────
 
-    def _begin(self, now: float) -> None:
-        if self.session is not None:
-            return
+    def _begin(self, now: float, prep: Prepared) -> None:
         start_t = now + COUNTDOWN
-        wall = dt.datetime.now().astimezone() + dt.timedelta(seconds=COUNTDOWN)
-        arr = self._current_arrangement()
-        folder = self.root / f"{wall:%Y-%m-%d_%H%M%S}_{arr.get('id') or 'none'}"
-        folder.mkdir(parents=True, exist_ok=True)
-        files = {"master": str(folder / "master.wav")}
-        stems_dir = folder / "stems"
-        stems = self.backend.recordable_stems() if self.settings.get("recording.stems", True) else []
-        if stems:                              # scsynth 不建目录，要先建好；没有音频时不建
-            stems_dir.mkdir(exist_ok=True)
-            for name in stems:
-                files[name] = str(stems_dir / f"{name}.wav")
-        started = self.backend.start_recording(files, start_t)
-        if stems and not set(stems) & set(started):
-            stems_dir.rmdir()                  # 合成器服务离线，一个分轨也没开始
-        rel = [str(Path(files[k]).relative_to(folder)) for k in started]
-        self.session = Session(folder=folder, countdown_t=now, start_t=start_t, started_wall=wall, arrangement=arr,
-                               settings=self.settings.snapshot(), channels=self._channels(),
-                               files=rel + ["session.jsonl", "info.json"], audio=bool(started))
+        started = self.backend.start_recording(prep.files, start_t)
+        stems_dir = prep.folder / "stems"
+        if not any(k != "master" for k in started):    # 一个分轨也没开始（例如没有合成器服务）：删掉空目录
+            prep.writer.call(lambda: stems_dir.rmdir() if stems_dir.is_dir() else None)
+        rel = [str(Path(prep.files[k]).relative_to(prep.folder)) for k in started]
+        s = Session(folder=prep.folder, countdown_t=now, start_t=start_t, started_wall=prep.started_wall,
+                    arrangement=prep.arrangement, settings=self.settings.snapshot(), channels=self._channels(),
+                    files=rel + ["session.jsonl", "info.json"], audio=bool(started))
+        with self._lock:
+            self.session, self._starting = s, False
         self._was_audio_active = bool(started)
         self.backend.slate(start_t)        # 在 start_recording 之后：排在录音节点之后，不进录音
-        self.writer = SessionWriter(folder / "session.jsonl")
-        self.writer.put({"t": _round(start_t), "type": "start", "arrangement": arr})
+        self.writer = prep.writer
+        self.writer.put({"t": _round(start_t), "type": "start", "arrangement": prep.arrangement})
         self._last_snap_version = -1
         self._last_sound = None
-        self._write_info()
-        self.events.info(f"开始录制：{folder.name}" + ("" if started else "（没有合成器服务，只记录会话数据）"))
+        self._save_info(s)
+        self.events.info(f"开始录制：{s.folder.name}" + ("" if started else "（没有合成器服务，只记录会话数据）"))
         self.on_beat(now, self.sonification.active.last if self.sonification.active else None)
 
     def _end(self, now: float, reason: str) -> None:
@@ -233,12 +280,12 @@ class Recorder:
         s.stopped = reason
         if self.writer:
             self.writer.put({"t": _round(now), "type": "stop", "reason": reason})
-            self.writer.close()
+            self._save_info(s, end_t=now)
+            self.writer.finish(then=self.refresh_list)    # 写完、关闭后在写文件线程里刷新录制列表
             self.writer = None
-        self._write_info(end_t=now)
-        self.session = None
+        with self._lock:
+            self.session = None
         self.state.set("status.recording", {"state": "idle"})
-        self.refresh_list()
         text = {"user": "录制结束", "disk": "存储空间将尽，录制已自动停止",
                 "synth": "合成器服务中断，录制已停止"}.get(reason, "录制结束")
         (self.events.warning if reason != "user" else self.events.info)(f"{text}：{s.folder.name}")
@@ -324,8 +371,13 @@ class Recorder:
 
     # ── 文件 ────────────────────────────────────────────────────────────
 
-    def _write_info(self, end_t: float | None = None) -> None:
-        s = self.session
+    def _save_info(self, s: Session, end_t: float | None = None) -> None:
+        """写录制信息（在写文件线程里）。内容此刻就算好，之后的变化不会影响它。"""
+        info = self._info(s, end_t)
+        path = s.folder / "info.json"
+        self.writer.call(lambda: path.write_text(json.dumps(info, ensure_ascii=False, indent=2), "utf-8"))
+
+    def _info(self, s: Session, end_t: float | None) -> dict:
         info = {
             "startedAt": s.started_wall.isoformat(timespec="milliseconds"),
             "startSystemTime": _round(s.start_t),
@@ -346,7 +398,7 @@ class Recorder:
             info["duration"] = round(max(0.0, end_t - s.start_t), 2)
             info["endedAt"] = (s.started_wall + dt.timedelta(seconds=info["duration"])).isoformat(timespec="milliseconds")
             info["stopReason"] = s.stopped
-        (s.folder / "info.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), "utf-8")
+        return info
 
     def list(self) -> list[dict]:
         items = []
