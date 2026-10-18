@@ -1,0 +1,25 @@
+# SoundMat 音频服务：JACK 驱动 USB 声卡（docs/implementation/DEPLOYMENT.md「音频参数」）
+#
+# hw:Audio 是当前 USB 声卡（CX31993）在 ALSA 里的名字（aplay -l 的 card 名），换声卡时改这里。
+# 48 kHz 与声音素材一致；每块 2048 帧、两块缓冲是 Pi 3B 上验证过的设置，Pi 5 可按看板上的卡顿次数往下调。
+# LimitRTPRIO 让 JACK 真正以实时优先级运行（第一版缺这一项，JACK 一直在普通优先级下跑）。
+# 另需 /etc/systemd/logind.conf.d/ 里 RemoveIPC=no，否则 soundmat 退出登录时 JACK 的信号量会被清掉。
+[Unit]
+Description=JACK for SoundMat (USB DAC hw:Audio)
+After=sound.target
+Before=soundmat-scsynth.service
+
+[Service]
+User=soundmat
+Group=audio
+SupplementaryGroups=audio
+Environment=JACK_NO_AUDIO_RESERVATION=1
+ExecStart=/usr/bin/jackd -P75 -t2000 -dalsa -dhw:Audio -r48000 -p2048 -n2
+LimitRTPRIO=95
+LimitMEMLOCK=infinity
+LimitRTTIME=infinity
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

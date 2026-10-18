@@ -1,8 +1,8 @@
 # Deployment
 
-本文说明怎样从一块空白存储卡得到一台可以演奏的 SoundMat 主机，以及之后怎样更新。全部步骤只依赖三样东西：本仓库、开发机上的声音素材库 `SoundMat/sound/`，以及一个不进仓库的密钥文件。执行的工作由 `deploy/` 下的部署脚本完成，它要安装到系统里的配置文件都放在 `system/`；本文解释脚本做了什么、为什么这样做、怎样验证。
+本文说明怎样从一块空白存储卡得到一台可以演奏的 SoundMat 主机，以及之后怎样更新。全部步骤只依赖本仓库和开发机上的声音素材库 `SoundMat/sound/`。系统环境和服务在树莓派上按下面的步骤逐步安装，每一步装完就验证，要装进系统的配置文件都在 `system/`；基础环境（JACK、scsynth、uv、Tailscale）的做法也整理成了 Claude 的 skill `soundmat-pi-env`（SoundMat 总文件夹的 `.claude/skills/`）。主机程序本身不手工安装，用「发布与更新」一节的发布命令从 GitHub 安装和更新。
 
-部署脚本可以重复运行。第一次运行完成全新安装，之后每次运行只更新变化的部分，不会覆盖设置和录音。
+每一步都可以重复执行；更新程序不会覆盖设置和录音。
 
 ## 准备
 
@@ -10,12 +10,7 @@
 
 **硬件**：Raspberry Pi 5（配主动散热器，装置的空腔是封闭的）、存储卡、USB 声卡、ESP32 控制器、音箱。
 
-**密钥文件**是开发机上的 `deploy/secrets.env`，必须列入 `.gitignore`，永远不提交。仓库里的 `deploy/secrets.example.env` 列出需要填写的项：
-
-1. UW MPSK 为这台设备登记得到的密码。
-2. Tailscale 的授权密钥（可选；没有时用浏览器登录授权）。
-
-手机热点和自建热点的名称和密码是固定的，直接写在下面的「网络」一节，不放进密钥文件（见 `DECISION.md` 第 6 条）。
+**密码**：手机热点和自建热点的名称和密码是固定的，写在下面的「网络」一节（`DECISION.md` 第 6 条）。UW MPSK 为这台设备登记得到的密码、家里 Wi-Fi 的密码不进仓库，由人在树莓派上用 `nmcli con modify <连接名> wifi-sec.psk ...` 填入。Tailscale 用浏览器登录授权。**sudo**：需要 sudo 的步骤，先由人运行一次 `ssh -t soundmat@<树莓派> 'sudo -v'`；树莓派系统的 sudo 缓存在各个会话之间共享（`/etc/sudoers.d/010_global-tty`），约 15 分钟内其他 SSH 命令都能用。
 
 ## 第一步：烧录系统
 
@@ -30,20 +25,20 @@
 
 在 UW 使用 UW MPSK 前，需要用这台设备无线网卡的固定 MAC 地址登记（地址可以在 `/sys/class/net/wlan0/address` 查到）。部署脚本会让这个连接始终使用固定地址，不做随机化，否则登记会失效。
 
-## 第二步：运行部署脚本
+## 第二步：安装系统环境与服务
 
-在开发机上运行部署脚本，参数是树莓派的地址（`soundmat-pi.local`，或它在 Tailscale 里的名字 `soundmat-pi`）。脚本通过 SSH 依次完成下面的工作。
+在开发机上通过 SSH（`soundmat-pi.local`，或 Tailscale 里的 `soundmat-pi`）依次完成下面的工作。
 
 1. **系统软件包**：安装 SuperCollider 的合成器服务（scsynth）、JACK2、avahi、rsync 等。树莓派上不需要 sclang。
 2. **实时音频权限**：把 `soundmat` 用户加入 `audio` 组，并允许它以实时优先级运行音频服务：JACK 的服务要有 `LimitRTPRIO=95`、`LimitMEMLOCK=infinity`，否则 JACK 会以普通优先级运行（日志里有 `Cannot use real-time scheduling`），容易卡顿；第一版在 Pi 3B 上就一直缺这一项。另外在 `/etc/systemd/logind.conf.d/` 里设 `RemoveIPC=no`：JACK 以普通用户 `soundmat` 运行，默认情况下这个用户最后一个登录会话（例如 SSH）退出时，systemd 会清掉它的共享内存和信号量，JACK 随即失效（`semop (Invalid argument)`）。
-3. **电源设置**：降压模块只输出 5V，不和 Pi 5 协商快充，Pi 5 默认会把 USB 总输出限制在 600 mA。在确认电源能提供足够电流的前提下，于 `/boot/firmware/config.txt` 打开 `usb_max_current_enable`，避免 USB 声卡和 ESP32 供电不足。
+3. **电源**：降压模块输出 5 V（调在约 5.06 V），一路给灯带，一路经 USB 头给树莓派；Pi 5 用焊上去的 USB-C 公头（CC 脚带 56 kΩ 电阻），和给 Pi 3B 的 Micro USB 头并联在降压模块输出上。降压模块不和 Pi 5 协商快充，Pi 5 因此把 USB 总输出限制在 600 mA；**保持这个限制**，不打开 `usb_max_current_enable`：USB 声卡加 ESP32 只要约 0.2–0.5 A，限制还能防止 USB 设备多抽电、减轻接头的负担。实测 5 V 总线（含灯带）在 Jam 中约 0.8 A，开机灯带全亮时约 3.8 A。装好后用 `vcgencmd pmic_read_adc EXT5V_V` 和 `vcgencmd get_throttled` 在负载下确认输入电压不低于 4.9 V、没有欠压。
 4. **Python 环境**：安装 uv，由它安装 Python 和依赖，不使用系统自带的 Python。
-5. **程序与数据**：按下面「发布与更新」一节，从 GitHub 安装第一个发布包；把开发机的 `SoundMat/sound/` 用 rsync 同步到树莓派的声音素材目录（素材不经过 GitHub，见「声音素材」）。
-6. **系统服务**：安装 `system/systemd/` 下的三个服务，依次是 JACK、scsynth（`soundmat-scsynth.service`）、主机程序（`soundmat.service`），后一个依赖前一个，任何一个异常退出都会自动重启，并设为开机启动。scsynth 用环境变量 `SC_JACK_DEFAULT_OUTPUTS` 在启动时自己把输出接到声卡，不再需要第一版那样另外运行 `jack_connect`。主机程序的服务每次启动前运行启动保护 `/usr/local/bin/soundmat-guard`（来自 `system/update/`）。
+5. **程序与数据**：第一个版本手工安装：从 GitHub 下载最新的发布包，解压到 `/home/soundmat/soundmat/releases/<短提交号>/`，在里面运行 `uv sync --frozen --no-dev`，建一个空文件 `.ready`，再把 `current` 链接到它；之后的版本都用「发布与更新」一节的发布命令。把开发机的 `SoundMat/sound/` 用 rsync 同步到树莓派的声音素材目录（素材不经过 GitHub，见「声音素材」）。
+6. **系统服务**：安装 `system/systemd/` 下的三个服务，依次是 JACK（`jackd.service`）、scsynth（`soundmat-scsynth.service`）、主机程序（`soundmat.service`），并把 `logind-soundmat.conf` 放进 `/etc/systemd/logind.conf.d/`。三个服务按这个顺序依赖，任何一个异常退出都会自动重启，并设为开机启动。scsynth 用环境变量 `SC_JACK_DEFAULT_OUTPUTS` 在启动时自己把输出接到声卡，不再需要第一版那样另外运行 `jack_connect`。主机程序的服务每次启动前运行启动保护 `/usr/local/bin/soundmat-guard`（来自 `system/update/`）。
 7. **网络**：按下面「网络」一节建立 NetworkManager 连接，安装 `system/network/` 下的网络选择与兜底定时任务。avahi 随系统启用，局域网内可以用 `soundmat-pi.local` 访问。
-8. **Tailscale**：从 Tailscale 官方 apt 源安装，用密钥文件里的授权密钥加入网络；没有授权密钥时由 `tailscale up` 打印登录链接，在浏览器里授权。设备名 `soundmat-pi`。
-9. **设置**：树莓派上还没有设置文件时，写入一份默认设置；已有时保持不动。
-10. **收尾**：重启有变化的服务，打印各服务状态和控制台地址。
+8. **Tailscale**：从 Tailscale 官方 apt 源安装，由 `tailscale up` 打印登录链接，在浏览器里授权。设备名 `soundmat-pi`。
+9. **设置**：不需要预先写。主机程序第一次运行时使用默认设置，在控制台里改过的项保存在 `/home/soundmat/data/settings.json`（例如把默认编排设为要拍的那一份）。
+10. **收尾**：确认三个服务都在运行（`systemctl is-active jackd soundmat-scsynth soundmat`），`jack_lsp -c` 里 scsynth 的输出已经接到声卡，控制台能打开，看板没有异常。
 
 ## 第三步：验证
 

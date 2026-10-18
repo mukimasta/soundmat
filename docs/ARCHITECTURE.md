@@ -299,7 +299,7 @@ sequenceDiagram
 
 ## 文件结构
 
-以下是当前的结构，对应上面的逻辑架构。部署脚本 `deploy/` 和 `system/` 下的系统服务配置尚未编写（`system/` 目前只有网络脚本）。
+以下是当前的结构，对应上面的逻辑架构。
 
 ```text
 system/pi/soundmat/
@@ -324,15 +324,18 @@ system/pi/soundmat/
 │   ├── recorder/            录制
 │   ├── monitor/             系统监测
 │   ├── store/               状态中心
-│   └── control/             控制接口
+│   ├── control/             控制接口
+│   └── updater/             软件更新：发布包格式、从 GitHub 安装、切换版本
 ├── config/                  配置：校准、对齐、声部预算等部署参数
 ├── arrangements/            编排（数据）：kyoto/、lofi_1/ 等
 ├── instruments/             合成器服务的音色定义（编译产物在 compiled/，不进仓库）
-├── scripts/                 开发用脚本：编译音色、启动开发用的合成器服务
+├── scripts/                 开发用脚本：编译音色、启动开发用的合成器服务、发布（release.py）
 ├── console/                 网页控制台（独立前端工程）
-├── system/                  系统服务配置：联网、Tailscale、音频、开机与守护
-├── deploy/                  安装与部署脚本、素材同步
+├── system/                  装进树莓派系统的配置
+│   ├── systemd/             JACK、scsynth、主机程序三个服务，logind 设置
+│   ├── network/             网络选择与自建热点兜底
+│   └── update/              启动保护 soundmat-guard
 └── tests/
 ```
 
-声音素材的正本在开发机的 `SoundMat/sound/`，部署时同步到树莓派的本机资料目录，路径由状态中心的设置指定。
+声音素材的正本在开发机的 `SoundMat/sound/`，发布时只把编排引用到的文件同步到树莓派的 `/home/soundmat/sound/`，路径由状态中心的设置指定。

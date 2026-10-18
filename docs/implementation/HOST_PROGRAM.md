@@ -45,7 +45,7 @@ uv run pytest                   # 测试
 | 配置 | `soundmat/config.py` + `config/soundmat.toml` | 启动时读取，未知键报错 |
 | 线程间容器 | `soundmat/exchange.py` | `Latest`、`EventQueue`、`EventHub` |
 
-所有模块都已实现；部署脚本（`deploy/`）和系统服务配置（`system/systemd/`）尚未编写。
+所有模块都已实现。装进树莓派系统的配置在 `system/`（JACK、scsynth、主机程序的服务，网络选择，启动保护），安装与发布见 `DEPLOYMENT.md`。
 
 ## 线程与数据交换
 
@@ -60,6 +60,8 @@ uv run pytest                   # 测试
 5. **系统监测**（`monitor`）：每秒采集一次并写入状态中心，较慢的探针（journal、nmcli、tailscale、systemctl、git）每 10 秒一次。
 6. **会话数据写入**（`session-writer`）：录制期间把会话数据逐行写进文件，不阻塞节拍线程。
 7. **主线程**：uvicorn 与控制接口。
+
+启动时 `threadnames.install()` 让每个线程把自己的名字设给操作系统（Linux 上用 prctl），所以在树莓派上可以用 `top -H` 或 `/proc/<pid>/task/*/comm` 按线程看 CPU。Pi 3B 上放满石头、Jam 播放时实测（占单核）：声音化约 24%，灯光引擎约 16%，主线程约 10%，设备连接约 7%，系统监测约 4%，合计约 62%。
 
 状态中心的订阅回调在修改者的线程里执行；控制接口在回调里只用 `loop.call_soon_threadsafe` 把变化交给事件循环，再由每个 WebSocket 连接自己的推送任务发出。`Latest` 也可以订阅：垫面快照和灯环预览等数据流有新值时同样唤醒推送任务，所以推送跟着数据走，不按固定间隔轮询；状态变化和垫面仍各自限制在 30 次/秒以内。
 
