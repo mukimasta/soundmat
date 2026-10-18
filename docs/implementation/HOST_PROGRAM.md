@@ -36,7 +36,7 @@ uv run pytest                   # 测试
 | 声音引擎 · 素材库 | `soundmat/sound/assets.py` | 读文件头估算内存、预算检查、引用计数、重启后重载 |
 | 声音引擎 · 合成器接口 | `soundmat/sound/backend.py` | 抽象指令接口；`RecordingBackend` 只记录指令 |
 | 声音引擎 · scsynth | `soundmat/sound/scsynth.py` + `instruments/` | 带时间戳的 OSC bundle、节点树与总线、重启检测、电平、录音；见 `SYNTH.md` |
-| 灯光引擎 | `soundmat/light/` | 60 Hz 分层合成、系统提示层、灯带偏移、控制台预览 |
+| 灯光引擎 | `soundmat/light/` | 按 `light.refresh_hz`（30 Hz）分层合成、系统提示层、灯带偏移、控制台预览 |
 | 录制 | `soundmat/recorder/` | 空间检查、倒计时与打板、合成器服务内部录音、会话数据、录制信息、打包下载 |
 | 系统监测 | `soundmat/monitor/` | 每秒采集音频链路、控制器、机器、网络；状态指示与原因；最近的警告和错误（`log.py`） |
 | 状态中心 | `soundmat/store/` | 状态树、按路径修改、变化通知；设置的默认值、校验与原子写入（`settings.py`） |
