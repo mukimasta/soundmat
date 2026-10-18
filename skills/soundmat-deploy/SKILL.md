@@ -269,7 +269,7 @@ ssh soundmat@<主机> 'P=$(systemctl show -p MainPID --value soundmat); top -H -
 | 看板「缺少 N 个声音素材」 | 当前编排要素材（京都岚山），装置上没有：发布时不要加 `--no-sound`。Pi 3B 上是有意不放素材的（内存放不下京都岚山），不用管 |
 | 切到京都岚山后机器卡死、合成器服务被内核结束（`journalctl -k \| grep -i "out of memory"`） | 内存不够：京都岚山的素材解码后约 415 MB，Pi 3B 共 905 MB，其他部分已用约 330 MB。Pi 3B 只跑 Jam，Ambient 用 Pi 5 |
 | 节奏忽早忽晚，看板「节奏」里"合成器收到太晚"不为 0 | 定时声音的提前量 `sound.schedule_ahead` 小于 JACK 的音频缓冲（改过 JACK 的 `-p`/`-n` 却没改它）：按第 4 节的算法改配置、重新发布。直接看：`journalctl _COMM=scsynth --since -1min -o cat \| grep -c ^late` |
-| 开机后放 Jam 一两分钟突然卡、之后一直卡，scsynth 里留着很多 `jam_chord_pad`、负载很高 | 声音运行时系统时钟跳变了（开机联网校时）。确认装了 `soundmat-clock`：`systemctl is-enabled soundmat-clock`、`cat /run/soundmat-clock`。临时处理：控制台重启声音（清掉残留节点）。`journalctl -b \| grep -E "Initial clock synchronization\|系统时钟跳变"` 看是否跳过 |
+| 开机后放 Jam 一两分钟突然卡、之后一直卡，scsynth 里留着很多 `jam_chord_pad`、负载很高 | 声音运行时系统时钟跳变了（开机联网校时）。确认装了 `soundmat-clock`：`systemctl is-enabled soundmat-clock`、`cat /run/soundmat-clock`。临时处理：控制台重启声音（清掉残留节点）。`journalctl -b \| grep \"Initial clock synchronization\"` 的时刻若晚于 `Started jackd`，就是声音启动后才校时 |
 | 开机后要等半分钟到一分钟才出声 | 正常：`soundmat-clock` 在等系统时钟校准（有网时最多 45 秒，没网 20 秒） |
 | 控制台重启时提示"systemd 拒绝了这次重启" | 没装或没装对权限规则：按第 4 节安装 `50-soundmat.rules`，用 `pkcheck` 验证 |
 | 控制台重启按钮是灰的，写着"不是由 systemd 运行的装置" | 主机程序不是作为 `soundmat.service` 运行的（例如开发机，或在终端里手动启动的）：`systemctl status soundmat` |
