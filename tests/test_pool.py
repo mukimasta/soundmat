@@ -265,16 +265,16 @@ def test_light_parameters_come_from_the_arrangement():
     assert m.breath.period == 8
 
 
-def test_rain_rises_along_smoothstep_in_two_seconds_and_falls_as_before():
+def test_rain_rises_fast_then_eases_in_two_seconds_and_falls_as_before():
     m = meditation()
     a, b = zone(5, 0).index, zone(5, 16).index
     run = Run(m, {a: (0.0, None), b: (1.0, 12.0)})            # 第二颗 1 秒放下、12 秒拿起
     rain = lambda out: next(v for v in out.sound.voices if v.id == "weather").params
     outs = run.until(4.0)
     at = lambda t: rain(outs[round(t * 60)])
-    s = lambda x: x * x * (3 - 2 * x)
+    s = lambda x: 1 - (1 - x) ** 2
     assert at(0.5)["rain"] == 0.0
-    # 放下第二颗：每 0.1 秒给一次，给的是这一段结束时的值，沿 smoothstep 从 0 升到 1/3
+    # 放下第二颗：每 0.1 秒给一次，给的是这一段结束时的值，沿先快后缓的二次曲线从 0 升到 1/3
     assert at(1.0)["rainTime"] == 0.1 and at(1.0)["rain"] == pytest.approx(s(0.05) / 3)
     assert at(2.0)["rain"] == pytest.approx(s(0.55) / 3)
     assert at(3.0)["rain"] == pytest.approx(1 / 3) and at(3.9)["rain"] == pytest.approx(1 / 3)

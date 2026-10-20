@@ -83,7 +83,7 @@ MID_INTERVALS = ((6.0, 12.0), (3.0, 8.0), (2.0, 5.0))      # 中音符：一颗�
 
 SPREAD = (0.85, 1.0)                # 圆心、垫面外缘的石头分别当作多大的半径来定位（space.spread）
 
-# 天气：石头变多、雨变大时，从当前的雨量沿 smoothstep 曲线（3x² − 2x³，起步和收尾都缓）在 RAIN_RISE 秒里
+# 天气：石头变多、雨变大时，从当前的雨量沿先快后缓的二次曲线（1 − (1 − x)²：放下就往上涨，到目标时缓下来）在 RAIN_RISE 秒里
 # 升到新的雨量；原来是 1.5 秒线性，网页是立即，听起来突兀。雨变小仍是 1.5 秒线性（音色的默认值）
 RAIN_RISE = 2.0
 RAIN_STEP = 0.1                     # 渐入时每隔多久给一次雨量，合成器在这段时间里线性滑过去
@@ -368,7 +368,7 @@ class Notes(Layer):
 
 class Weather(Layer):
     """风和雨（weatherVoice.js）。一颗石头只有风，之后每多一颗风减一分、雨加一分，四颗时只剩雨，
-    五颗以上雨更大；雨变大时沿 smoothstep 曲线 2 秒渐入（网页是立即）；四颗起有雷，石头越多越频繁，三颗变四颗时立即打一次雷。风每 8 秒有四成机会起一阵。"""
+    五颗以上雨更大；雨变大时沿先快后缓的二次曲线 2 秒渐入（网页是立即）；四颗起有雷，石头越多越频繁，三颗变四颗时立即打一次雷。风每 8 秒有四成机会起一阵。"""
 
     def __init__(self, name: str, ring: int):
         super().__init__(name, ring)
@@ -429,7 +429,7 @@ class Weather(Layer):
             return self.voice["rain"]
         t0, a, b = self.rise
         x = min(1.0, max(0.0, (t - t0) / RAIN_RISE))
-        return a + (b - a) * x * x * (3 - 2 * x)
+        return a + (b - a) * (1 - (1 - x) ** 2)
 
     def _rain(self, t: float, target: float) -> None:
         v = self.voice
