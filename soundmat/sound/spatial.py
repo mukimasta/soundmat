@@ -1,6 +1,8 @@
 """空间化：垫面位置 → 各只音箱的增益（SOUND_ENGINE「空间化」）。
 
 音箱布局是一组音箱的水平方位（度，房间里的方向，顺时针）。垫面角度加上朝向偏移得到房间方位。
+立体声预设把两只音箱放在 270°、90°（垫面的 9 点、3 点）：垫面左半边偏左、右半边偏右，3 点和 9 点
+完全在一侧，12 点和 6 点在正中，左右对称地用满。
 
 分配公式：
 1. 方向：在房间方位两侧相邻的两只音箱之间做等功率分配（只有一只音箱时全给它）。
@@ -41,7 +43,7 @@ class SpeakerLayout:
 
 
 PRESETS = {
-    "stereo": SpeakerLayout((330.0, 30.0), ("左", "右")),
+    "stereo": SpeakerLayout((270.0, 90.0), ("左", "右")),
     "quad": SpeakerLayout((315.0, 45.0, 135.0, 225.0), ("左前", "右前", "右后", "左后")),
     "octo": SpeakerLayout(tuple(i * 45.0 for i in range(8)), tuple(f"{i + 1}" for i in range(8))),
 }
@@ -92,18 +94,24 @@ class SpeakerGains:
 
 
 STEREO_SPREAD = 10.0     # 定位的立体声声源：左右声道各偏开的角度（度）
+STEREO_FRONT = (330.0, 30.0)    # 不定位的立体声声源在多只音箱时的左右声道方位（左前、右前）
 
 
 def voice_gains(position: Position | None, layout: SpeakerLayout, orientation: float = 0.0) -> SpeakerGains:
     """立体声声源（例如环境录音、带合唱效果的音色）：
 
-    - 不定位时左右声道放在房间的左前（330°）和右前（30°），立体声布局下就是原样的左右声道；
+    - 不定位时左右声道放在房间的左前（330°）和右前（30°）；只有两只音箱时直接放在两只音箱上，
+      就是原样的左右声道；
     - 定位时左右声道放在位置两侧各 10°，保留一点宽度。
     """
     mono = speaker_gains(position, layout, orientation)
     if position is None:
-        left = speaker_gains(Position(330.0, 1.0), layout, 0.0)
-        right = speaker_gains(Position(30.0, 1.0), layout, 0.0)
+        if layout.channels == 2:      # 偏左（方位的正弦更小）的那只是左
+            lo, hi = sorted(layout.azimuths, key=lambda a: math.sin(math.radians(a)))
+        else:
+            lo, hi = STEREO_FRONT
+        left = speaker_gains(Position(lo, 1.0), layout, 0.0)
+        right = speaker_gains(Position(hi, 1.0), layout, 0.0)
     else:
         left = speaker_gains(Position(position.angle - STEREO_SPREAD, position.radius), layout, orientation)
         right = speaker_gains(Position(position.angle + STEREO_SPREAD, position.radius), layout, orientation)

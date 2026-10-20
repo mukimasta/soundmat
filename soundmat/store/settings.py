@@ -20,6 +20,9 @@ from . import Store
 
 log = logging.getLogger("soundmat.settings")
 
+# 立体声预设以前的方位（音箱在前方左右 30°）；保存过它的设置读入时换成现在的预设
+OLD_STEREO = [330.0, 30.0]
+
 
 def default_sound_library() -> str:
     """声音素材库的默认位置：树莓派上与程序目录并列的 ``sound/``，开发机上是 SoundMat 总文件夹的 ``sound/``。"""
@@ -121,6 +124,8 @@ class Settings:
         for key, value in self._read().items():
             if key in VALIDATORS:
                 try:
+                    if key == "sound.layout" and isinstance(value, dict) and value.get("azimuths") == OLD_STEREO:
+                        value = "stereo"
                     self._changed[key] = VALIDATORS[key](value)
                     _set(data, key, self._changed[key])
                 except ValueError as e:

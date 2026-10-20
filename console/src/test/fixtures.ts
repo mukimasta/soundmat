@@ -59,7 +59,7 @@ export function playingState(extra: Record<string, unknown> = {}) {
     },
     catalog: { arrangements: [KYOTO, LOFI] },
     settings: {
-      sound: { layout: { azimuths: [330, 30], names: ['左', '右'] }, orientation: 0, volume: 0.8 },
+      sound: { layout: { azimuths: [270, 90], names: ['左', '右'] }, orientation: 0, volume: 0.8 },
       run: { defaultArrangement: 'kyoto', soundLibrary: '/home/soundmat/sound' },
       recording: { path: '/home/soundmat/data/recordings', stems: true },
     },

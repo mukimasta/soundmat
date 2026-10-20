@@ -12,6 +12,8 @@
 和网页的不同：
 
 - 位置：石头的声音（低音、和声、音符、钟声）放在石头的方位；底音、天气、自然不定位。
+  空间化按半径决定声音多集中（越靠圆心越均匀地分到所有音箱），冥想的层大多在内环，照原样几乎都在
+  正中；所以石头的半径先映射到 ``space.spread`` 的范围（默认 [0.85, 1]），内环也能用满左右。
 - 网页上任何一颗石头的变化都会重建天气、自然和三个音符层（React 的写法所致），所以放一颗石头会让
   所有层很快各响一声、风声重新淡入。装置上每层只对自己那一环的变化反应，感知短暂抖动也不会牵动别的层。
 - 同一个调里，同一个位置的低音音高不变（网页每次放下随机取音）：拿起再放下、感知抖动都不会换音。
@@ -69,6 +71,8 @@ NOTE_POOLS = {
 FIXED_INTERVAL = {"bells": 6.0, "high_notes": 8.0}          # 前后再随机 ±0.5 秒
 MID_INTERVALS = ((6.0, 12.0), (3.0, 8.0), (2.0, 5.0))      # 中音符：一颗、两颗、三颗以上
 
+SPREAD = (0.85, 1.0)                # 圆心、垫面外缘的石头分别当作多大的半径来定位（space.spread）
+
 IMMEDIATE_GAP = 0.3                 # 同一环两次"放下就响"至少隔开这么久
 
 # 每颗石头一个的低音与和声计入"旋律"类的声部上限（配置 sound.voice_budget_categories，12 个）：
@@ -82,11 +86,6 @@ PRIORITY = {"bed": 3, "sustained": 2, "placed": 1, "ambient": 0}
 def _fmt(sec: float) -> str:
     s = max(0, int(sec))
     return f"{s // 60}:{s % 60:02d}"
-
-
-def _zone_position(zone: int) -> Position:
-    z = ZONES[zone]
-    return Position(z.center_deg, z.radius)
 
 
 class Key:
@@ -127,6 +126,7 @@ class Frame:
     rng: random.Random
     prefix: str
     counter: list[int]
+    spread: tuple[float, float]
     voices: list[Voice] = field(default_factory=list)
     events: list[Event] = field(default_factory=list)
 
@@ -139,6 +139,12 @@ class Frame:
             source=Source("instrument", instrument), bus=bus, params=params,
             position=position, priority=priority,
         ))
+
+    def position(self, zone: int) -> Position:
+        """石头的声音的位置：区域的方位，半径映射到 ``spread`` 的范围。"""
+        z = ZONES[zone]
+        lo, hi = self.spread
+        return Position(z.center_deg, lo + (hi - lo) * z.radius)
 
 
 # ── 各层 ────────────────────────────────────────────────────────────────────
@@ -205,7 +211,7 @@ class Drones(Layer):
                 id=f"{self.name}.{z}.k{self.generation}", source=Source("instrument", self.spec["instrument"]),
                 bus=self.bus, params={**p, "amp": self.spec["amp"],
                                       "lfoLo": self.spec["lfoLo"], "lfoHi": self.spec["lfoHi"]},
-                fade_in=3.0, fade_out=1.5, position=_zone_position(z), priority=PRIORITY["sustained"],
+                fade_in=3.0, fade_out=1.5, position=f.position(z), priority=PRIORITY["sustained"],
                 category=VOICE_CATEGORY,
             ))
 
@@ -235,7 +241,7 @@ class Pads(Layer):
                 id=f"{self.name}.{z}.k{pad['generation']}", source=Source("instrument", "pool_pad"),
                 bus=self.bus, params={**pad["params"], "lfoPeriod": pad["lfoPeriod"], "lfoLo": 800.0,
                                       "lfoHi": 1200.0, "noteAmp": 0.03, "amp": 0.6},
-                fade_in=2.0, fade_out=1.5, position=_zone_position(z), priority=PRIORITY["sustained"],
+                fade_in=2.0, fade_out=1.5, position=f.position(z), priority=PRIORITY["sustained"],
                 category=VOICE_CATEGORY,
             ))
 
@@ -295,7 +301,7 @@ class Notes(Layer):
             params = {"freq": freq, "tri": 0.0, "noteAtk": 0.005, "decay": f.rng.uniform(2, 5),
                       "amp": f.rng.uniform(0.015, 0.04)}
         f.event(self.name, instrument, self.bus, params, after=None if immediate else 0.0,
-                position=_zone_position(zone), priority=PRIORITY["placed" if immediate else "ambient"])
+                position=f.position(zone), priority=PRIORITY["placed" if immediate else "ambient"])
 
 
 class Weather(Layer):
@@ -483,8 +489,12 @@ class PoolMode(Mode):
         dwell = c.get("music", {}).get("key_dwell", KEY_DWELL)
         if len(dwell) != 2 or not 0 < dwell[0] <= dwell[1]:
             raise LoadError("music.key_dwell 应为 [最短, 最长]（秒）")
+        spread = c.get("space", {}).get("spread", SPREAD)
+        if len(spread) != 2 or not 0 <= spread[0] <= spread[1] <= 1:
+            raise LoadError("space.spread 应为 [圆心, 外缘]，0–1 之间")
         self.rings = rings
         self.dwell = (float(dwell[0]), float(dwell[1]))
+        self.spread = (float(spread[0]), float(spread[1]))
         return LoadPlan(instruments=INSTRUMENTS, buses=("bed",) + tuple(f"ring{r}" for r in range(8)),
                         fx="sm_fx_pool")
 
@@ -508,7 +518,7 @@ class PoolMode(Mode):
             if e.kind == "place":
                 placed[ZONES[e.zone].ring].append(e.zone)
 
-        f = Frame(t, self.key, self.rng, self.prefix, self.counter)
+        f = Frame(t, self.key, self.rng, self.prefix, self.counter, self.spread)
         self.bed.tick(f)
         for layer in self.layers:
             layer.tick(f, by_ring[layer.ring], placed[layer.ring])

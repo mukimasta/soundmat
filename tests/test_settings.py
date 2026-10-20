@@ -9,7 +9,7 @@ from soundmat.store.settings import Settings
 def test_defaults_update_and_persist(tmp_path):
     s = Settings(Store(), tmp_path)
     assert s.get("sound.volume") == 0.8
-    assert s.get("sound.layout")["azimuths"] == [330.0, 30.0]
+    assert s.get("sound.layout")["azimuths"] == [270.0, 90.0]
     s.update({"sound.volume": 0.5, "sound.layout": "quad", "sound.orientation": -15})
     saved = json.loads((tmp_path / "settings.json").read_text())
     assert saved["sound"]["volume"] == 0.5
@@ -65,3 +65,9 @@ def test_directory_settings_must_be_absolute(tmp_path):
     # 设置文件里已有的相对路径：读取时当作无效，回到默认值
     (tmp_path / "settings.json").write_text(json.dumps({"recording": {"path": "data/recordings"}}))
     assert Settings(Store(), tmp_path).get("recording.path") == str(tmp_path / "recordings")
+
+
+def test_old_stereo_layout_is_migrated(tmp_path):
+    (tmp_path / "settings.json").write_text(json.dumps(
+        {"sound": {"layout": {"azimuths": [330.0, 30.0], "names": ["左", "右"]}}}))
+    assert Settings(Store(), tmp_path).get("sound.layout")["azimuths"] == [270.0, 90.0]

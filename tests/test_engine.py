@@ -48,7 +48,7 @@ def test_new_keep_change_remove():
     assert upd.args["params"] == {"amp": 0.7, "cut": 1} and upd.args["gains"] is None
     be.clear()
     # 位置变化：重新分配增益
-    eng.apply("A", SoundIntent((v("a", params={"amp": 0.7, "cut": 1}, position=Position(30, 1)),)), now=1.06)
+    eng.apply("A", SoundIntent((v("a", params={"amp": 0.7, "cut": 1}, position=Position(90, 1)),)), now=1.06)
     (upd,) = be.of_kind("set_voice")
     assert upd.args["gains"] == pytest.approx([0.0, 1.0], abs=1e-9)
     be.clear()
@@ -187,7 +187,7 @@ def test_layout_change():
     eng, be = make()
     eng.apply("A", SoundIntent((v("a", position=Position(0, 1)),)), now=1.0)
     be.clear()
-    eng.set_layout(PRESETS["stereo"], orientation=30.0, now=2.0)
+    eng.set_layout(PRESETS["stereo"], orientation=90.0, now=2.0)
     (upd,) = be.of_kind("set_voice")
     assert upd.args["gains"] == pytest.approx([0, 1], abs=1e-9)
     be.clear()

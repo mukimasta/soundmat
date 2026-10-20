@@ -87,7 +87,7 @@ export function SettingsSheet({ onClose, onBack }: { onClose: () => void; onBack
 
 /** 音箱与垫面朝向示意：垫面画在中间，小点是它的 12 点方向。 */
 function LayoutDiagram({ layout, orientation }: { layout?: Layout; orientation: number }) {
-  const az = layout?.azimuths ?? [330, 30];
+  const az = layout?.azimuths ?? [270, 90];
   const names = layout?.names ?? [];
   const pt = (deg: number, r: number) => {
     const a = (deg * Math.PI) / 180;

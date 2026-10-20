@@ -74,7 +74,7 @@ def test_voice_messages_timestamps_and_globals(rig):
     now = system_time()
     eng.apply("A", SoundIntent(
         (Voice("d", Source("instrument", "diapasonHold"), "ring0", {"freq": 130.0}, fade_in=4.0),),
-        (Event("e", now + 0.5, Source("instrument", "marimbaNote"), "ring5", {"freq": 440.0}, Position(30, 1)),),
+        (Event("e", now + 0.5, Source("instrument", "marimbaNote"), "ring5", {"freq": 440.0}, Position(90, 1)),),
         {"cutoff": 2000.0, "bus.ring5": 0.5, "fx.decay": 2.0},
     ), now)
     be.flush()

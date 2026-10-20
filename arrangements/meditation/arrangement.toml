@@ -18,6 +18,9 @@ key_dwell = [300, 480]          # 每个调停留多久（秒），之后沿五�
 #   high_notes 高音符 weather 天气      bells 钟声        nature 自然（鸟鸣、水滴）
 rings = ["low_drone", "mid_drone", "pad", "mid_notes", "high_notes", "weather", "bells", "nature"]
 
+[space]
+spread = [0.85, 1.0]            # 石头的声音定位时，圆心、外缘分别当作多大的半径（1 = 完全偏向那一侧的音箱）
+
 [[meters.background]]
 label = "底音"
 buses = ["bed"]
