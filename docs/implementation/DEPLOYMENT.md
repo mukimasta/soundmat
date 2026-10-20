@@ -69,7 +69,7 @@
 | 连接名 | SSID | 密码 | 自动连接 / 优先级 | 用途 |
 |---|---|---|---|---|
 | `phone-hotspot` | `soundmat` | `soundmat` | 是 / 100 | 手机热点，展出时的主网络 |
-| `uw-mpsk` | `UW MPSK` | 用网卡 MAC 在 UW 登记得到，不进仓库 | 是 / 50 | 外部网络：UW 实验室。固定使用网卡出厂 MAC（`cloned-mac-address=permanent`），避免登记失效 |
+| `uw-mpsk` | `UW MPSK` | 用网卡 MAC 在 UW 登记得到（<https://register.wifi.uw.edu/guest/mac_create.php>，用 NetID 登录，Create Device；登记有效五年），不进仓库 | 是 / 50 | 外部网络：UW 实验室。固定使用网卡出厂 MAC（`cloned-mac-address=permanent`），避免登记失效 |
 | `netplan-wlan0-Avocado`（Pi 3B 上叫 `Avocado`） | `Avocado` | 家里的 Wi-Fi 密码，不进仓库 | 是 / 40 | 外部网络：开发用的家庭 Wi-Fi，由 Raspberry Pi Imager 写入，netplan 管理 |
 | `netplan-eth0` | — | — | 是 | 有线网络 |
 | `soundmat-ap` | `SoundMat-AP` | `soundmat` | 否 | 自建热点，2.4 GHz 信道 6，树莓派地址 `10.42.0.1`，为连上的设备分配地址 |

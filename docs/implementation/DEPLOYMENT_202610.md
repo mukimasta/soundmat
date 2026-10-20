@@ -46,7 +46,7 @@
 
 首次检查（2026-10-16）：使用支持 5V/3A 的 PD 充电宝供电；`get_throttled=0x0`，当前启动未记录欠压或降频；温度 36.2°C。根分区 29GiB，已用 2.0GiB，可用 25GiB。尚未在 PATH 中找到 jackd、scsynth、uv，音频环境待安装。上述供电结果仅覆盖当前空闲状态。
 
-- [ ] 在 UW 使用 UW MPSK 前，用这台设备无线网卡的固定 MAC 地址登记（地址可以在 `/sys/class/net/wlan0/address` 查到）。部署脚本会让这个连接始终使用固定地址，不做随机化，否则登记会失效。
+- [x] 在 UW 使用 UW MPSK 前，用这台设备无线网卡的固定 MAC 地址登记（地址可以在 `/sys/class/net/wlan0/address` 查到）。部署脚本会让这个连接始终使用固定地址，不做随机化，否则登记会失效。— 2026-10-19，用户用 NetID `hlxue` 在 <https://register.wifi.uw.edu/guest/mac_create.php> 登记了 Pi 5 的 `98:fe:54:22:58:26`（角色 Student），2031-10-18 23:03 到期；登记回执上的密码不进仓库。
 
 ## 第二步：运行部署脚本
 
