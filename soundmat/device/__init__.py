@@ -28,6 +28,16 @@ SILENCE_SECONDS = 5.0     # 已经收到过 S 帧之后，这么久没有新的 
 # 刚打开串口时等第一帧 S 帧的时间。打开串口可能让 ESP32 复位，固件开机后约 5 秒的灯效期间不发
 # S 帧；如果这里也只等 5 秒，每次重开都会在它开完机之前再次复位它，永远等不到（Pi 3B 上实测）
 BOOT_WAIT_SECONDS = 15.0
+# 刚打开串口时这么久连一个字节都没有收到：关掉马上重开，不等满 BOOT_WAIT_SECONDS。ESP32 开机后不停地发
+# S 帧，不管有没有人读；Pi 开机时串口要三十多秒后才有人打开，这期间 USB 串口芯片（CP2102）被灌满，
+# 第一次打开常常一个字节也收不到（关闭时内核报 cp210x "failed set request 0x12 status: -110"），
+# 关掉重开就好（2026-10-19 Pi 5 上两次开机都是这样，白等 15 秒）。打开串口让 ESP32 复位时，
+# 它马上会发开机信息，有字节，所以不会落进这里、反复复位它。
+NO_DATA_SECONDS = 3.0
+
+
+class _NoData(Exception):
+    """刚打开串口后一个字节都没有收到。"""
 
 
 class SerialLike(Protocol):
@@ -168,6 +178,12 @@ class DeviceLink:
             self.problem = "等待控制器就绪"
             try:
                 self._read_loop(ser)
+            except _NoData:
+                self._close()
+                self.connected = False
+                log.info("打开串口后 %.0f 秒没有收到任何数据，重新打开", NO_DATA_SECONDS)
+                self._stop.wait(0.5)
+                continue
             except Exception as e:
                 if not self._stop.is_set():
                     log.debug("串口读取出错：%s", e)
@@ -189,14 +205,18 @@ class DeviceLink:
     def _read_loop(self, ser: SerialLike) -> None:
         buf = b""
         opened = system_time()
+        got_bytes = False
         while not self._stop.is_set():
             chunk = ser.read(4096)
             now = system_time()
             if chunk:
+                got_bytes = True
                 buf += chunk
                 while b"\n" in buf:
                     raw, buf = buf.split(b"\n", 1)
                     self._line(raw.decode("ascii", errors="replace").strip(), now)
+            if not got_bytes and now - opened > NO_DATA_SECONDS:
+                raise _NoData()
             last = self.last_frame if self._booted else opened
             limit = SILENCE_SECONDS if self._booted else BOOT_WAIT_SECONDS
             if now - max(last, opened) > limit:

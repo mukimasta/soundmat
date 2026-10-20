@@ -2,7 +2,6 @@
 
 - [ ] 上真机核对坐标对齐：在每环放一颗石头，确认控制台垫面上的位置与实物一致。第一版的内环实际没有做扇区镜像（外环做了），新版照搬，见 `implementation/HOST_PROGRAM.md`「设备连接与垫面信号」
 - [ ] 上真机调整去抖时间（`config/soundmat.toml` 的 `occupy_hold`、`release_hold`，当前是未经实测的初值）
-- [ ] 查控制器第一次连接总要约 20 秒：Pi 5 两次开机都是主机程序打开串口后 15 秒内收不到帧，超时断开（关闭时内核报 `cp210x ttyUSB0: failed set request 0x12 status: -110`），重开后约 4 秒连上。和欠压无关（复测时没有欠压也一样），见 `soundmat/device/__init__.py` 的 `open_serial`、`BOOT_WAIT_SECONDS`
 - [ ] 修改控制器固件：开机后保持低亮度的等待灯效，直到主机程序接管（当前固件开机 5 秒后全亮白光，5 V 总线瞬间约 3.8 A）
 - [ ] 确定 SoundMat 系列文档正本的存放位置，更新 `design/SOUNDMAT_SERIES.md`
 - [ ] Pi 3B 上新版稳定后，删除保留的第一版（`~/soundmat` 和 `soundmat-v1.service`）
