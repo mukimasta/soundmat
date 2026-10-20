@@ -219,27 +219,18 @@ def test_bed_volume_breath_is_sent_every_quarter_second():
     assert bed[0] == pytest.approx(m.breath.value(0.25))
 
 
-def test_light_follows_the_measured_bed_level():
-    measured = {"bed": None}
-    asked = []
-
-    def report(key):
-        asked.append(key)
-        return measured.get(key)
-
-    arr = load_arrangement(ARRANGEMENTS_DIR / "meditation")
-    m = PoolMode(arr, replace(CTX, report=report))
-    m.plan = m.load()
-    m.start(0.0)
+def test_light_follows_the_breath_smoothly():
+    """灯光跟着呼吸（与底音音量起伏同一条曲线），不跟实测音量：实测值里的拍频和测量跳动在低亮度下看起来是闪。"""
+    m = meditation()
     run = Run(m)
     far = lambda out: float(out.light.layers[0].alpha[54])      # 底色层，6 点方向
-    assert far(run.until(0.5)[-1]) == pytest.approx(0.05)         # 还没有测量值：停在中间
-    for level, expect in ((0.0, 0.0), (1.0, 0.10), (0.3, 0.03), (1.7, 0.10)):
-        measured["bed"] = [level]
-        assert far(run.until(run.i / 60)[-1]) == pytest.approx(expect)
-    measured["bed"] = None                                        # 偶尔收不到：沿用上一个值
-    assert far(run.until(run.i / 60)[-1]) == pytest.approx(0.10)
-    assert set(asked) == {"bed"}
+    outs = run.until(20.0)
+    lo, hi = m.light["breath_min"], m.light["breath_max"]
+    vals = [far(o) for o in outs]
+    for i in (0, 300, 600, 1199):
+        assert vals[i] == pytest.approx(lo + (hi - lo) * m.breath.value(i / 60), abs=1e-6)
+    steps = np.abs(np.diff(vals))
+    assert steps.max() < (hi - lo) * 0.002                      # 相邻两帧几乎不变：没有跳动
 
 
 def test_light_is_one_warm_color_and_stones_are_brighter():
