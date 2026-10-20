@@ -265,21 +265,19 @@ def test_light_parameters_come_from_the_arrangement():
     assert m.breath.period == 8
 
 
-def test_rain_rises_over_five_seconds_in_db_and_falls_as_before():
+def test_rain_rises_along_smoothstep_in_two_seconds_and_falls_as_before():
     m = meditation()
     a, b = zone(5, 0).index, zone(5, 16).index
     run = Run(m, {a: (0.0, None), b: (1.0, 12.0)})            # 第二颗 1 秒放下、12 秒拿起
     rain = lambda out: next(v for v in out.sound.voices if v.id == "weather").params
-    outs = run.until(7.0)
+    outs = run.until(4.0)
     at = lambda t: rain(outs[round(t * 60)])
+    s = lambda x: x * x * (3 - 2 * x)
     assert at(0.5)["rain"] == 0.0
-    # 放下第二颗：每 0.25 秒给一次，给的是这一段结束时的值；按 dB 匀速，从目标以下 40 dB 升到 1/3
-    first = at(1.0)
-    assert first["rainTime"] == 0.25
-    assert 20 * math.log10(first["rain"] / (1 / 3)) == pytest.approx(-40 + 40 * 0.25 / 5)
-    mid = at(3.5)                                             # 2.5 秒后，这一段结束在 3.75 秒
-    assert 20 * math.log10(mid["rain"] / (1 / 3)) == pytest.approx(-40 + 40 * 2.75 / 5)
-    assert at(6.0)["rain"] == pytest.approx(1 / 3) and at(6.9)["rain"] == pytest.approx(1 / 3)
+    # 放下第二颗：每 0.1 秒给一次，给的是这一段结束时的值，沿 smoothstep 从 0 升到 1/3
+    assert at(1.0)["rainTime"] == 0.1 and at(1.0)["rain"] == pytest.approx(s(0.05) / 3)
+    assert at(2.0)["rain"] == pytest.approx(s(0.55) / 3)
+    assert at(3.0)["rain"] == pytest.approx(1 / 3) and at(3.9)["rain"] == pytest.approx(1 / 3)
     # 拿起：和原来一样 1.5 秒线性回落
     out = run.until(12.1)[-1]
     assert rain(out)["rain"] == 0.0 and rain(out)["rainTime"] == 1.5
