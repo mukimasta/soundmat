@@ -7,7 +7,7 @@ export function geometry(): Zone[] {
   for (let ring = 0; ring < 8; ring++) {
     const n = ring < 2 ? 16 : 32;
     for (let slot = 0; slot < n; slot++) {
-      const center = ring < 2 ? (2 * slot + 1) * 11.25 : slot * 11.25;
+      const center = ring < 2 ? (2 * slot + 1.5) * 11.25 : slot * 11.25;
       out.push({ index, id: `${ring}:${slot}`, ring, slot, center: center % 360, span: 360 / n,
         rInner: centers[ring] - 1.375, rOuter: centers[ring] + 1.375 });
       index++;
