@@ -122,6 +122,7 @@ ssh soundmat@<主机> 'pkcheck --action-id org.freedesktop.login1.reboot --proce
 polkit 在 Pi OS Lite 上已装（`polkitd`），平时不常驻、按需启动，规则文件放进去就生效，不用重启。规则只放开 `soundmat` 用户重启 `jackd.service`、`soundmat-scsynth.service`、`soundmat.service` 和重启整机。
 
 - `jackd.service` 里的 `hw:Audio` 是当前声卡的名字，换声卡时按 `aplay -l` 改。48 kHz、每块 2048 帧两块缓冲；Pi 5 可以看板上的卡顿次数为准逐步降到 1024、512。**改 JACK 缓冲时同步改 `config/soundmat.toml` 的 `sound.schedule_ahead`**：至少是一整个缓冲（帧数 × 块数 / 48000）再加一块，另留余量；2048 × 2 时是 0.15，1024 × 2 时约 0.08。小于它，合成器收到的定时指令会迟到，节奏忽早忽晚（看板「节奏」里的"合成器收到太晚"）。
+- **声卡硬件音量调到 0 dB 并保存**：ALSA 给新插的 CX31993 默认 108/148（−20 dB），不调的话整体比 Pi 3B 小很多（2026-10-19 Pi 5 上遇到）。`amixer -c Audio sset PCM 100% unmute && sudo alsactl store Audio`，保存到 `/var/lib/alsa/asound.state`，开机由 `alsa-restore` 恢复。换声卡后重做。
 - 主机程序的服务在程序装好后（第 6 节）再启用。
 - Pi 3B 上程序目录不同，用 drop-in 覆盖路径：`/etc/systemd/system/soundmat.service.d/pi3b.conf` 里重设 `WorkingDirectory=/home/soundmat/sm/current`、`Environment=SOUNDMAT_HOME=/home/soundmat/sm`、`ExecStart=`（先清空）再 `ExecStart=/home/soundmat/sm/current/.venv/bin/soundmat --data-dir /home/soundmat/data`。
 
@@ -264,6 +265,7 @@ ssh soundmat@<主机> 'P=$(systemctl show -p MainPID --value soundmat); top -H -
 | 看板「垫子：控制器断开，正在重连」反复出现 | 收不到 S 帧。先确认 ESP32 通电、USB 插好；程序打开串口后会等 15 秒首帧（打开串口可能让 ESP32 复位，固件开机灯效约 5 秒不发数据）。`journalctl -u soundmat --since -2min -o cat \| grep -E "控制器\|垫子"` |
 | JACK 日志 `semop (Invalid argument)`、`jack_lsp` 连不上，scsynth 服务卡在 "JACK not ready" | logind 在 soundmat 退出登录时清掉了 JACK 的信号量：装 `logind-soundmat.conf`（`RemoveIPC=no`），重启 systemd-logind，再依次重启 jackd、soundmat-scsynth |
 | JACK 日志 `Cannot use real-time scheduling` | 服务缺 `LimitRTPRIO=95`（第一版就缺）：用仓库里的 `jackd.service` |
+| 声音整体比另一台小很多，程序音量正常 | 声卡硬件音量没调：`amixer -c Audio sget PCM` 应为 148 [0.00dB]，按第 4 节调好并 `alsactl store` |
 | 没声音，scsynth 在跑 | `jack_lsp -c` 看 SuperCollider 的输出有没有接到 `system:playback_*`；服务里要有 `SC_JACK_DEFAULT_OUTPUTS` |
 | 看板「采样率 44.1 kHz，期望 48 kHz」 | JACK 的 `-r`。Pi 3B 用 drop-in `/etc/systemd/system/jackd.service.d/rate.conf` 重设 `ExecStart` 为 `-r48000` |
 | 看板「缺少 N 个声音素材」 | 当前编排要素材（京都岚山），装置上没有：发布时不要加 `--no-sound`。Pi 3B 上是有意不放素材的（内存放不下京都岚山），不用管 |
