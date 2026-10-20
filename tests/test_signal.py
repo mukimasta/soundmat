@@ -34,13 +34,13 @@ def test_inner_rings_mirror_like_outer_and_ignore_odd_slices():
 
 
 def test_inner_zone_lines_up_with_outer_on_the_same_radius():
-    """2026-10-20 真垫子实测：沿一条径向线同时按，外环第 k 区与内环接线扇区 w 一起亮。"""
+    """2026-10-20 真垫子实测：沿一条径向线同时按，外环第 k 区与内环接线扇区 w 一起亮，两者中心重合。"""
     from soundmat.perception.zones import zone as zn
     idx = zone_wire_index(True, OFF)
     for k, w in [(2, 2), (4, 0), (6, 30), (8, 28)]:
-        inner = next(z for z in range(16) if idx[z] == w)
-        outer, z = zn(7, k), zn(0, inner)
-        assert abs((outer.center_deg - z.center_deg + 180) % 360 - 180) < z.span_deg / 2
+        for ring in (0, 1):
+            inner = next(z for z in range(16) if idx[zn(ring, z).index] == ring * 32 + w)
+            assert zn(ring, inner).center_deg == pytest.approx(zn(7, k).center_deg)
 
 
 def test_v1_reader_example_outer_27():
