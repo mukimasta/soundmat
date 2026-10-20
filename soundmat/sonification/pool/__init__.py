@@ -18,9 +18,10 @@
   所有层很快各响一声、风声重新淡入。装置上每层只对自己那一环的变化反应，感知短暂抖动也不会牵动别的层。
 - 同一个调里，同一个位置的低音音高不变（网页每次放下随机取音）：拿起再放下、感知抖动都不会换音。
 - 一颗石头可能压到相邻两个区域，几乎同时有两个放下事件；同一环 0.3 秒内只立即响一次。
-- 呼吸：底音的音量起伏（网页是音色里 0.015 Hz 的 LFO）改由这里的 ``Breath`` 给出，灯光的明暗也取
-  同一个值，所以"声音涌起来时灯也亮"，合成器重启了声部也不会错开。周期、起伏深度和灯光的参数见
-  编排的 ``[breath]``、``[light]``。网页的灯光是八种环色的标记，这里改成暖白的低亮度呼吸。
+- 呼吸：网页底音听得出来的起伏是三路微失谐正弦的拍频（C 调约 17.5 秒一次、深约 30 dB），相位只有
+  合成器知道。这里底音改成一路正弦，起伏由 ``Breath`` 给出，灯光的明暗取同一个值，所以"声音涌起来
+  时灯也亮"，合成器重启了声部也不会错开。周期、深度和灯光的参数见编排的 ``[breath]``、``[light]``。
+  网页的灯光是八种环色的标记，这里改成一种颜色的低亮度呼吸。
 """
 from __future__ import annotations
 
@@ -58,11 +59,11 @@ DEFAULT_RINGS = LAYERS              # 由内到外，与网页由内到外的顺
 DISTANT_POOL = (196.0, 220.0, 246.94, 293.66, 329.63)   # 远处偶发的音（C 调）
 DISTANT_INTERVAL = (15.0, 30.0)
 
-# 呼吸：底音音量起伏和灯光明暗共用（[breath]、[light]）
-BREATH_PERIOD = 1 / 0.015           # 秒，约 67 秒（网页底音音量起伏 0.015 Hz）
-BREATH_DEPTH_DB = 2.0               # 底音音量起伏 ±2 dB
+# 呼吸：底音的涌起落下和灯光明暗共用（[breath]、[light]）
+BREATH_PERIOD = 17.5                # 秒：网页底音 C 调时拍频的周期（196 Hz 的 0.5 音分 ≈ 0.057 Hz）
+BREATH_DEPTH_DB = 30.0              # 底音最轻时比最响低多少 dB（网页拍频约 30 dB）
 BREATH_UPDATE = 0.25                # 每隔多久把呼吸值交给底音，合成器在这段时间里线性滑过去
-LIGHT = {"color": (255, 196, 140), "breath_min": 0.0, "breath_max": 0.10, "stone_alpha": 0.30, "stone_width": 1}
+LIGHT = {"color": (255, 255, 255), "breath_min": 0.0, "breath_max": 0.10, "stone_alpha": 0.30, "stone_width": 1}
 
 # 低音：八度、第二个振荡器、音量、低通的明暗范围（droneVoice.js）
 DRONES = {
@@ -213,7 +214,7 @@ class Breath:
 
 
 class Bed:
-    """底音（一直在响）和远处偶尔的一声（baseLayer.js）。两者的音量都跟着呼吸起伏。"""
+    """底音（一直在响）和远处偶尔的一声（baseLayer.js）。底音随呼吸涌起落下，远处的音跟着呼吸 ±2 dB。"""
 
     def __init__(self, rng: random.Random, t: float, breath: Breath):
         self.breath = breath
@@ -235,7 +236,7 @@ class Bed:
                 "freq": f.rng.choice(DISTANT_POOL) * f.key.factor,
                 "decay": f.rng.uniform(6, 10),
                 "amp": 10 ** (f.rng.uniform(-40, -34) / 20),
-                "volPhase": b.phase(f.t), "volHz": 1 / b.period, "depth": b.depth_db,
+                "volPhase": b.phase(f.t), "volHz": 1 / b.period,
             })
 
 
@@ -550,8 +551,8 @@ class PoolMode(Mode):
         period, depth = breath.get("period", BREATH_PERIOD), breath.get("sound_depth_db", BREATH_DEPTH_DB)
         if not _number(period) or period < 1:
             raise LoadError("breath.period 应为不小于 1 的秒数")
-        if not _number(depth) or not 0 <= depth <= 12:
-            raise LoadError("breath.sound_depth_db 应在 0–12 dB 之间")
+        if not _number(depth) or not 0 <= depth <= 60:
+            raise LoadError("breath.sound_depth_db 应在 0–60 dB 之间")
         self.rings = rings
         self.dwell = (float(dwell[0]), float(dwell[1]))
         self.spread = (float(spread[0]), float(spread[1]))

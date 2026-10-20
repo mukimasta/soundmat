@@ -25,7 +25,4 @@
     EnvGen.kr(Env.asr(\atk.kr(0.05), 1, \rel.kr(0.5), \lin), \gate.kr(1), doneAction: 2)
 };
 
-// 底音的音量起伏（网页：±2 dB、0.015 Hz 的正弦）。呼吸值 b（0–1）由主机程序给出，灯光用同一个值，
-// 所以这里不再自带 LFO；b 在 0–1 之间线性对应 −depth dB 到 +depth dB 的振幅（与网页的 range 相同）。
-~poolBreathGain = { |b| b.linlin(0, 1, \depth.kr(2).neg.dbamp, \depth.kr(2).dbamp) };
 ~poolBedOut = 0.5;            // 网页的 bedOut：底音不经过主效果链，直接 ×0.5 输出
