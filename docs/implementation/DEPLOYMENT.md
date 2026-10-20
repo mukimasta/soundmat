@@ -19,7 +19,7 @@
 
 三个主服务按 JACK → scsynth → 主机程序的顺序依赖（开机时 JACK 之前还有一步等时钟，见「时钟」），异常退出都会自动重启，开机自启。scsynth 是独立的服务而不是主机程序的子进程：主机程序重启（更新、出错后被拉起）时声音链路不中断，scsynth 出错时由 systemd 单独重启、主机程序发现后重建（`SYNTH.md`）。
 
-系统环境：Raspberry Pi OS Lite 64 位；`jackd2`、`supercollider-server`（不装 sclang，音色在开发机编译）；uv 管理的 Python 3.12；Tailscale（设备名 `soundmat-pi`）。
+系统环境：Raspberry Pi OS Lite 64 位；`jackd2`、`jack-example-tools`（`jack_lsp`，scsynth 服务启动前用它等 JACK）、`supercollider-server`（不装 sclang，音色在开发机编译）；uv 管理的 Python 3.12；Tailscale（设备名 `soundmat-pi`）。
 
 ## 树莓派上的目录
 

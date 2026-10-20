@@ -56,9 +56,9 @@
 - [x] **实时音频权限**：把 `soundmat` 用户加入 `audio` 组，并允许它以实时优先级运行音频服务。— 2026-10-17，`soundmat` 原本就在 `audio` 组；安装前预设 debconf `jackd2 jackd/tweak_rt_limits=true`，生成 `/etc/security/limits.d/audio.conf`，新登录会话实测 rtprio 95、memlock unlimited。
 - [ ] **电源设置**：降压模块只输出 5V，不和 Pi 5 协商快充，Pi 5 默认会把 USB 总输出限制在 600 mA。在确认电源能提供足够电流的前提下，于 `/boot/firmware/config.txt` 打开 `usb_max_current_enable`，避免 USB 声卡和 ESP32 供电不足。
 - [x] **Python 环境**：安装 uv，由它安装 Python 和依赖，不使用系统自带的 Python。— 2026-10-17，uv 0.13.1 装在 `~/.local/bin`，`uv python install 3.12` 得到 CPython 3.12.15。非交互 SSH 不加载 PATH，需写完整路径 `~/.local/bin/uv`。依赖要等程序同步后再安装。
-- [ ] **程序与数据**：用 rsync 把主机程序、编排、编译好的音色同步到树莓派；把开发机的 `SoundMat/sound/` 同步到树莓派的声音素材目录。
-- [ ] **系统服务**：安装 `system/systemd/` 下的三个服务，依次是 JACK、scsynth、主机程序，后一个依赖前一个，任何一个异常退出都会自动重启，并设为开机启动。
-- [x] **网络**：按密钥文件建立 NetworkManager 连接：手机热点优先级最高，UW MPSK 次之；自建热点默认不自动连接，由一个开机后等待一段时间仍未联网就启用它的服务兜底。同时设置主机名并启用 avahi，使局域网内可以用 `soundmat.local` 访问。— 2026-10-17，按 `DEPLOYMENT.md`「网络」一节手动完成，没有写部署脚本：建立 `phone-hotspot`（100）、`uw-mpsk`（50，固定出厂 MAC，**未填密码，未实测**，见 `TODO.md`）、`soundmat-ap`（不自动连接）三个连接，Avocado 优先级设为 40；安装 `system/network/` 下的 `soundmat-net-fallback` 及其 timer（开机 60 秒后首次运行，之后每 60 秒一次）。两个热点的密码由用户在终端里填入。主机名保持 `soundmat-pi`，avahi 原已启用。
+- [x] **程序与数据**：用 rsync 把主机程序、编排、编译好的音色同步到树莓派；把开发机的 `SoundMat/sound/` 同步到树莓派的声音素材目录。— 2026-10-19，先手动装了发布包 `e2af493`，之后用 `scripts/release.py --device soundmat-pi` 发布 `c77653a`，同步素材 14 个文件 326 MB（经 UW MPSK，77 秒）。
+- [x] **系统服务**：安装 `system/systemd/` 下的三个服务，依次是 JACK、scsynth、主机程序，后一个依赖前一个，任何一个异常退出都会自动重启，并设为开机启动。— 2026-10-19，按部署 skill 第 4 节安装（另有 `soundmat-clock`、logind 配置、`soundmat-guard`、polkit 规则）。trixie 的 jackd2 不带 `jack_lsp`，scsynth 服务的启动检查一直报 "JACK not ready"，补装 `jack-example-tools` 后正常，已写进 skill。JACK 实时模式，`jack_lsp -c` 显示 SuperCollider 输出接到 `system:playback_1/2`，`pkcheck` 通过。
+- [x] **网络**：按密钥文件建立 NetworkManager 连接：手机热点优先级最高，UW MPSK 次之；自建热点默认不自动连接，由一个开机后等待一段时间仍未联网就启用它的服务兜底。同时设置主机名并启用 avahi，使局域网内可以用 `soundmat.local` 访问。— 2026-10-17，按 `DEPLOYMENT.md`「网络」一节手动完成，没有写部署脚本：建立 `phone-hotspot`（100）、`uw-mpsk`（50，固定出厂 MAC，2026-10-19 已登记、填好密码并实测，见第一步）、`soundmat-ap`（不自动连接）三个连接，Avocado 优先级设为 40；安装 `system/network/` 下的 `soundmat-net-fallback` 及其 timer（开机 60 秒后首次运行，之后每 60 秒一次）。两个热点的密码由用户在终端里填入。主机名保持 `soundmat-pi`，avahi 原已启用。
   - 实测：已连 Avocado 时打开手机热点，下一次检查即切换，用时约 4 秒，外网和 Tailscale 正常。关掉手机热点（同时临时关闭 Avocado 自动连接，并预约 8 分钟后回滚）后，NetworkManager 重试约 80 秒，之后下一次检查开启 `SoundMat-AP`，手机能连上。AP 模式下扫描正常，Avocado 恢复后下一次检查即切回，用时 4 秒。当时 timer 间隔是 2 分钟，之后改为 60 秒，改后未重测。
 - [x] **Tailscale**：安装 Tailscale，用密钥文件里的授权密钥加入网络，设备名 `soundmat`。— 2026-10-17，从官方 trixie apt 源装 1.104.1；没有用授权密钥，而是由 `tailscale up` 打印登录链接、用户在浏览器授权。设备名实际为 `soundmat-pi`，与主机名一致（旧节点已改名为 `soundmat-pi-old`），地址 100.90.172.113，Mac 用 `ssh soundmat@soundmat-pi` 可以登录。节点密钥 2027-04-15 到期。
 - [ ] **设置**：树莓派上还没有设置文件时，写入一份默认设置；已有时保持不动。
@@ -68,12 +68,13 @@
 
 部署完成后逐项确认，全部通过才算这台主机可以交付：
 
-- [ ] 三个系统服务都在运行。
+- [x] 三个系统服务都在运行。— 2026-10-19
 - [ ] 在局域网里用 `http://soundmat.local:8000` 能打开控制台；在别处通过 Tailscale 也能打开。
 - [ ] 看板上声音、垫子、网络三项都正常；合成器服务实际使用的是 USB 声卡，采样率和声道数与设置一致；垫子一栏显示实测传感帧率。
 - [ ] 逐声道测试音从对应的音箱发出。
 - [ ] 在垫子上放一颗石头，听到声音、看到灯光反馈。
 - [ ] 断电后重新上电，装置自己进入默认编排，看板恢复正常。
+- [x] UW MPSK 能连上、Tailscale 可达。— 2026-10-19 实测通过：切到 `uw-mpsk` 后外网正常、Tailscale 直连；恢复选网 timer 后自动回到手机热点。
 - [ ] 关掉手机热点后重启，等待超时后自建热点出现，手机连上它能打开控制台。
 
 ## 日常更新

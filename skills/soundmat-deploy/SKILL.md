@@ -49,7 +49,7 @@ description: Deploy, update, verify and troubleshoot the SoundMat host on a Rasp
 ```bash
 echo "jackd2 jackd/tweak_rt_limits boolean true" | sudo debconf-set-selections
 sudo apt-get update -qq
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends jackd2 supercollider-server
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends jackd2 jack-example-tools supercollider-server
 ```
 
 `--no-install-recommends` 很重要（否则多装约 140 个桌面相关的包）；预设 debconf 会生成 `/etc/security/limits.d/audio.conf`（`@audio` rtprio 95、memlock unlimited）。不装 sclang，音色在 Mac 上编译。
