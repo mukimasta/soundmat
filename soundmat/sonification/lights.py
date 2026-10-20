@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import math
-from typing import Iterable, Sequence
+from typing import Iterable, Mapping, Sequence
 
 import numpy as np
 
@@ -162,14 +162,15 @@ def breathing_marks(t: float, occupied: Iterable[int], led_count: int) -> LightI
     return LightIntent((base.layer("base", 0), marks.layer("stones", 10)))
 
 
-def warm_breathing(level: float, occupied: Iterable[int], led_count: int, *, color: Color,
+def warm_breathing(level: float, stones: Mapping[int, float], led_count: int, *, color: Color,
                    breath_min: float, breath_max: float, stone_alpha: float, stone_width: int) -> LightIntent:
     """声池模式（《冥想》）的灯光：一种颜色的整圈呼吸，有石头的位置同一种颜色、更亮一些。
     ``level`` 是 0–1 的明暗（声池模式里是底音测得的音量），映射到 ``breath_min``–``breath_max``；
-    石头标记以石头方位为中心、两侧各 ``stone_width`` 颗，向两侧减弱。"""
+    ``stones`` 是区域 → 石头标记的强度（0–1，渐亮渐暗由模式算），标记以石头方位为中心、两侧各
+    ``stone_width`` 颗，向两侧减弱，亮度是 ``stone_alpha`` 乘强度。"""
     base = Canvas(led_count, color, breath_min + (breath_max - breath_min) * level)
     marks = Canvas(led_count)
-    marks.add(m for z in occupied
+    marks.add(m for z, k in stones.items()
               for m in span(led_for_angle(ZONES[z].center_deg, led_count), 2 * stone_width + 1, color,
-                            stone_alpha, led_count))
+                            stone_alpha * k, led_count))
     return LightIntent((base.layer("base", 0), marks.layer("stones", 10)))

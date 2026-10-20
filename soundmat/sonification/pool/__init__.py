@@ -64,7 +64,10 @@ DISTANT_INTERVAL = (15.0, 30.0)
 BREATH_PERIOD = 1 / 0.015           # 秒，约 67 秒（网页底音音量起伏 0.015 Hz）
 BREATH_DEPTH_DB = 2.0               # 底音音量起伏 ±2 dB
 BREATH_UPDATE = 0.25                # 每隔多久把呼吸值交给底音，合成器在这段时间里线性滑过去
-LIGHT = {"color": (255, 255, 255), "breath_min": 0.0, "breath_max": 0.10, "stone_alpha": 0.30, "stone_width": 1}
+LIGHT = {"color": (255, 255, 255), "breath_min": 0.0, "breath_max": 0.10, "stone_alpha": 0.30, "stone_width": 1,
+         "stone_fade_in": 0.4, "stone_fade_out": 1.0}
+# 石头标记渐亮、渐暗（秒）。渐亮的亮度按进度的平方：感知偶尔一闪即逝的占用（0.1 秒）只亮到标记的约 6%，
+# 不会在很暗的底色上闪一下；真放上去的石头 stone_fade_in 秒内完全亮起
 
 # 低音：八度、第二个振荡器、音量、低通的明暗范围（droneVoice.js）
 DRONES = {
@@ -121,8 +124,12 @@ def _light_config(c: dict) -> dict:
     w = out["stone_width"]
     if not isinstance(w, int) or isinstance(w, bool) or not 0 <= w <= 10:
         raise LoadError("light.stone_width 应为 0–10 的整数")
+    for key in ("stone_fade_in", "stone_fade_out"):
+        if not _number(out[key]) or not 0 <= out[key] <= 10:
+            raise LoadError(f"light.{key} 应在 0–10 秒之间")
     return {"color": tuple(color), "breath_min": float(out["breath_min"]), "breath_max": float(out["breath_max"]),
-            "stone_alpha": float(out["stone_alpha"]), "stone_width": w}
+            "stone_alpha": float(out["stone_alpha"]), "stone_width": w,
+            "stone_fade_in": float(out["stone_fade_in"]), "stone_fade_out": float(out["stone_fade_out"])}
 
 
 def _fmt(sec: float) -> str:
@@ -606,6 +613,8 @@ class PoolMode(Mode):
         self.key = Key(self.rng, t, self.dwell)
         self.breath = Breath(t, self.breath_period, self.breath_depth)
         self.bed_level: float | None = None
+        self.marks: dict[int, float] = {}       # 区域 → 石头标记渐亮渐暗的进度（0–1）
+        self.last_t = t
         self.bed = Bed(self.rng, t, self.breath)
         self.layers = [LAYER_CLASSES[name](name, ring) for ring, name in enumerate(self.rings)]
 
@@ -615,6 +624,23 @@ class PoolMode(Mode):
         if got:
             self.bed_level = min(1.0, max(0.0, got[0]))
         return 0.5 if self.bed_level is None else self.bed_level
+
+    def _stone_marks(self, t: float, occupied) -> dict[int, float]:
+        """每个区域石头标记此刻的强度（0–1）：有石头时进度按 stone_fade_in 秒升，没有时按 stone_fade_out 秒降，
+        强度是进度的平方。"""
+        dt, self.last_t = max(0.0, t - self.last_t), t
+        fin, fout = self.light["stone_fade_in"], self.light["stone_fade_out"]
+        for z in set(self.marks) | set(occupied):
+            p = self.marks.get(z, 0.0)
+            if z in occupied:
+                p = 1.0 if fin <= 0 else min(1.0, p + dt / fin)
+            else:
+                p = 0.0 if fout <= 0 else p - dt / fout
+            if p > 0:
+                self.marks[z] = p
+            else:
+                self.marks.pop(z, None)
+        return {z: p * p for z, p in self.marks.items()}
 
     def tick(self, beat: Beat, snapshot: MatSnapshot, events: list[MatEvent]) -> BeatOutput:
         t = beat.t
@@ -633,6 +659,7 @@ class PoolMode(Mode):
         remaining = self.key.next_change - t
         return BeatOutput(
             sound=SoundIntent(tuple(f.voices), tuple(f.events)),
-            light=warm_breathing(self._bed_level(), snapshot.state.occupied, self.ctx.led_count, **self.light),
+            light=warm_breathing(self._bed_level(), self._stone_marks(t, snapshot.state.occupied), self.ctx.led_count,
+                                 **{k: v for k, v in self.light.items() if not k.startswith("stone_fade")}),
             status=ModeStatus(text=f"五声 {self.key.name} 调 · {_fmt(remaining)} 后换调"),
         )

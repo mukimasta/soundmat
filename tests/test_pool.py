@@ -289,3 +289,17 @@ def test_weather_created_with_rain_starts_at_once():
     out = Run(m, {z: (0.0, None) for z in zs}).until(0.1)[-1]
     w = next(v for v in out.sound.voices if v.id == "weather")
     assert w.params["rain"] == pytest.approx(1 / 3) and w.params["rainTime"] == 1.5
+
+
+def test_stone_marks_fade_so_a_blip_does_not_flash():
+    m = meditation()
+    blip, real = zone(6, 0).index, zone(6, 16).index          # 12 点一闪即逝 0.1 秒；6 点真放上去
+    run = Run(m, {blip: (1.0, 1.1), real: (1.0, 5.0)})
+    mark = lambda out, led: float(out.light.layers[1].alpha[led])
+    outs = run.until(7.0)
+    at = lambda t: outs[round(t * 60)]
+    assert max(mark(o, 0) for o in outs) < 0.30 * 0.07          # 一闪即逝：最多亮到标记的约 6%
+    assert mark(at(1.2), 54) < 0.30 * 0.3                       # 真放上去：起步慢
+    assert mark(at(1.45), 54) == pytest.approx(0.30)            # 0.4 秒后完全亮起
+    assert 0 < mark(at(5.5), 54) < 0.30                         # 拿起后 1 秒内渐暗
+    assert mark(at(6.1), 54) == 0.0
