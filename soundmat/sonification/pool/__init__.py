@@ -83,6 +83,13 @@ MID_INTERVALS = ((6.0, 12.0), (3.0, 8.0), (2.0, 5.0))      # 中音符：一颗�
 
 SPREAD = (0.85, 1.0)                # 圆心、垫面外缘的石头分别当作多大的半径来定位（space.spread）
 
+# 天气：石头变多、雨变大时，在 RAIN_RISE 秒里按 dB 匀速升上去（从 0 起时从目标以下 RAIN_FLOOR_DB 起）；
+# 网页是立即以新音量开始，听起来突兀。雨变小仍是 1.5 秒线性（音色的默认值）
+RAIN_RISE = 5.0
+RAIN_FLOOR_DB = -40.0
+RAIN_STEP = 0.25                    # 渐入时每隔多久给一次雨量，合成器在这段时间里线性滑过去
+RAIN_FALL = 1.5
+
 IMMEDIATE_GAP = 0.3                 # 同一环两次"放下就响"至少隔开这么久
 
 # 每颗石头一个的低音与和声计入"旋律"类的声部上限（配置 sound.voice_budget_categories，12 个）：
@@ -362,7 +369,7 @@ class Notes(Layer):
 
 class Weather(Layer):
     """风和雨（weatherVoice.js）。一颗石头只有风，之后每多一颗风减一分、雨加一分，四颗时只剩雨，
-    五颗以上雨更大；四颗起有雷，石头越多越频繁，三颗变四颗时立即打一次雷。风每 8 秒有四成机会起一阵。"""
+    五颗以上雨更大；雨变大时 5 秒按 dB 匀速渐入（网页是立即）；四颗起有雷，石头越多越频繁，三颗变四颗时立即打一次雷。风每 8 秒有四成机会起一阵。"""
 
     def __init__(self, name: str, ring: int):
         super().__init__(name, ring)
@@ -372,16 +379,22 @@ class Weather(Layer):
         self.settle: tuple[float, float, float] | None = None   # 阵风回落：(时刻, 目标, 用时)
         self.next_thunder: float | None = None
         self.unboost: tuple[float, float] | None = None         # 雷声过后雨声回落：(时刻, 用时)
+        self.rise: tuple[float, float, float] | None = None     # 雨声渐入：(开始时刻, 起点, 目标)
 
     def tick(self, f: Frame, zones: list[int], placed: list[int]) -> None:
         n = len(zones)
         if n == 0:
             self.count, self.voice, self.next_thunder, self.settle, self.unboost = 0, None, None, None, None
+            self.rise = None
             return
+        rain = (0.0 if n <= 1 else 1.0 if n >= 5 else (n - 1) / 3) * (1 + (n - 5) * 0.11 if n >= 5 else 1.0)
         if self.voice is None:
+            # 天气层刚建立：雨直接以目标音量开始（和网页一样）
             self.voice = {"wind": 0.03, "windTime": 4.0, "boost": 1.0, "boostTime": 0.5,
-                          "driftPeriod": f.rng.uniform(48, 78), "rainPeriod": f.rng.uniform(60, 90)}
+                          "driftPeriod": f.rng.uniform(48, 78), "rainPeriod": f.rng.uniform(60, 90),
+                          "rain": rain, "rainTime": RAIN_FALL}
             self.next_gust = f.t + 8.0
+        self._rain(f.t, rain)
         if n != self.count:
             if n == 4 and self.count == 3:
                 self._thunder(f)
@@ -389,7 +402,6 @@ class Weather(Layer):
             self.next_thunder = f.t + self._thunder_wait(f) if n >= 4 else None
         v = self.voice
         v["windMix"] = 0.0 if n >= 5 else (4 - min(n, 4)) / 3
-        v["rain"] = (0.0 if n <= 1 else 1.0 if n >= 5 else (n - 1) / 3) * (1 + (n - 5) * 0.11 if n >= 5 else 1.0)
 
         if f.t >= self.next_gust:
             self.next_gust += 8.0
@@ -411,6 +423,32 @@ class Weather(Layer):
             id=self.name, source=Source("instrument", "pool_weather"), bus=self.bus, params=dict(v),
             fade_in=0.05, fade_out=1.5, priority=PRIORITY["sustained"],
         ))
+
+    def _rain_at(self, t: float) -> float:
+        """渐入曲线在 t 时刻的雨量（按 dB 匀速）；不在渐入中时就是给出的雨量。"""
+        if self.rise is None:
+            return self.voice["rain"]
+        t0, a, b = self.rise
+        x = min(1.0, max(0.0, (t - t0) / RAIN_RISE))
+        return a * (b / a) ** x
+
+    def _rain(self, t: float, target: float) -> None:
+        v = self.voice
+        goal = self.rise[2] if self.rise else v["rain"]
+        if target != goal:
+            now = self._rain_at(t)
+            if target > now:
+                start = now if now > 0 else target * 10 ** (RAIN_FLOOR_DB / 20)
+                self.rise = (t, start, target)
+            else:
+                self.rise = None
+                v["rain"], v["rainTime"] = target, RAIN_FALL
+        if self.rise:
+            t0, _, b = self.rise
+            k = math.floor((t - t0) / RAIN_STEP) + 1          # 给这一段结束时的值
+            v["rain"], v["rainTime"] = self._rain_at(t0 + k * RAIN_STEP), RAIN_STEP
+            if k * RAIN_STEP >= RAIN_RISE:
+                v["rain"], self.rise = b, None
 
     def _thunder_chance(self) -> float:
         n = self.count

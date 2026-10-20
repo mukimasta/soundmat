@@ -165,12 +165,12 @@ def test_weather_mix_follows_stone_count_and_three_to_four_brings_thunder():
     assert (w.params["windMix"], w.params["rain"]) == (1.0, 0.0) and w.position is None
     out = run.until(3.1)[-1]
     w = next(v for v in out.sound.voices if v.id == "weather")
-    assert w.params["windMix"] == pytest.approx(1 / 3) and w.params["rain"] == pytest.approx(2 / 3)
+    assert w.params["windMix"] == pytest.approx(1 / 3) and 0 < w.params["rain"] < 2 / 3     # 雨正在渐入
     outs = run.until(4.1)
     thunder = events(outs, "thunder")
     assert len(thunder) == 1 and thunder[0].time == pytest.approx(4.0, abs=0.02)
     w = next(v for v in outs[-1].sound.voices if v.id == "weather")
-    assert w.params["windMix"] == 0.0 and w.params["rain"] == 1.0
+    assert w.params["windMix"] == 0.0 and w.params["rain"] < 1.0
     assert 1.5 <= w.params["boost"] <= 2.25                  # 雷声时雨声加强
     p = thunder[0].params
     out = run.until(4.0 + p["tAtk"] + p["sus"] + 0.05)[-1]
@@ -263,3 +263,31 @@ def test_light_parameters_come_from_the_arrangement():
     from soundmat.light import composite
     assert (composite(out.light.layers, 108) == 100).all()
     assert m.breath.period == 8
+
+
+def test_rain_rises_over_five_seconds_in_db_and_falls_as_before():
+    m = meditation()
+    a, b = zone(5, 0).index, zone(5, 16).index
+    run = Run(m, {a: (0.0, None), b: (1.0, 12.0)})            # 第二颗 1 秒放下、12 秒拿起
+    rain = lambda out: next(v for v in out.sound.voices if v.id == "weather").params
+    outs = run.until(7.0)
+    at = lambda t: rain(outs[round(t * 60)])
+    assert at(0.5)["rain"] == 0.0
+    # 放下第二颗：每 0.25 秒给一次，给的是这一段结束时的值；按 dB 匀速，从目标以下 40 dB 升到 1/3
+    first = at(1.0)
+    assert first["rainTime"] == 0.25
+    assert 20 * math.log10(first["rain"] / (1 / 3)) == pytest.approx(-40 + 40 * 0.25 / 5)
+    mid = at(3.5)                                             # 2.5 秒后，这一段结束在 3.75 秒
+    assert 20 * math.log10(mid["rain"] / (1 / 3)) == pytest.approx(-40 + 40 * 2.75 / 5)
+    assert at(6.0)["rain"] == pytest.approx(1 / 3) and at(6.9)["rain"] == pytest.approx(1 / 3)
+    # 拿起：和原来一样 1.5 秒线性回落
+    out = run.until(12.1)[-1]
+    assert rain(out)["rain"] == 0.0 and rain(out)["rainTime"] == 1.5
+
+
+def test_weather_created_with_rain_starts_at_once():
+    m = meditation()
+    zs = [zone(5, k).index for k in (0, 16)]
+    out = Run(m, {z: (0.0, None) for z in zs}).until(0.1)[-1]
+    w = next(v for v in out.sound.voices if v.id == "weather")
+    assert w.params["rain"] == pytest.approx(1 / 3) and w.params["rainTime"] == 1.5

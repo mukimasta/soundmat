@@ -2,7 +2,8 @@
 // 都经过网页的主效果链（~poolOut），不定位；噪声是立体声（左右独立），和网页一样。
 (
 // 天气：风（粉红噪声，带通 200–1800 Hz 与高通 800–3000 Hz 各自慢慢移动）和雨（粉红噪声，带通
-// 2200–3800 Hz 漂移、6.4 kHz 低通）。石头数决定风、雨各占多少（windMix、rain），变化时 1.5 秒过渡。
+// 2200–3800 Hz 漂移、6.4 kHz 低通）。石头数决定风、雨各占多少（windMix、rain），变化时 1.5 秒过渡；
+// 雨变大时主机程序每 0.25 秒给一次渐入曲线上的值（rainTime 0.25），在这段时间里线性滑过去。
 // 主机程序给出阵风（wind 在 windTime 秒内线性到达）和雷声时雨声的加强（boost、boostTime）。
 // 持续声部。
 ~smDef.("pool_weather", {
@@ -14,7 +15,7 @@
     var wind = (windBand + windHigh) * windGain * VarLag.kr(\windMix.kr(1), 1.5, warp: \linear);
     var rainBand = ~toneBPF.(~tonePink.(2, 1.68), SinOsc.kr(\driftPeriod.kr(63).reciprocal).range(2200, 3800), 0.82);
     var rainGain = SinOsc.kr(\rainPeriod.kr(75).reciprocal).range(0.008, 0.036)
-        * VarLag.kr(\rain.kr(0), 1.5, warp: \linear)
+        * VarLag.kr(\rain.kr(0), \rainTime.kr(1.5), warp: \linear)
         * VarLag.kr(\boost.kr(1), \boostTime.kr(0.5), warp: \linear);
     var rain = ~toneLPF.(rainBand, 6400, 0.55) * rainGain;
     ~poolOut.((wind + rain) * ~poolGateEnv.value);
