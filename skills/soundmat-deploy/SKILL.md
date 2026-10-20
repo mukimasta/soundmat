@@ -85,6 +85,7 @@ sudo apt-get update -qq && sudo apt-get install -y -q tailscale
 | `system/polkit/50-soundmat.rules` | `/etc/polkit-1/rules.d/`（644） |
 | `system/clock/soundmat-clock` | `/usr/local/bin/`（755） |
 | `system/clock/soundmat-clock.service` | `/etc/systemd/system/` |
+| `system/clock/timesyncd-soundmat.conf` | `/etc/systemd/timesyncd.conf.d/soundmat.conf`（校时失败 3 秒后重试，默认 30 秒） |
 | `system/clock/jackd-after-clock.conf` | `/etc/systemd/system/jackd.service.d/after-clock.conf`（已经部署过、`jackd.service` 不是仓库这份时才需要，例如 Pi 3B） |
 
 ```bash
@@ -97,6 +98,7 @@ sudo install -m 755 /tmp/soundmat-guard /usr/local/bin/soundmat-guard
 sudo install -m 644 /tmp/50-soundmat.rules /etc/polkit-1/rules.d/50-soundmat.rules   # 控制台里的"重启"要用
 sudo install -m 755 /tmp/soundmat-clock /usr/local/bin/soundmat-clock                 # 开机等时钟校准再启动声音
 sudo install -m 644 /tmp/soundmat-clock.service /etc/systemd/system/
+sudo mkdir -p /etc/systemd/timesyncd.conf.d && sudo install -m 644 /tmp/timesyncd-soundmat.conf /etc/systemd/timesyncd.conf.d/soundmat.conf
 sudo systemctl daemon-reload && sudo systemctl restart systemd-logind
 sudo systemctl enable soundmat-clock
 sudo systemctl enable --now jackd soundmat-scsynth
@@ -272,7 +274,7 @@ ssh soundmat@<主机> 'P=$(systemctl show -p MainPID --value soundmat); top -H -
 | 切到京都岚山后机器卡死、合成器服务被内核结束（`journalctl -k \| grep -i "out of memory"`） | 内存不够：京都岚山的素材解码后约 415 MB，Pi 3B 共 905 MB，其他部分已用约 330 MB。Pi 3B 只跑 Jam，Ambient 用 Pi 5 |
 | 节奏忽早忽晚，看板「节奏」里"合成器收到太晚"不为 0 | 定时声音的提前量 `sound.schedule_ahead` 小于 JACK 的音频缓冲（改过 JACK 的 `-p`/`-n` 却没改它）：按第 4 节的算法改配置、重新发布。直接看：`journalctl _COMM=scsynth --since -1min -o cat \| grep -c ^late` |
 | 开机后放 Jam 一两分钟节奏乱、看板「迟到」很多，之后自己恢复 | 声音启动之后系统才校时，时钟跳了，合成器要一分多钟才对齐。确认装了 `soundmat-clock`：`systemctl is-enabled soundmat-clock`、`cat /run/soundmat-clock`（要有内容）。`journalctl -b \| grep "Initial clock synchronization"` 的时刻若晚于 `Started jackd`，就是声音启动后才校时 |
-| 开机后要等半分钟到一分钟才出声 | 正常：`soundmat-clock` 在等系统时钟校准（有网时最多 45 秒，没网 20 秒） |
+| 开机后要等半分钟到一分钟才出声 | `soundmat-clock` 在等系统时钟校准（有网时最多 45 秒，没网 20 秒）。有网还要等二三十秒，多半是没装 `timesyncd-soundmat.conf`：校时程序联网前失败一次后默认隔 30 秒才重试 |
 | 控制台重启时提示"systemd 拒绝了这次重启" | 没装或没装对权限规则：按第 4 节安装 `50-soundmat.rules`，用 `pkcheck` 验证 |
 | 控制台重启按钮是灰的，写着"不是由 systemd 运行的装置" | 主机程序不是作为 `soundmat.service` 运行的（例如开发机，或在终端里手动启动的）：`systemctl status soundmat` |
 | 看板「主机程序最近一小时内被自动重启过」 | 真的在反复崩溃时：`journalctl -u soundmat -b -o cat \| grep -B2 -A20 Traceback`。更新导致的重启不算（更新时写下 `plannedAt`），从控制台手动重启也不算（systemd 只统计自动重启） |
