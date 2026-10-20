@@ -153,7 +153,13 @@ ssh -t soundmat@<主机> 'sudo nmcli con modify phone-hotspot wifi-sec.psk sound
 ssh -t soundmat@<主机> 'read -s -p "Avocado 密码: " P; echo; sudo nmcli con modify <Avocado 连接> wifi-sec.psk "$P" && echo PSK_OK'
 ```
 
-UW MPSK 要先用 `/sys/class/net/wlan0/address` 的 MAC 在 UW 登记，拿到密码后同样由人填。
+UW MPSK 要先用 `/sys/class/net/wlan0/address` 的 MAC 在 UW 登记，拿到密码后同样由人填：用户在 <https://register.wifi.uw.edu/guest/mac_create.php> 用 NetID 登录 → 先在 Manage Devices 看这个 MAC 是否登记过 → Create Device，填名字和 MAC → 回执页上就是这台设备专用的密码（有效五年）。Pi 5 已登记（`98:fe:54:22:58:26`，2031-10-18 到期）。密码由用户填：
+
+```bash
+ssh -t soundmat@<主机> 'read -s -p "UW MPSK 密码: " P; echo; sudo nmcli con modify uw-mpsk wifi-sec.psk "$P" && echo PSK_OK'
+```
+
+实测切换网络会断 SSH：用 `systemd-run` 在装置上跑一个脚本，先停 `soundmat-net-fallback.timer`（否则一分钟内又被切回手机热点），`nmcli con up uw-mpsk`，30 秒后不通就 `nmcli con up phone-hotspot` 并恢复 timer。
 
 兜底定时任务：
 
@@ -264,7 +270,7 @@ ssh soundmat@<主机> 'P=$(systemctl show -p MainPID --value soundmat); top -H -
 
 | 现象 | 原因与处理 |
 |---|---|
-| 看板「垫子：控制器断开，正在重连」反复出现 | 收不到 S 帧。先确认 ESP32 通电、USB 插好；程序打开串口后会等 15 秒首帧（打开串口可能让 ESP32 复位，固件开机灯效约 5 秒不发数据）。`journalctl -u soundmat --since -2min -o cat \| grep -E "控制器\|垫子"` |
+| 看板「垫子：控制器断开，正在重连」反复出现 | 收不到 S 帧。先确认 ESP32 通电、USB 插好；程序打开串口后会等 15 秒首帧。打开串口**必定**让 ESP32 复位（DTR/RTS 置低挡不住），固件开机灯效约 5 秒不发数据，所以正常重连要 4–6 秒。断电重启后第一次打开串口，CP2102 常常设置没生效、收到的全是波特率不对的乱码，程序 2 秒后会认出来并重开（日志"串口收到的全是乱码…重新打开"），开机后控制器比出声晚约 10 秒连上属正常。超时时日志有"等控制器超时：…"，写明收到了什么。内核的 `cp210x … failed set request 0x12 status: -110` 每次关串口都有，无关。`journalctl -u soundmat --since -2min -o cat \| grep -E "控制器\|垫子"` |
 | JACK 日志 `semop (Invalid argument)`、`jack_lsp` 连不上，scsynth 服务卡在 "JACK not ready" | logind 在 soundmat 退出登录时清掉了 JACK 的信号量：装 `logind-soundmat.conf`（`RemoveIPC=no`），重启 systemd-logind，再依次重启 jackd、soundmat-scsynth |
 | JACK 日志 `Cannot use real-time scheduling` | 服务缺 `LimitRTPRIO=95`（第一版就缺）：用仓库里的 `jackd.service` |
 | 声音整体比另一台小很多，程序音量正常 | 声卡硬件音量没调：`amixer -c Audio sget PCM` 应为 148 [0.00dB]，按第 4 节调好并 `alsactl store` |
