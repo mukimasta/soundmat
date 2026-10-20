@@ -115,3 +115,74 @@ def test_boot_timeout_logs_what_arrived(monkeypatch, caplog):
             link.stop()
     msg = next(r.message for r in caplog.records if "等控制器超时" in r.message)
     assert "字节" in msg and "# booting" in msg
+
+
+class Garbled:
+    """波特率不对的串口：不停地来字节，没有一行能认出来。"""
+    closed = False
+
+    def read(self, size):
+        time.sleep(0.01)
+        return b"\x0cp\x8c\xf0\x0c|"
+
+    def write(self, data):
+        return len(data)
+
+    def close(self):
+        self.closed = True
+
+
+class Resetting(FakeESP32):
+    """刚被复位的 ESP32：头一下是启动乱码，然后安静一阵（开机灯效），再开始发帧。"""
+
+    def __init__(self, quiet: float):
+        super().__init__(boot_lines=0)
+        self.t0 = time.time()
+        self.quiet = quiet
+        self.burst = True
+
+    def read(self, size):
+        if self.burst:
+            self.burst = False
+            return b"\x00\x80\x80\x00" * 200
+        if time.time() - self.t0 < self.quiet:
+            time.sleep(0.01)
+            return b""
+        return super().read(size)
+
+
+def test_link_reopens_when_everything_is_garbled(monkeypatch):
+    import soundmat.device as dev
+    monkeypatch.setattr(dev, "GARBLED_SECONDS", 0.2)
+    ports = [Garbled(), FakeESP32(boot_lines=0)]
+    opened = []
+
+    def opener(port):
+        opened.append(port)
+        return ports[len(opened) - 1]
+
+    frames, events = [], []
+    link = DeviceLink(frames.append, opener=opener, picker=lambda s: "/dev/fake",
+                      on_event=lambda lvl, txt: events.append(txt))
+    link.start()
+    try:
+        assert wait_for(lambda: len(frames) >= 3, timeout=3)
+        assert len(opened) == 2 and ports[0].closed
+        assert "控制器断开，正在重连" not in events      # 还没连上过，不算断线
+    finally:
+        link.stop()
+
+
+def test_link_waits_out_the_reset_burst(monkeypatch):
+    """复位后的启动乱码之后安静一阵：不能当成乱码重开，否则又把 ESP32 复位。"""
+    import soundmat.device as dev
+    monkeypatch.setattr(dev, "GARBLED_SECONDS", 0.3)
+    esp = Resetting(quiet=0.8)
+    opened, frames = [], []
+    link = DeviceLink(frames.append, opener=lambda p: opened.append(p) or esp, picker=lambda s: "/dev/fake")
+    link.start()
+    try:
+        assert wait_for(lambda: len(frames) >= 3, timeout=3)
+        assert len(opened) == 1
+    finally:
+        link.stop()

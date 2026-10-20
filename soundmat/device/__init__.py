@@ -28,6 +28,15 @@ SILENCE_SECONDS = 5.0     # 已经收到过 S 帧之后，这么久没有新的 
 # 刚打开串口时等第一帧 S 帧的时间。打开串口可能让 ESP32 复位，固件开机后约 5 秒的灯效期间不发
 # S 帧；如果这里也只等 5 秒，每次重开都会在它开完机之前再次复位它，永远等不到（Pi 3B 上实测）
 BOOT_WAIT_SECONDS = 15.0
+# 打开串口这么久之后还在不断收到字节、却没有一行能认出来（# 开头的调试行或 S 帧）：串口芯片的设置
+# 没生效，关掉马上重开。Pi 断电重启后第一次打开串口时，CP2102 常常既没设成 921600 波特、也没把
+# ESP32 复位，收到的全是波特率不对的乱码（2026-10-20 Pi 5 上实测，原来要白等 15 秒）；重开就好。
+# ESP32 被复位时只在头 0.1 秒左右有一阵启动乱码，之后安静到开机灯效结束，不会落进这条。
+GARBLED_SECONDS = 2.0
+
+
+class _Garbled(Exception):
+    """一直在收字节，却没有一行能认出来。"""
 
 
 class SerialLike(Protocol):
@@ -72,6 +81,7 @@ class _BootDiag:
         self.tail = b""
         self.comments: list[str] = []
         self.bad_frames = 0
+        self.readable = False      # 收到过能认出来的一行（调试行或 S 帧，校验不过的也算）
 
     def add(self, chunk: bytes, now: float) -> None:
         if self.first_at is None:
@@ -199,6 +209,12 @@ class DeviceLink:
             self.problem = "等待控制器就绪"
             try:
                 self._read_loop(ser)
+            except _Garbled:
+                log.info("串口收到的全是乱码（%s），重新打开", self._boot_diag.summary())
+                self._close()
+                self.connected = False
+                self._stop.wait(0.5)
+                continue
             except Exception as e:
                 if not self._stop.is_set():
                     log.debug("串口读取出错：%s", e)
@@ -233,6 +249,9 @@ class DeviceLink:
                 while b"\n" in buf:
                     raw, buf = buf.split(b"\n", 1)
                     self._line(raw.decode("ascii", errors="replace").strip(), now)
+            if (not self._booted and not self._boot_diag.readable and now - opened > GARBLED_SECONDS
+                    and self._boot_diag.last_at is not None and now - self._boot_diag.last_at < GARBLED_SECONDS / 4):
+                raise _Garbled()
             last = self.last_frame if self._booted else opened
             limit = SILENCE_SECONDS if self._booted else BOOT_WAIT_SECONDS
             if now - max(last, opened) > limit:
@@ -241,13 +260,20 @@ class DeviceLink:
     def _line(self, text: str, now: float) -> None:
         if not text:
             return
+        if not text.startswith(("S:", "#")):
+            # ESP32 复位时的启动乱码不一定以换行结尾，会和后面第一行粘在一起：从行里最后一处开头算起
+            i = max(text.rfind("S:"), text.rfind("# "))
+            if i > 0:
+                text = text[i:]
         if text.startswith("#"):
             log.debug("控制器：%s", text)
             if not self._booted:
                 self._boot_diag.comments.append(text[:60])
+                self._boot_diag.readable = True
             return
         if not text.startswith("S:"):
             return
+        self._boot_diag.readable = True
         try:
             values = parse_sensor_frame(text)
         except FrameError:
