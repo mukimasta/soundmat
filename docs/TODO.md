@@ -2,6 +2,7 @@
 
 - [ ] 上真机核对坐标对齐：在每环放一颗石头，确认控制台垫面上的位置与实物一致。第一版的内环实际没有做扇区镜像（外环做了），新版照搬，见 `implementation/HOST_PROGRAM.md`「设备连接与垫面信号」
 - [ ] 上真机调整去抖时间（`config/soundmat.toml` 的 `occupy_hold`、`release_hold`，当前是未经实测的初值）
+- [ ] 查控制器在开机时第一次连接要等约 15 秒：Pi 5 上断电开机时，主机程序打开串口后 15 秒内没有合格的 S 帧，超时重开后约 4 秒连上。2026-10-20 已查明：打开串口必定让 ESP32 复位（`rst:0x1 POWERON_RESET`，DTR/RTS 置低挡不住），复位后正常从 flash 启动（`boot:0x12`），约 5.5 秒出 S 帧；停掉主机程序后模拟开机（灯全白、35 秒没人读、USB 重新识别）都复现不出。内核的 `cp210x ... failed set request 0x12 status: -110` 每次关闭串口都有，与此无关。主机程序已在超时时把收到的字节数、调试行、开头结尾写进日志（`等控制器超时：…`），下次断电开机后看 `journalctl -b -u soundmat | grep 等控制器超时`
 - [ ] 修改控制器固件：开机后保持低亮度的等待灯效，直到主机程序接管（当前固件开机 5 秒后全亮白光，5 V 总线瞬间约 3.8 A）
 - [ ] 确定 SoundMat 系列文档正本的存放位置，更新 `design/SOUNDMAT_SERIES.md`
 - [ ] Pi 3B 上新版稳定后，删除保留的第一版（`~/soundmat` 和 `soundmat-v1.service`）

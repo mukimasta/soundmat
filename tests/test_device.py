@@ -101,54 +101,17 @@ def test_no_port_reports_problem():
         link.stop()
 
 
-class Silent:
-    """打开了但一个字节都收不到的串口（开机时被灌满的 CP2102）。"""
-    closed = False
-
-    def read(self, size):
-        time.sleep(0.01)
-        return b""
-
-    def write(self, data):
-        return len(data)
-
-    def close(self):
-        self.closed = True
-
-
-def test_link_reopens_quickly_when_no_bytes_at_all(monkeypatch):
+def test_boot_timeout_logs_what_arrived(monkeypatch, caplog):
+    import logging
     import soundmat.device as dev
-    monkeypatch.setattr(dev, "NO_DATA_SECONDS", 0.2)
-    ports = [Silent(), FakeESP32(boot_lines=0)]
-    opened = []
-
-    def opener(port):
-        opened.append(port)
-        return ports[len(opened) - 1]
-
-    frames, events = [], []
-    link = DeviceLink(frames.append, opener=opener, picker=lambda s: "/dev/fake",
-                      on_event=lambda lvl, txt: events.append(txt))
-    link.start()
-    try:
-        assert wait_for(lambda: len(frames) >= 3, timeout=3)
-        assert len(opened) == 2 and ports[0].closed
-        assert "控制器断开，正在重连" not in events      # 还没连上过，不算断线
-    finally:
-        link.stop()
-
-
-def test_link_keeps_waiting_while_controller_boots(monkeypatch):
-    """有字节（开机信息）但还没有 S 帧：ESP32 刚被复位、在开机，不能马上重开，否则又把它复位。"""
-    import soundmat.device as dev
-    monkeypatch.setattr(dev, "NO_DATA_SECONDS", 0.1)
-    esp = FakeESP32(boot_lines=60, hz=200)        # 约 0.3 秒只有调试行
-    opened = []
-    frames = []
-    link = DeviceLink(frames.append, opener=lambda p: opened.append(p) or esp, picker=lambda s: "/dev/fake")
-    link.start()
-    try:
-        assert wait_for(lambda: len(frames) >= 3, timeout=3)
-        assert len(opened) == 1
-    finally:
-        link.stop()
+    monkeypatch.setattr(dev, "BOOT_WAIT_SECONDS", 0.3)
+    esp = FakeESP32(boot_lines=10**6)             # 一直只发调试行，不进主循环
+    link = DeviceLink(lambda f: None, opener=lambda p: esp, picker=lambda s: "/dev/fake")
+    with caplog.at_level(logging.INFO, logger="soundmat.device"):
+        link.start()
+        try:
+            assert wait_for(lambda: any("等控制器超时" in r.message for r in caplog.records), timeout=3)
+        finally:
+            link.stop()
+    msg = next(r.message for r in caplog.records if "等控制器超时" in r.message)
+    assert "字节" in msg and "# booting" in msg
