@@ -152,11 +152,24 @@ def _clip(x: float) -> float:
 
 
 def breathing_marks(t: float, occupied: Iterable[int], led_count: int) -> LightIntent:
-    """Ambient 一类模式的灯光：暖色的整体呼吸作底色，有石头的位置叠加这一环颜色的淡淡标记。"""
+    """Ambient 模式的灯光：暖色的整体呼吸作底色，有石头的位置叠加这一环颜色的淡淡标记。"""
     breath = 0.25 + 0.2 * (0.5 + 0.5 * math.sin(t * 0.9))
     base = Canvas(led_count, WARM, breath)
     marks = Canvas(led_count)
     marks.add(m for z in occupied
               for m in span(led_for_angle(ZONES[z].center_deg, led_count), 3, RING_COLORS[ZONES[z].ring], 0.55,
                             led_count))
+    return LightIntent((base.layer("base", 0), marks.layer("stones", 10)))
+
+
+def warm_breathing(breath: float, occupied: Iterable[int], led_count: int, *, color: Color,
+                   breath_min: float, breath_max: float, stone_alpha: float, stone_width: int) -> LightIntent:
+    """声池模式（《冥想》）的灯光：一种颜色的整圈呼吸，有石头的位置同一种颜色、更亮一些。
+    ``breath`` 是 0–1 的呼吸值（与底音音量同一个），映射到 ``breath_min``–``breath_max``；
+    石头标记以石头方位为中心、两侧各 ``stone_width`` 颗，向两侧减弱。"""
+    base = Canvas(led_count, color, breath_min + (breath_max - breath_min) * breath)
+    marks = Canvas(led_count)
+    marks.add(m for z in occupied
+              for m in span(led_for_angle(ZONES[z].center_deg, led_count), 2 * stone_width + 1, color,
+                            stone_alpha, led_count))
     return LightIntent((base.layer("base", 0), marks.layer("stones", 10)))

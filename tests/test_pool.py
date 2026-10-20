@@ -68,6 +68,14 @@ def test_meditation_plan():
     ({"rings": ["low_drone"]}, "8 项"),
     ({"rings": ["low_drone", "mid_drone", "pad", "mid_notes", "high_notes", "weather", "bells", "rain"]}, "未知的层"),
     ({"music": {"key_dwell": [10]}}, "key_dwell"),
+    ({"breath": {"period": 0}}, "breath.period"),
+    ({"breath": {"sound_depth_db": -1}}, "sound_depth_db"),
+    ({"light": {"color": [255, 196]}}, "light.color"),
+    ({"light": {"color": [255, 196, 300]}}, "light.color"),
+    ({"light": {"breath_max": 1.5}}, "breath_max"),
+    ({"light": {"breath_min": 0.3, "breath_max": 0.2}}, "不能大于"),
+    ({"light": {"stone_width": 1.5}}, "stone_width"),
+    ({"light": {"brightness": 1}}, "未知"),
 ])
 def test_load_errors(content, message):
     with pytest.raises(LoadError, match=message):
@@ -77,13 +85,14 @@ def test_load_errors(content, message):
 def test_bed_plays_on_an_empty_mat_and_distant_notes_follow_its_volume():
     outs = Run(meditation()).until(40.0)
     assert all(any(v.id == "bed" and v.bus == "bed" for v in o.sound.voices) for o in outs)
-    assert outs[0].sound.voices[0].params == {"t": 1.0}
+    bed = outs[0].sound.voices[0]
+    assert bed.params["t"] == 1.0 and bed.params["depth"] == 2.0
     distant = events(outs, "distant")
     assert 1 <= len(distant) <= 3                       # 每 15–30 秒一声
     d = distant[0]
     assert d.bus == "bed" and d.position is None
-    expect = (2 * math.pi * 0.015 * d.time) % (2 * math.pi)
-    assert d.params["volPhase"] == pytest.approx(expect)
+    expect = (2 * math.pi * d.time / 67) % (2 * math.pi)
+    assert d.params["volPhase"] == pytest.approx(expect) and d.params["volHz"] == pytest.approx(1 / 67)
     assert outs[-1].status.text.startswith("五声 C 调 · ")
 
 
@@ -190,3 +199,49 @@ def test_layers_react_only_to_their_own_ring():
     run = Run(m, {bell: (0.0, None), zone(0, 4).index: (3.0, None), zone(5, 4).index: (3.2, None)})
     bells = [e for e in events(run.until(5.4), "bells")]
     assert len(bells) == 1                                 # 只有放下时那一声，下一声在 5.5–6.5 秒
+
+
+def _brightness(out):
+    """灯光层合成到黑底后每颗灯的亮度（0–1，取最亮的通道相对颜色的比例）。"""
+    from soundmat.light import composite
+    return composite(out.light.layers, 108).max(axis=1) / 255
+
+
+def test_light_and_bed_volume_breathe_together():
+    m = meditation()
+    z = zone(6, 0)                                       # 12 点方向
+    outs = Run(m, {z.index: (0.0, None)}).until(67.0)
+    bed = [next(v for v in o.sound.voices if v.id == "bed").params["breath"] for o in outs]
+    far = [float(o.light.layers[0].alpha[54]) for o in outs]   # 底色层，6 点方向（没有石头）
+    # 灯光最亮、底音最响都在四分之一周期（约 16.75 秒）附近，最暗、最轻都在四分之三处
+    for series in (bed, far):
+        assert abs(int(np.argmax(series)) / 60 - 16.75) < 0.5
+        assert abs(int(np.argmin(series)) / 60 - 50.25) < 0.5
+    assert min(far) == pytest.approx(0.06, abs=1e-3) and max(far) == pytest.approx(0.16, abs=1e-3)
+    assert _brightness(outs[0])[54] == pytest.approx(0.11, abs=0.01)
+    # 底音拿到的值每 0.25 秒才变一次，是这一段结束时的呼吸值
+    assert len({round(b, 9) for b in bed[:60]}) == 4
+    assert bed[0] == pytest.approx(m.breath.value(0.25))
+
+
+def test_light_is_one_warm_color_and_stones_are_brighter():
+    m = meditation()
+    z = zone(6, 8)                                       # 3 点方向
+    out = Run(m, {z.index: (0.0, None)}).until(1.0)[-1]
+    from soundmat.light import composite
+    rgb = composite(out.light.layers, 108).astype(float)
+    lit = rgb[rgb.max(axis=1) > 0]
+    # 每颗灯都是同一种颜色，只是明暗不同（允许取整误差）
+    assert np.allclose(lit / lit[:, :1] * 255, [255, 196, 140], atol=12)
+    b = _brightness(out)
+    assert b[27] > 2 * b[0] and b[26] > b[0] and b[28] > b[0] and b[25] == pytest.approx(b[0], abs=0.01)
+
+
+def test_light_parameters_come_from_the_arrangement():
+    m = meditation(light={"color": [200, 200, 200], "breath_min": 0.5, "breath_max": 0.5,
+                          "stone_alpha": 0.0, "stone_width": 0},
+                   breath={"period": 8})
+    out = Run(m).until(0.0)[-1]
+    from soundmat.light import composite
+    assert (composite(out.light.layers, 108) == 100).all()
+    assert m.breath.period == 8

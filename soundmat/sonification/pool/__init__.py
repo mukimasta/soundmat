@@ -18,6 +18,9 @@
   所有层很快各响一声、风声重新淡入。装置上每层只对自己那一环的变化反应，感知短暂抖动也不会牵动别的层。
 - 同一个调里，同一个位置的低音音高不变（网页每次放下随机取音）：拿起再放下、感知抖动都不会换音。
 - 一颗石头可能压到相邻两个区域，几乎同时有两个放下事件；同一环 0.3 秒内只立即响一次。
+- 呼吸：底音的音量起伏（网页是音色里 0.015 Hz 的 LFO）改由这里的 ``Breath`` 给出，灯光的明暗也取
+  同一个值，所以"声音涌起来时灯也亮"，合成器重启了声部也不会错开。周期、起伏深度和灯光的参数见
+  编排的 ``[breath]``、``[light]``。网页的灯光是八种环色的标记，这里改成暖白的低亮度呼吸。
 """
 from __future__ import annotations
 
@@ -30,7 +33,7 @@ from ...clock import Beat
 from ...intent import BeatOutput, Event, ModeStatus, Position, SoundIntent, Source, Voice
 from ...perception.model import MatEvent, MatSnapshot
 from ...perception.zones import ZONES
-from ..lights import breathing_marks
+from ..lights import warm_breathing
 from ..mode import LoadError, LoadPlan, Mode
 
 # ── 音高（pentatonic.js）────────────────────────────────────────────────────
@@ -54,7 +57,12 @@ DEFAULT_RINGS = LAYERS              # 由内到外，与网页由内到外的顺
 
 DISTANT_POOL = (196.0, 220.0, 246.94, 293.66, 329.63)   # 远处偶发的音（C 调）
 DISTANT_INTERVAL = (15.0, 30.0)
-BED_VOLUME_HZ = 0.015               # 底音的音量起伏，远处的音跟着同一个相位
+
+# 呼吸：底音音量起伏和灯光明暗共用（[breath]、[light]）
+BREATH_PERIOD = 1 / 0.015           # 秒，约 67 秒（网页底音音量起伏 0.015 Hz）
+BREATH_DEPTH_DB = 2.0               # 底音音量起伏 ±2 dB
+BREATH_UPDATE = 0.25                # 每隔多久把呼吸值交给底音，合成器在这段时间里线性滑过去
+LIGHT = {"color": (255, 196, 140), "breath_min": 0.06, "breath_max": 0.16, "stone_alpha": 0.30, "stone_width": 1}
 
 # 低音：八度、第二个振荡器、音量、低通的明暗范围（droneVoice.js）
 DRONES = {
@@ -81,6 +89,32 @@ VOICE_CATEGORY = "melodic"
 
 # 声部超出预算时：底音最重要，其次是持续的声音，再次是放下石头的反应，最后是自己在走的点缀
 PRIORITY = {"bed": 3, "sustained": 2, "placed": 1, "ambient": 0}
+
+
+def _number(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _light_config(c: dict) -> dict:
+    """编排的 [light]：没写的项用默认值；不合法时报 LoadError。"""
+    unknown = set(c) - set(LIGHT)
+    if unknown:
+        raise LoadError(f"light 里有未知的项：{' '.join(sorted(unknown))}")
+    out = {**LIGHT, **c}
+    color = out["color"]
+    if not (isinstance(color, (list, tuple)) and len(color) == 3
+            and all(isinstance(x, int) and not isinstance(x, bool) and 0 <= x <= 255 for x in color)):
+        raise LoadError("light.color 应为三个 0–255 的整数")
+    for key in ("breath_min", "breath_max", "stone_alpha"):
+        if not _number(out[key]) or not 0 <= out[key] <= 1:
+            raise LoadError(f"light.{key} 应在 0–1 之间")
+    if out["breath_min"] > out["breath_max"]:
+        raise LoadError("light.breath_min 不能大于 breath_max")
+    w = out["stone_width"]
+    if not isinstance(w, int) or isinstance(w, bool) or not 0 <= w <= 10:
+        raise LoadError("light.stone_width 应为 0–10 的整数")
+    return {"color": tuple(color), "breath_min": float(out["breath_min"]), "breath_max": float(out["breath_max"]),
+            "stone_alpha": float(out["stone_alpha"]), "stone_width": w}
 
 
 def _fmt(sec: float) -> str:
@@ -162,26 +196,46 @@ class Layer:
         raise NotImplementedError
 
 
-class Bed:
-    """底音（一直在响）和远处偶尔的一声（baseLayer.js）。"""
+class Breath:
+    """底音音量和灯光共用的呼吸。``value`` 在 0–1 之间：从起点的 0.5 开始先升，
+    ``0.5 + 0.5·sin(2π(t − 起点)/周期)``，和网页底音音量 LFO 的波形与起始相位相同。"""
 
-    def __init__(self, rng: random.Random, t: float):
-        self.started = t
+    def __init__(self, started: float, period: float, depth_db: float):
+        self.started = started
+        self.period = period
+        self.depth_db = depth_db
+
+    def phase(self, t: float) -> float:
+        return (2 * math.pi * (t - self.started) / self.period) % (2 * math.pi)
+
+    def value(self, t: float) -> float:
+        return 0.5 + 0.5 * math.sin(self.phase(t))
+
+
+class Bed:
+    """底音（一直在响）和远处偶尔的一声（baseLayer.js）。两者的音量都跟着呼吸起伏。"""
+
+    def __init__(self, rng: random.Random, t: float, breath: Breath):
+        self.breath = breath
         self.next_distant = t + rng.uniform(*DISTANT_INTERVAL)
 
     def tick(self, f: Frame) -> None:
+        # 呼吸值每 BREATH_UPDATE 秒交一次，给的是这一段结束时的值，合成器在这段时间里线性滑过去，
+        # 所以听到的音量与灯光同一时刻取的值一致（只差折线和正弦的一点点）
+        b = self.breath
+        k = math.floor((f.t - b.started) / BREATH_UPDATE) + 1
         f.voices.append(Voice(
-            id="bed", source=Source("instrument", "pool_bed"), bus="bed", params={"t": f.key.factor},
+            id="bed", source=Source("instrument", "pool_bed"), bus="bed",
+            params={"t": f.key.factor, "breath": b.value(b.started + k * BREATH_UPDATE), "depth": b.depth_db},
             fade_in=0.05, fade_out=2.0, priority=PRIORITY["bed"],
         ))
         if f.t >= self.next_distant:
             self.next_distant = f.t + f.rng.uniform(*DISTANT_INTERVAL)
-            phase = (2 * math.pi * BED_VOLUME_HZ * (f.t - self.started)) % (2 * math.pi)
             f.event("distant", "pool_distant", "bed", {
                 "freq": f.rng.choice(DISTANT_POOL) * f.key.factor,
                 "decay": f.rng.uniform(6, 10),
                 "amp": 10 ** (f.rng.uniform(-40, -34) / 20),
-                "volPhase": phase,
+                "volPhase": b.phase(f.t), "volHz": 1 / b.period, "depth": b.depth_db,
             })
 
 
@@ -492,9 +546,17 @@ class PoolMode(Mode):
         spread = c.get("space", {}).get("spread", SPREAD)
         if len(spread) != 2 or not 0 <= spread[0] <= spread[1] <= 1:
             raise LoadError("space.spread 应为 [圆心, 外缘]，0–1 之间")
+        breath = c.get("breath", {})
+        period, depth = breath.get("period", BREATH_PERIOD), breath.get("sound_depth_db", BREATH_DEPTH_DB)
+        if not _number(period) or period < 1:
+            raise LoadError("breath.period 应为不小于 1 的秒数")
+        if not _number(depth) or not 0 <= depth <= 12:
+            raise LoadError("breath.sound_depth_db 应在 0–12 dB 之间")
         self.rings = rings
         self.dwell = (float(dwell[0]), float(dwell[1]))
         self.spread = (float(spread[0]), float(spread[1]))
+        self.breath_period, self.breath_depth = float(period), float(depth)
+        self.light = _light_config(c.get("light", {}))
         return LoadPlan(instruments=INSTRUMENTS, buses=("bed",) + tuple(f"ring{r}" for r in range(8)),
                         fx="sm_fx_pool")
 
@@ -504,7 +566,8 @@ class PoolMode(Mode):
         self.prefix = f"{self.arrangement.id}.{uuid.uuid4().hex[:6]}"
         self.counter = [0]
         self.key = Key(self.rng, t, self.dwell)
-        self.bed = Bed(self.rng, t)
+        self.breath = Breath(t, self.breath_period, self.breath_depth)
+        self.bed = Bed(self.rng, t, self.breath)
         self.layers = [LAYER_CLASSES[name](name, ring) for ring, name in enumerate(self.rings)]
 
     def tick(self, beat: Beat, snapshot: MatSnapshot, events: list[MatEvent]) -> BeatOutput:
@@ -525,6 +588,6 @@ class PoolMode(Mode):
         remaining = self.key.next_change - t
         return BeatOutput(
             sound=SoundIntent(tuple(f.voices), tuple(f.events)),
-            light=breathing_marks(t, snapshot.state.occupied, self.ctx.led_count),
+            light=warm_breathing(self.breath.value(t), snapshot.state.occupied, self.ctx.led_count, **self.light),
             status=ModeStatus(text=f"五声 {self.key.name} 调 · {_fmt(remaining)} 后换调"),
         )

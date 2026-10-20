@@ -18,6 +18,17 @@ key_dwell = [300, 480]          # 每个调停留多久（秒），之后沿五�
 #   high_notes 高音符 weather 天气      bells 钟声        nature 自然（鸟鸣、水滴）
 rings = ["low_drone", "mid_drone", "pad", "mid_notes", "high_notes", "weather", "bells", "nature"]
 
+[breath]                        # 底音音量和灯光共用的呼吸
+period = 67                     # 一呼一吸多少秒（网页底音的音量起伏是 0.015 Hz，约 67 秒）
+sound_depth_db = 2              # 底音音量起伏 ±2 dB
+
+[light]                         # 都可以不写，用默认值；要在真垫子上透过毛毡调
+color = [255, 196, 140]         # 底色和石头标记的颜色（暖白）
+breath_min = 0.06               # 呼吸最暗时的亮度（0–1）
+breath_max = 0.16               # 呼吸最亮时的亮度
+stone_alpha = 0.30              # 石头标记的亮度（0–1）
+stone_width = 1                 # 石头标记两侧各点亮几颗（1 = 共 3 颗，和以前一样宽）
+
 [space]
 spread = [0.85, 1.0]            # 石头的声音定位时，圆心、外缘分别当作多大的半径（1 = 完全偏向那一侧的音箱）
 

@@ -36,7 +36,7 @@ uv run python scripts/render.py meditation scripts/scenes/twenty_stones.json out
 | 声音化 · Ambient | `soundmat/sonification/ambient/` | 持续 / 间歇 / 触发、分档、条件、位置策略、灯光 |
 | 声音化 · 声池 | `soundmat/sonification/pool/` | 网页原型 Ambient 的移植：底音与远处的音、五度圈换调、每颗石头的低音与和声、整环节奏的音符与钟声、天气与雷、鸟鸣与水滴 |
 | 声音化 · Jam | `soundmat/sonification/jam/` | 走带、Lo-Fi、和声 / 鼓 / 扫描命中的精确时刻、预听、灯光；理论与时间方案移植自第一版 |
-| 声音化 · 灯光工具 | `soundmat/sonification/lights.py` | 各模式共用的向量化画布：铺底、覆盖、石头标记的依次叠加（`blend`、`add`）、多处光取最强（`Glow`）后混合或替换；角度和扇区到灯珠位置的换算；Ambient 与声池共用的"呼吸加石头标记"（`breathing_marks`） |
+| 声音化 · 灯光工具 | `soundmat/sonification/lights.py` | 各模式共用的向量化画布：铺底、覆盖、石头标记的依次叠加（`blend`、`add`）、多处光取最强（`Glow`）后混合或替换；角度和扇区到灯珠位置的换算；Ambient 的"呼吸加环色石头标记"（`breathing_marks`）；声池的"一种颜色的呼吸加更亮的石头标记"（`warm_breathing`，呼吸值由声池模式给出，与底音音量同一个） |
 | 声音引擎 | `soundmat/sound/engine.py` | 对账、声部预算、定时与去重、混音结构与编排电平、重启后重建 |
 | 声音引擎 · 空间化 | `soundmat/sound/spatial.py` | 音箱布局预设与分配公式 |
 | 声音引擎 · 素材库 | `soundmat/sound/assets.py` | 读文件头估算内存、预算检查、引用计数、重启后重载 |
