@@ -18,9 +18,11 @@
   所有层很快各响一声、风声重新淡入。装置上每层只对自己那一环的变化反应，感知短暂抖动也不会牵动别的层。
 - 同一个调里，同一个位置的低音音高不变（网页每次放下随机取音）：拿起再放下、感知抖动都不会换音。
 - 一颗石头可能压到相邻两个区域，几乎同时有两个放下事件；同一环 0.3 秒内只立即响一次。
-- 呼吸：底音的音量起伏（网页是音色里 0.015 Hz 的 LFO）改由这里的 ``Breath`` 给出，灯光的明暗也取
-  同一个值，所以"声音涌起来时灯也亮"，合成器重启了声部也不会错开。周期、起伏深度和灯光的参数见
-  编排的 ``[breath]``、``[light]``。网页的灯光是八种环色的标记，这里改成暖白的低亮度呼吸。
+- 底音 ±2 dB 的音量起伏（网页是音色里 0.015 Hz 的 LFO）改由这里的 ``Breath`` 给出（``[breath]``）。
+- 灯光：网页是八种环色的标记，这里改成一种颜色的低亮度明暗（``[light]``），跟着底音实际的音量走。
+  底音听得出来的涌起落下主要是三路微失谐正弦的拍频，相位只有合成器知道，所以不在这里推算：底音的
+  音色测量自己的音量送回来（``ctx.report("bed")``），灯光按它画。还没有测量值时（刚启动、离线渲染、
+  测试）亮度停在中间。
 """
 from __future__ import annotations
 
@@ -567,8 +569,16 @@ class PoolMode(Mode):
         self.counter = [0]
         self.key = Key(self.rng, t, self.dwell)
         self.breath = Breath(t, self.breath_period, self.breath_depth)
+        self.bed_level: float | None = None
         self.bed = Bed(self.rng, t, self.breath)
         self.layers = [LAYER_CLASSES[name](name, ring) for ring, name in enumerate(self.rings)]
+
+    def _bed_level(self) -> float:
+        """底音此刻测得的音量（0–1）。偶尔收不到时沿用上一个值；从没收到过时停在中间。"""
+        got = self.ctx.report("bed")
+        if got:
+            self.bed_level = min(1.0, max(0.0, got[0]))
+        return 0.5 if self.bed_level is None else self.bed_level
 
     def tick(self, beat: Beat, snapshot: MatSnapshot, events: list[MatEvent]) -> BeatOutput:
         t = beat.t
@@ -588,6 +598,6 @@ class PoolMode(Mode):
         remaining = self.key.next_change - t
         return BeatOutput(
             sound=SoundIntent(tuple(f.voices), tuple(f.events)),
-            light=warm_breathing(self.breath.value(t), snapshot.state.occupied, self.ctx.led_count, **self.light),
+            light=warm_breathing(self._bed_level(), snapshot.state.occupied, self.ctx.led_count, **self.light),
             status=ModeStatus(text=f"五声 {self.key.name} 调 · {_fmt(remaining)} 后换调"),
         )

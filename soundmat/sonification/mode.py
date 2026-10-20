@@ -50,6 +50,10 @@ def _no_settings(path: str, default: Any = None) -> Any:
     return default
 
 
+def _no_report(key: str) -> list[float] | None:
+    return None
+
+
 @dataclass(frozen=True)
 class ModeContext:
     led_count: int
@@ -59,6 +63,9 @@ class ModeContext:
     seed: int | None = None
     # 有确定时刻的声音比给出的时刻晚多少秒被听到（sound.schedule_ahead）；灯光要和这些声音同步时按它推后
     heard_after: float = 0.0
+    # 读取这个模式实例的某个持续声部（按标识）的音色送回来的最新测量值；没有时为 None。
+    # 声音化里唯一从声音读回的通道，目前只有声池模式的灯光用它跟随底音（SONIFICATION「声池模式的运行」）
+    report: Callable[[str], "list[float] | None"] = _no_report
 
 
 class Mode(ABC):

@@ -315,6 +315,9 @@ class ScoreBackend(ScsynthCommands):
     def levels(self, instance, meters, now=None) -> dict | None:
         return None
 
+    def report(self, node, now=None):
+        return None             # 非实时渲染时音色送回的数值收不到
+
 
 def _timetag(t: float) -> bytes:
     """非实时乐谱的时间标签：从乐谱开头算起的秒数，32.32 定点（不加 NTP 纪元的偏移）。"""

@@ -160,6 +160,18 @@ def test_levels_per_meter(rig):
     assert be.levels("other", [["ring3"]])["meters"] == [-120.0]
 
 
+
+def test_voice_reports(rig):
+    """音色送回的测量值（/sm_report）按节点保存最新的一个，超过 1 秒没有更新就不算。"""
+    fake, be, eng = rig
+    pump(eng, be, 2, until=lambda: be.state == "ready")
+    fake.send(reply("/sm_report", 1234, -1, 0.25))
+    fake.send(reply("/sm_report", 1234, -1, 0.75))
+    pump(eng, be, 0.2)
+    assert be.report(1234) == pytest.approx([0.75]) and be.report(999) is None
+    assert be.report(1234, now=system_time() + 1.5) is None
+
+
 def _live_enabled():
     """连真实 scsynth 的测试会清空它的节点树、发声并录音，所以必须显式打开（CI 里打开）；
     否则开发时会打断本机正在试听的合成器服务。"""

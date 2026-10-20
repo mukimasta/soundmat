@@ -228,6 +228,12 @@ class SoundEngine:
 
     # ── 声部预算 ────────────────────────────────────────────────────────
 
+    def voice_report(self, instance: str, key: str) -> list[float] | None:
+        """一个持续声部的音色自己测出、送回来的最新数值（例如冥想底音的音量）；没有时为 None。"""
+        inst = self.instances.get(instance)
+        node = inst.voices.get(key) if inst else None
+        return None if node is None else self.backend.report(node)
+
     def category_count(self, category: str) -> int:
         return sum(1 for r in self.voices.values() if r.category == category)
 

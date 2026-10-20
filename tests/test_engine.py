@@ -267,3 +267,13 @@ def test_follow_ups_use_the_voices_own_timing():
     by_key = {r.key: r for r in eng.voices.values()}
     assert rel[by_key["pad"].node] == pytest.approx(2.0)          # 立即开始的：立即停
     assert rel[by_key["bar1"].node] == pytest.approx(2.15)        # 按时刻开始的：按时刻停
+
+
+def test_voice_report_reads_what_the_voice_sent():
+    eng, be = make()
+    eng.apply("A", SoundIntent((v("bed"),)), now=1.0)
+    (start,) = be.of_kind("start_voice")
+    assert eng.voice_report("A", "bed") is None
+    be.reports[start.args["node"]] = [0.4]
+    assert eng.voice_report("A", "bed") == [0.4]
+    assert eng.voice_report("A", "other") is None and eng.voice_report("B", "bed") is None

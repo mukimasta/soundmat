@@ -53,6 +53,8 @@ class Backend(Protocol):
     def poll(self, now: float) -> BackendEvents: ...
     def status(self) -> dict | None: ...          # 给系统监测；不发声的替身为 None
     def levels(self, instance: str | None, meters: Sequence[Sequence[str]], now: float | None = None) -> dict | None: ...
+    # 一个声部的音色自己测出、送回来的最新数值（``/sm_report``），超过 1 秒没有更新或没有时为 None
+    def report(self, node: int, now: float | None = None) -> list[float] | None: ...
     def flush(self) -> None: ...
 
 
@@ -84,6 +86,7 @@ class RecordingBackend:
         self._where: dict[int, tuple[str, str]] = {}      # 节点 → (模式实例, 总线)
         self._channels: dict[str, int] = {}
         self._restart_pending = False
+        self.reports: dict[int, list[float]] = {}         # 测试里模拟音色送回的数值（``report``）
 
     # 测试辅助 ----------------------------------------------------------
 
@@ -185,6 +188,10 @@ class RecordingBackend:
                 self._where.pop(node, None)
                 ev.ended.append(node)
         return ev
+
+    def report(self, node, now=None):
+        """测试里直接写 ``reports[节点]`` 模拟音色送回的数值。"""
+        return self.reports.get(node)
 
     def levels(self, instance, meters, now=None):
         """模拟电平：一根条的总线上有声部在响就是 ``SIM_LEVEL``，否则静音（-120）。"""

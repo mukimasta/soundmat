@@ -1,4 +1,5 @@
 import math
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -207,21 +208,38 @@ def _brightness(out):
     return composite(out.light.layers, 108).max(axis=1) / 255
 
 
-def test_light_and_bed_volume_breathe_together():
+def test_bed_volume_breath_is_sent_every_quarter_second():
     m = meditation()
-    z = zone(6, 0)                                       # 12 点方向
-    outs = Run(m, {z.index: (0.0, None)}).until(67.0)
+    outs = Run(m).until(67.0)
     bed = [next(v for v in o.sound.voices if v.id == "bed").params["breath"] for o in outs]
-    far = [float(o.light.layers[0].alpha[54]) for o in outs]   # 底色层，6 点方向（没有石头）
-    # 灯光最亮、底音最响都在四分之一周期（约 16.75 秒）附近，最暗、最轻都在四分之三处
-    for series in (bed, far):
-        assert abs(int(np.argmax(series)) / 60 - 16.75) < 0.5
-        assert abs(int(np.argmin(series)) / 60 - 50.25) < 0.5
-    assert min(far) == pytest.approx(0.0, abs=1e-3) and max(far) == pytest.approx(0.10, abs=1e-3)
-    assert _brightness(outs[0])[54] == pytest.approx(0.05, abs=0.01)
+    # ±2 dB 的起伏最高在四分之一周期（约 16.75 秒），最低在四分之三处
+    assert abs(int(np.argmax(bed)) / 60 - 16.75) < 0.5 and abs(int(np.argmin(bed)) / 60 - 50.25) < 0.5
     # 底音拿到的值每 0.25 秒才变一次，是这一段结束时的呼吸值
     assert len({round(b, 9) for b in bed[:60]}) == 4
     assert bed[0] == pytest.approx(m.breath.value(0.25))
+
+
+def test_light_follows_the_measured_bed_level():
+    measured = {"bed": None}
+    asked = []
+
+    def report(key):
+        asked.append(key)
+        return measured.get(key)
+
+    arr = load_arrangement(ARRANGEMENTS_DIR / "meditation")
+    m = PoolMode(arr, replace(CTX, report=report))
+    m.plan = m.load()
+    m.start(0.0)
+    run = Run(m)
+    far = lambda out: float(out.light.layers[0].alpha[54])      # 底色层，6 点方向
+    assert far(run.until(0.5)[-1]) == pytest.approx(0.05)         # 还没有测量值：停在中间
+    for level, expect in ((0.0, 0.0), (1.0, 0.10), (0.3, 0.03), (1.7, 0.10)):
+        measured["bed"] = [level]
+        assert far(run.until(run.i / 60)[-1]) == pytest.approx(expect)
+    measured["bed"] = None                                        # 偶尔收不到：沿用上一个值
+    assert far(run.until(run.i / 60)[-1]) == pytest.approx(0.10)
+    assert set(asked) == {"bed"}
 
 
 def test_light_is_one_warm_color_and_stones_are_brighter():

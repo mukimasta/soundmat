@@ -19,6 +19,8 @@
     连上和 scsynth 重启）后加载音色、建立根组，并报告"重新启动过"，由引擎重建混音结构并重新对账。
   - 用 ``/notify`` 订阅节点结束通知（``/n_end``），声部自然结束时通知引擎。
   - 各模式实例混音结构里的电平（``/sm_peak``）供控制台的每环电平和看板的输出电平使用。
+  - 有的音色会测量自己的声音并送回（``/sm_report``，例如冥想底音的音量），按节点保存最新值，
+    声音化模式经声音引擎读取（``report``）。
 
 节点树、总线和缓冲区的分配见 docs/implementation/SYNTH.md。
 """
@@ -456,6 +458,7 @@ class ScsynthBackend(ScsynthCommands):
         self._pending: dict[float, list[OscMessage]] = {}
         self._lock = threading.Lock()
         self._levels: dict[tuple[int, int], tuple[float, list[float]]] = {}
+        self._reports: dict[int, tuple[float, list[float]]] = {}
 
     # ── 发送 ────────────────────────────────────────────────────────────
 
@@ -560,6 +563,9 @@ class ScsynthBackend(ScsynthCommands):
             peaks = [float(x) for x in args[2::2]]
             with self._lock:
                 self._levels[(node, rid)] = (now, peaks)
+        elif addr == "/sm_report" and len(args) >= 3:
+            with self._lock:
+                self._reports[int(args[0])] = (now, [float(x) for x in args[2:]])
 
     def _begin_connect(self) -> None:
         self.state = "loading"
@@ -580,6 +586,12 @@ class ScsynthBackend(ScsynthCommands):
     def status(self) -> dict:
         return {"online": self.online, "everOnline": self.ever_online, "state": self.state,
                 "synthdefsLoaded": self.defs_loaded, **self.info}
+
+    def report(self, node: int, now: float | None = None) -> list[float] | None:
+        now = system_time() if now is None else now
+        with self._lock:
+            got = self._reports.get(node)
+        return got[1] if got and now - got[0] < 1.0 else None
 
     def levels(self, instance: str | None, meters: Sequence[Sequence[str]], now: float | None = None) -> dict | None:
         """总输出各声道的峰值电平，以及每根电平条的峰值电平（dBFS）：取这根条的各条总线、所有声道的最大值。

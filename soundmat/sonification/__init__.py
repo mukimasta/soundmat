@@ -13,7 +13,7 @@ from __future__ import annotations
 import itertools
 import logging
 import queue
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Callable
 
 from ..clock import Beat
@@ -83,11 +83,12 @@ class Sonification:
         factory = self.modes.get(arrangement.mode)
         if factory is None:
             raise LoadError(f"没有名为 {arrangement.mode} 的模式")
-        mode = factory(arrangement, self.ctx)
+        iid = f"{arrangement.id}-{next(self._ids)}"
+        ctx = replace(self.ctx, report=lambda key: self.engine.voice_report(iid, key))
+        mode = factory(arrangement, ctx)
         plan = mode.load()
         mode.plan = plan
         meters = resolve_meters(arrangement, plan)
-        iid = f"{arrangement.id}-{next(self._ids)}"
         return ModeInstance(iid, arrangement, mode, plan, meters)
 
     def play(self, arrangement: Arrangement) -> None:
