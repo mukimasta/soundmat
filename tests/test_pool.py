@@ -217,8 +217,8 @@ def test_light_and_bed_volume_breathe_together():
     for series in (bed, far):
         assert abs(int(np.argmax(series)) / 60 - 16.75) < 0.5
         assert abs(int(np.argmin(series)) / 60 - 50.25) < 0.5
-    assert min(far) == pytest.approx(0.06, abs=1e-3) and max(far) == pytest.approx(0.16, abs=1e-3)
-    assert _brightness(outs[0])[54] == pytest.approx(0.11, abs=0.01)
+    assert min(far) == pytest.approx(0.0, abs=1e-3) and max(far) == pytest.approx(0.10, abs=1e-3)
+    assert _brightness(outs[0])[54] == pytest.approx(0.05, abs=0.01)
     # 底音拿到的值每 0.25 秒才变一次，是这一段结束时的呼吸值
     assert len({round(b, 9) for b in bed[:60]}) == 4
     assert bed[0] == pytest.approx(m.breath.value(0.25))
@@ -234,7 +234,7 @@ def test_light_is_one_warm_color_and_stones_are_brighter():
     # 每颗灯都是同一种颜色，只是明暗不同（允许取整误差）
     assert np.allclose(lit / lit[:, :1] * 255, [255, 196, 140], atol=12)
     b = _brightness(out)
-    assert b[27] > 2 * b[0] and b[26] > b[0] and b[28] > b[0] and b[25] == pytest.approx(b[0], abs=0.01)
+    assert b[27] > 2 * b[0] and b[26] > b[0] and b[28] > b[0] and b[25] == pytest.approx(b[0], abs=0.01) and b[0] > 0
 
 
 def test_light_parameters_come_from_the_arrangement():

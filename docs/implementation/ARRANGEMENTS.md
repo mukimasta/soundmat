@@ -103,8 +103,8 @@ sound_depth_db = 2              # 底音音量起伏 ±dB（0–12，默认 2）
 
 [light]                         # 每项都可省略，用这里写的默认值
 color = [255, 196, 140]         # 底色和石头标记的颜色，三个 0–255 的整数
-breath_min = 0.06               # 呼吸最暗时的亮度（0–1）
-breath_max = 0.16               # 呼吸最亮时的亮度（不小于 breath_min）
+breath_min = 0.0                # 呼吸最暗时的亮度（0–1）
+breath_max = 0.10               # 呼吸最亮时的亮度（不小于 breath_min）
 stone_alpha = 0.30              # 石头标记的亮度（0–1）
 stone_width = 1                 # 石头标记两侧各点亮几颗（0–10）
 

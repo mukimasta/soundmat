@@ -62,7 +62,7 @@ DISTANT_INTERVAL = (15.0, 30.0)
 BREATH_PERIOD = 1 / 0.015           # 秒，约 67 秒（网页底音音量起伏 0.015 Hz）
 BREATH_DEPTH_DB = 2.0               # 底音音量起伏 ±2 dB
 BREATH_UPDATE = 0.25                # 每隔多久把呼吸值交给底音，合成器在这段时间里线性滑过去
-LIGHT = {"color": (255, 196, 140), "breath_min": 0.06, "breath_max": 0.16, "stone_alpha": 0.30, "stone_width": 1}
+LIGHT = {"color": (255, 196, 140), "breath_min": 0.0, "breath_max": 0.10, "stone_alpha": 0.30, "stone_width": 1}
 
 # 低音：八度、第二个振荡器、音量、低通的明暗范围（droneVoice.js）
 DRONES = {
