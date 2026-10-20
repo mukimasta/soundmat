@@ -1,7 +1,8 @@
 """垫面解读：在压力图之上判断哪里有石头、发生了什么（ARCHITECTURE「感知」）。
 
-占用判定带去抖：一个区需要稳定高于阈值 ``occupy_hold`` 秒才算被占用，稳定低于阈值
-``release_hold`` 秒才算释放（DATA_MODEL「垫面状态」）。去抖按压力图到达的时刻计算；
+占用判定带去抖和双阈值：一个区需要稳定高于放下阈值 ``occupy_hold`` 秒才算被占用，稳定低于
+较低的拿起阈值 ``release_hold`` 秒才算释放（DATA_MODEL「垫面状态」）；读数在两者之间时保持原状，
+不会在阈值附近来回跳。阈值可以逐区不同（内两环比外环低）。去抖按压力图到达的时刻计算；
 控制器断线、没有新压力图时，状态保持不变。
 """
 from __future__ import annotations
@@ -24,8 +25,11 @@ class FeatureExtractor(Protocol):
 
 
 class Interpreter:
-    def __init__(self, threshold: float, occupy_hold: float, release_hold: float):
-        self.threshold = float(threshold)
+    def __init__(self, threshold, occupy_hold: float, release_hold: float, release_threshold=None):
+        """``threshold``、``release_threshold``：单个数或每区一个（224 项）；拿起阈值默认等于放下阈值。"""
+        self.threshold = np.broadcast_to(np.asarray(threshold, dtype=np.float32), (NUM_ZONES,)).copy()
+        rel = self.threshold if release_threshold is None else release_threshold
+        self.release_threshold = np.broadcast_to(np.asarray(rel, dtype=np.float32), (NUM_ZONES,)).copy()
         self.occupy_hold = float(occupy_hold)
         self.release_hold = float(release_hold)
         self._occupied = np.zeros(NUM_ZONES, dtype=bool)
@@ -48,7 +52,8 @@ class Interpreter:
 
     def update(self, pressure: PressureMap) -> tuple[MatState, list[MatEvent], dict[str, Any]]:
         t = pressure.t
-        raw = pressure.values >= self.threshold
+        # 空的区要高于放下阈值才算有石头，有石头的区要低于拿起阈值才算没有
+        raw = np.where(self._occupied, pressure.values >= self.release_threshold, pressure.values >= self.threshold)
         differs = raw != self._occupied
 
         start = differs & np.isnan(self._pending_since)

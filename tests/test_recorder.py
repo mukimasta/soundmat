@@ -58,7 +58,7 @@ def test_full_recording_cycle(sup):
     assert sup.backend.of_kind("start_recording")[0].at == sup.backend.of_kind("slate")[0].at
     kinds = [c.kind for c in sup.backend.commands]
     assert kinds.index("start_recording") < kinds.index("slate")
-    for t in (1.2, 1.25):
+    for t in (1.2, 1.29):
         sup.perception.feed(sup.virtual.frame(t=t))   # 产生压力图与事件
     beats(sup, 4.17, 5.0)
     assert "recording" not in sup.lights.system

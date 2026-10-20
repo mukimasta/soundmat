@@ -7,12 +7,17 @@ from __future__ import annotations
 
 import threading
 
+import numpy as np
+
 from ..config import MatConfig
 from ..exchange import EventHub, Latest
 from ..rates import RateMeter
 from .interpret import Interpreter
 from .model import MatEvent, MatSnapshot, PressureMap, empty_snapshot
 from .virtual import HZ as VIRTUAL_HZ
+from .zones import INNER_RINGS, ZONES
+
+_INNER = np.array([z.ring < INNER_RINGS for z in ZONES])
 
 
 class Perception:
@@ -20,7 +25,9 @@ class Perception:
 
     def __init__(self, cfg: MatConfig, source: str = "controller"):
         self.source = source
-        self.interpreter = Interpreter(cfg.occupancy_threshold, cfg.occupy_hold, cfg.release_hold)
+        place = np.where(_INNER, cfg.inner_occupancy_threshold, cfg.occupancy_threshold)
+        self.interpreter = Interpreter(place, cfg.occupy_hold, cfg.release_hold,
+                                       release_threshold=place * cfg.release_ratio)
         self.snapshot: Latest[MatSnapshot] = Latest(empty_snapshot(source=source))
         self.events: EventHub[MatEvent] = EventHub()
         self._lock = threading.Lock()
