@@ -43,6 +43,17 @@ def test_real_probes_do_not_crash(tmp_path):
     assert "address" in n
 
 
+
+def test_throttled_bits(tmp_path, monkeypatch):
+    real = P._run
+    monkeypatch.setattr(P, "_run", lambda args, timeout=2.0: "throttled=0x50000" if args[0] == "vcgencmd" else real(args, timeout))
+    m = P.machine(tmp_path)
+    assert (m["undervoltage"], m["throttled"], m["undervoltageEarlier"], m["throttledEarlier"]) == (False, False, True, True)
+    monkeypatch.setattr(P, "_run", lambda args, timeout=2.0: "throttled=0x50005" if args[0] == "vcgencmd" else real(args, timeout))
+    m = P.machine(tmp_path)
+    assert (m["undervoltage"], m["throttled"]) == (True, True)
+
+
 class Fake:
     def __init__(self):
         self.jack = {"running": True, "device": "hw:2", "rate": 48000, "period": 2048, "periods": 2}

@@ -122,3 +122,19 @@ test('rhythm card, network kind, program and recording time', async () => {
   expect(within(sound).getByText('运算负载 · 主机程序')).toBeInTheDocument();          // 主机程序 58% 高于合成器 22%
   expect(within(screen.getByRole('region', { name: '音频' })).getByText('合成器 22% · 主机程序 58%（单核）')).toBeInTheDocument();
 });
+
+test('power: undervoltage now is an error, earlier only a hint', async () => {
+  const { client } = setup();
+  const health = { sound: OK, mat: OK, net: OK, overall: 'ok', issues: [] };
+  act(() => { client.handle(hello(state(health))); client.handle(mat([])); });
+  act(() => { client.handle({ type: 'patch', changes: [['status.machine.undervoltageEarlier', true]] }); });
+  await userEvent.click(screen.getByRole('button', { name: '看板' }));
+  const machine = screen.getByRole('region', { name: '机器' });
+  expect(within(machine).queryByRole('note')).toBeNull();
+  expect(within(machine).getByText('开机以来发生过欠压，现在已恢复；重启机器后清除')).toBeInTheDocument();
+  expect(within(machine).getByText('正常（开机以来发生过欠压）')).toBeInTheDocument();
+  act(() => { client.handle({ type: 'patch', changes: [['status.machine.undervoltage', true]] }); });
+  expect(within(machine).getByRole('note')).toHaveTextContent('正在欠压（供电不足）');
+  expect(within(machine).queryByText(/开机以来发生过/)).toBeNull();
+  expect(within(machine).getByText('正在欠压')).toBeInTheDocument();
+});

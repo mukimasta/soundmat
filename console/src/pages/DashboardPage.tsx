@@ -189,7 +189,9 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
     if (!m) return null;
     const memFrac = m.memUsedMB != null && m.memTotalMB ? m.memUsedMB / m.memTotalMB : null;
     const diskFrac = m.diskFreeGB != null && m.diskTotalGB ? 1 - m.diskFreeGB / m.diskTotalGB : null;
-    const hot = (m.tempC ?? 0) >= 80 || !!m.throttled;
+    const hot = (m.tempC ?? 0) >= 80 || !!m.throttled || !!m.undervoltage;
+    const earlier = !m.throttled && !m.undervoltage && (m.undervoltageEarlier || m.throttledEarlier)
+      ? [m.undervoltageEarlier && '欠压', m.throttledEarlier && '降频'].filter(Boolean).join('和') : null;
     const storage = g<{ freeGB: number | null; minutes: number | null }>('status.storage');
     const program = g<{ uptime: number | null; restarts: number | null;
       version: { commit: string; deployedAt: string | null; dirty: boolean | null; source: string } | null }>('status.program');
@@ -220,10 +222,13 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
             <span className="small">主机程序 CPU · 最近 1 分钟 · 按单核算，持续超过 90% 时声音和灯光可能卡顿</span>
           </>
         )}
-        {m.throttled && <Problem text="正在降频（供电不足或过热），声音和灯光可能变慢" />}
+        {m.undervoltage && <Problem error text="正在欠压（供电不足），声音和灯光可能变慢，控制器可能断开" />}
+        {m.throttled && !m.undervoltage && <Problem error text="正在降频（过热或供电不足），声音和灯光可能变慢" />}
+        {earlier && <span className="small">开机以来发生过{earlier}，现在已恢复；重启机器后清除</span>}
         <div>
           <KV k="机器" v={m.model ?? m.host} />
-          <KV k="降频" v={m.throttled == null ? '—' : m.throttled ? '有' : '无'} tone={m.throttled ? 'warn' : undefined} />
+          <KV k="供电与降频" v={m.throttled == null ? '—' : m.undervoltage ? '正在欠压' : m.throttled ? '正在降频' : earlier ? `正常（开机以来发生过${earlier}）` : '正常'}
+            tone={m.undervoltage || m.throttled ? 'error' : undefined} />
           <KV k="系统时间" v={m.clockSynced == null ? '—' : m.clockSynced ? '开机时已校准' : '未校准（开机时没网，录音的日期时间可能不准）'}
             tone={m.clockSynced === false ? 'warn' : undefined} />
           <KV k="机器已运行" v={m.uptime != null ? duration(m.uptime) : '—'} />
@@ -304,7 +309,8 @@ export function DashboardPage({ onBack }: { onBack: () => void }) {
   }
 
   function machine() {
-    return g<{ host: string; model: string | null; tempC: number | null; throttled: boolean | null; memUsedMB: number | null;
+    return g<{ host: string; model: string | null; tempC: number | null; throttled: boolean | null;
+      undervoltage?: boolean | null; throttledEarlier?: boolean | null; undervoltageEarlier?: boolean | null; memUsedMB: number | null;
       memTotalMB: number | null; diskFreeGB: number | null; diskTotalGB: number | null; uptime: number | null; programUptime: number;
       programCpu?: number | null; cpu?: number | null; cores?: number | null; programCpuHistory?: number[];
       clockSynced?: boolean | null }>('status.machine');

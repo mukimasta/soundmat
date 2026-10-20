@@ -178,6 +178,7 @@ def clock_status(path: str = "/run/soundmat-clock") -> bool | None:
 
 def machine(data_dir: Path) -> dict:
     info: dict = {"host": socket.gethostname(), "model": None, "tempC": None, "throttled": None,
+                  "undervoltage": None, "throttledEarlier": None, "undervoltageEarlier": None,
                   "memUsedMB": None, "memTotalMB": None, "diskFreeGB": None, "diskTotalGB": None,
                   "uptime": None}
     model = _read("/proc/device-tree/model")
@@ -188,7 +189,12 @@ def machine(data_dir: Path) -> dict:
         info["tempC"] = round(int(t) / 1000, 1)
     thr = _run(["vcgencmd", "get_throttled"])
     if thr and "=" in thr:
-        info["throttled"] = int(thr.split("=")[1], 16) != 0
+        # 低 4 位是现在的状态（0 欠压，1 限频，2 降频，3 接近过热），16–19 位是开机以来发生过的同样四项
+        bits = int(thr.split("=")[1], 16)
+        info["undervoltage"] = bool(bits & 0x1)
+        info["throttled"] = bool(bits & 0xE)
+        info["undervoltageEarlier"] = bool(bits & 0x10000)
+        info["throttledEarlier"] = bool(bits & 0xE0000)
     mem = _read("/proc/meminfo")
     if mem:
         vals = {k: int(v.split()[0]) for k, v in (l.split(":", 1) for l in mem.splitlines() if ":" in l)}
