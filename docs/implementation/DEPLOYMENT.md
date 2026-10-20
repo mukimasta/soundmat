@@ -98,6 +98,8 @@
 
 采样率使用 48 kHz，与声音素材库一致，避免实时重采样。
 
+USB 声卡的硬件音量固定在 0 dB（最大），音量只由程序的总音量控制。ALSA 给新插的声卡默认约 −20 dB，部署时要调到 0 dB 并用 `alsactl store` 保存，否则同一个总音量在不同装置上响度不同（2026-10-19 Pi 5 比 Pi 3B 小很多，就是这个原因）。
+
 JACK 先使用在 Pi 3B 上验证过的设置：每块 2048 帧、两块缓冲。Pi 5 性能更强，应在看板上观察音频卡顿次数，逐步降到 1024 或 512 以减少延迟。scsynth 的内部块大小保持默认的 64：调大会让包络和鼓的起音变得阶梯化，省下的计算很少（见系列文档第 16 篇）。CPU 紧张时优先降低声部预算，最后才加大 JACK 缓冲。
 
 JACK 以实时优先级运行：服务里必须有 `LimitRTPRIO=95`、`LimitMEMLOCK=infinity`，否则 JACK 退回普通优先级（日志 `Cannot use real-time scheduling`），容易卡顿；第一版在 Pi 3B 上一直缺这一项。JACK 以普通用户 `soundmat` 运行，所以 logind 要设 `RemoveIPC=no`：默认情况下这个用户最后一个登录会话（例如 SSH）结束时，systemd 会清掉它的共享内存和信号量，JACK 随即失效（`semop (Invalid argument)`）。

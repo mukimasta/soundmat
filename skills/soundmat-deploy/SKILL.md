@@ -5,14 +5,14 @@ description: Deploy, update, verify and troubleshoot the SoundMat host on a Rasp
 
 # SoundMat 部署
 
-把 SoundMat 主机程序部署到树莓派，以及之后的更新、验收和排错。所有步骤都在 2026-10-16/17 真机走过：Pi 5 上装了基础环境和网络，Pi 3B 上装了服务、程序、更新流程，并在真垫子上跑了 Jam。部署出来是什么样、为什么这样设计，见 `docs/implementation/DEPLOYMENT.md`；这里只讲怎么做。
+把 SoundMat 主机程序部署到树莓派，以及之后的更新、验收和排错。步骤都在 Pi 5 和 Pi 3B 上实际走过。部署出来是什么样、为什么这样设计，见 `docs/implementation/DEPLOYMENT.md`；这里只讲怎么做。
 
 ## 0. 工作约定
 
 1. **一步一步做，每步验证**，不写一次性的大脚本。装进系统的配置文件都在仓库的 `system/`，从那里 `scp` 过去再 `sudo install`，不要在树莓派上手写配置。
 2. **在 `master` 上开发**，提交后推送；程序只通过发布命令进装置（第 6、7 节），不要手改树莓派上 `releases/` 里的文件。
 3. **密码由人来输入**，Agent 不经手：
-   - sudo：请人在终端运行 `ssh -t soundmat@<主机> 'sudo -v'`。树莓派系统的 sudo 时间戳在会话之间共享（`/etc/sudoers.d/010_global-tty`，`timestamp_type=global`），之后约 15 分钟内 Agent 的非交互 SSH 也能 `sudo -n`；每次用 sudo 会续期，**重启后失效**。先用 `sudo -n true` 确认，再一口气做完需要 sudo 的步骤。
+   - sudo：请人在终端运行 `ssh -t soundmat@<主机> 'sudo -v'`。sudo 时间戳在会话之间共享（`timestamp_type=global`），之后约 15 分钟内 Agent 的非交互 SSH 也能 `sudo -n`，每次使用会续期，**重启后失效**。先 `sudo -n true` 确认，再一口气做完需要 sudo 的步骤。
    - Wi-Fi 密码：给人一条在树莓派上提示输入的命令（见第 5 节），不要把密码写进命令行参数或历史。
    - 需要长时间 sudo 时，也可以请人临时开免密 sudo（`/etc/sudoers.d/010-soundmat-nopasswd`），**做完提醒人删掉**；验证"已恢复需要密码"时先 `sudo -k`，否则全局缓存会让 `sudo -n` 仍然成功。
 4. **设备记录**：Pi 5 的状态记录在 `~/Worlds/INFRA/Devices/soundmat-pi/`（`state.md` 只写当前状态，`history.md` 追加有意义的变化，规则见同目录 `AGENTS.md`，不写密码）。做之前读 `state.md`，做之后更新它并追加 `history.md`。本次部署的勾选记录在 `docs/implementation/DEPLOYMENT_202610.md`。Pi 3B 即将淘汰，不建设备记录。
@@ -111,24 +111,24 @@ scp system/clock/* soundmat@<主机>:/tmp/
 ssh -t soundmat@<主机> 'sudo install -m 755 /tmp/soundmat-clock /usr/local/bin/soundmat-clock && sudo install -m 644 /tmp/soundmat-clock.service /etc/systemd/system/soundmat-clock.service && sudo mkdir -p /etc/systemd/system/jackd.service.d && sudo install -m 644 /tmp/jackd-after-clock.conf /etc/systemd/system/jackd.service.d/after-clock.conf && sudo systemctl daemon-reload && sudo systemctl enable soundmat-clock && echo 安装完成 && systemctl is-enabled soundmat-clock && systemctl show -p After jackd | grep -o soundmat-clock.service'
 ```
 
-最后应依次输出 `安装完成`、`enabled`、`soundmat-clock.service`；重启后 `cat /run/soundmat-clock` 有内容才算生效。
+最后应依次输出 `安装完成`、`enabled`、`soundmat-clock.service`。老装置同样要装 `timesyncd-soundmat.conf`（`/etc/systemd/timesyncd.conf.d/soundmat.conf`）。
 
-开机时 `soundmat-clock` 排在 JACK 之前：有网等到校时完成（最多 45 秒），20 秒没网就不等；然后停掉 `systemd-timesyncd`，这次开机不再校时（原因见 `docs/implementation/DEPLOYMENT.md`「时钟」）。看它这次等了多久、校没校上：`journalctl -b -u soundmat-clock -o cat`，或 `cat /run/soundmat-clock`。
+`soundmat-clock` 开机时排在 JACK 之前：有网等校时完成（最多 45 秒），20 秒没网就不等，然后停掉 `systemd-timesyncd`，这次开机不再校时（原因见 `DEPLOYMENT.md`「时钟」）。重启后检查：`cat /run/soundmat-clock` 应为 `synced <秒>`；`journalctl -b -u soundmat-clock -o cat` 看等了多久。有网时应在开机后约 15–25 秒校准。
 
-验证控制台"重启"的权限（`rules.d` 目录只有 root 能读，普通用户用 `ls` 看不到，用 `pkcheck` 问；它只检查、不会真的重启）：
+验证控制台"重启"的权限（`rules.d` 只有 root 能读，用 `pkcheck` 问，它只检查、不会真的重启）：
 
 ```bash
 ssh soundmat@<主机> 'pkcheck --action-id org.freedesktop.login1.reboot --process $$ </dev/null; echo $?'   # 0 = 已授权
 ```
 
-polkit 在 Pi OS Lite 上已装（`polkitd`），平时不常驻、按需启动，规则文件放进去就生效，不用重启。规则只放开 `soundmat` 用户重启 `jackd.service`、`soundmat-scsynth.service`、`soundmat.service` 和重启整机。
+规则放进去就生效，不用重启 polkit。它只放开 `soundmat` 用户重启 `jackd.service`、`soundmat-scsynth.service`、`soundmat.service` 和整机；停止、启用服务仍要 sudo。
 
 - `jackd.service` 里的 `hw:Audio` 是当前声卡的名字，换声卡时按 `aplay -l` 改。48 kHz、每块 2048 帧两块缓冲；Pi 5 可以看板上的卡顿次数为准逐步降到 1024、512。**改 JACK 缓冲时同步改 `config/soundmat.toml` 的 `sound.schedule_ahead`**：至少是一整个缓冲（帧数 × 块数 / 48000）再加一块，另留余量；2048 × 2 时是 0.15，1024 × 2 时约 0.08。小于它，合成器收到的定时指令会迟到，节奏忽早忽晚（看板「节奏」里的"合成器收到太晚"）。
-- **声卡硬件音量调到 0 dB 并保存**：ALSA 给新插的 CX31993 默认 108/148（−20 dB），不调的话整体比 Pi 3B 小很多（2026-10-19 Pi 5 上遇到）。`amixer -c Audio sset PCM 100% unmute && sudo alsactl store Audio`，保存到 `/var/lib/alsa/asound.state`，开机由 `alsa-restore` 恢复。换声卡后重做。
+- **声卡硬件音量调到 0 dB 并保存**（新声卡默认 108/148，即 −20 dB，整体会小很多）：`amixer -c Audio sset PCM 100% unmute && sudo alsactl store Audio`。检查：`amixer -c Audio sget PCM` 为 148 [0.00dB]，`/var/lib/alsa/asound.state` 存在。换声卡后重做。
 - 主机程序的服务在程序装好后（第 6 节）再启用。
 - Pi 3B 上程序目录不同，用 drop-in 覆盖路径：`/etc/systemd/system/soundmat.service.d/pi3b.conf` 里重设 `WorkingDirectory=/home/soundmat/sm/current`、`Environment=SOUNDMAT_HOME=/home/soundmat/sm`、`ExecStart=`（先清空）再 `ExecStart=/home/soundmat/sm/current/.venv/bin/soundmat --data-dir /home/soundmat/data`。
 
-验证：`systemctl is-active jackd soundmat-scsynth`；`journalctl -u jackd -n 8 -o cat` 里应有 `starting in realtime mode`，**不能有** `Cannot use real-time scheduling`；`jack_lsp -c` 里 `SuperCollider:out_1/2` 接到 `system:playback_1/2`（靠服务里的 `SC_JACK_DEFAULT_OUTPUTS`，不需要 `jack_connect`）。
+验证：`which jack_lsp`（没有就是漏装 `jack-example-tools`，scsynth 服务会卡在 "JACK not ready"）；`systemctl is-active jackd soundmat-scsynth`；`journalctl -u jackd -n 8 -o cat` 里应有 `starting in realtime mode`，**不能有** `Cannot use real-time scheduling`；`jack_lsp -c` 里 `SuperCollider:out_1/2` 接到 `system:playback_1/2`（靠服务里的 `SC_JACK_DEFAULT_OUTPUTS`，不需要 `jack_connect`）。
 
 ## 5. 网络
 
@@ -153,13 +153,11 @@ ssh -t soundmat@<主机> 'sudo nmcli con modify phone-hotspot wifi-sec.psk sound
 ssh -t soundmat@<主机> 'read -s -p "Avocado 密码: " P; echo; sudo nmcli con modify <Avocado 连接> wifi-sec.psk "$P" && echo PSK_OK'
 ```
 
-UW MPSK 要先用 `/sys/class/net/wlan0/address` 的 MAC 在 UW 登记，拿到密码后同样由人填：用户在 <https://register.wifi.uw.edu/guest/mac_create.php> 用 NetID 登录 → 先在 Manage Devices 看这个 MAC 是否登记过 → Create Device，填名字和 MAC → 回执页上就是这台设备专用的密码（有效五年）。Pi 5 已登记（`98:fe:54:22:58:26`，2031-10-18 到期）。密码由用户填：
+UW MPSK 要先把 `/sys/class/net/wlan0/address` 的 MAC 登记给 UW，由人来做：在 <https://register.wifi.uw.edu/guest/mac_create.php> 用 NetID 登录，先在 Manage Devices 看这个 MAC 是否已登记，再 Create Device 填名字和 MAC，回执页上是这台设备专用的密码（有效五年）。已登记的设备见设备记录。密码由人填：
 
 ```bash
 ssh -t soundmat@<主机> 'read -s -p "UW MPSK 密码: " P; echo; sudo nmcli con modify uw-mpsk wifi-sec.psk "$P" && echo PSK_OK'
 ```
-
-实测切换网络会断 SSH：用 `systemd-run` 在装置上跑一个脚本，先停 `soundmat-net-fallback.timer`（否则一分钟内又被切回手机热点），`nmcli con up uw-mpsk`，30 秒后不通就 `nmcli con up phone-hotspot` 并恢复 timer。
 
 兜底定时任务：
 
@@ -173,7 +171,8 @@ sudo systemctl daemon-reload && sudo systemctl enable --now soundmat-net-fallbac
 **测试**（改网络可能断开 SSH，不插网线时先预约回滚）：
 1. 打开手机热点，一分钟内应从 Avocado 切到 `phone-hotspot`（用 Tailscale 名字确认；切换期间连接会断几秒）。
 2. 预约回滚 `sudo systemd-run --on-active=8m --unit=soundmat-net-rollback nmcli con modify <Avocado 连接> connection.autoconnect yes`，再临时 `connection.autoconnect no`，关掉手机热点：NetworkManager 先重试约 80 秒，之后一分钟内出现 `SoundMat-AP`，手机连上能打开 `http://10.42.0.1:8000`。回滚生效后一分钟内切回 Avocado。
-3. 看日志：`journalctl -u soundmat-net-fallback -u NetworkManager --since -15min -o short-iso | grep -E "fallback\[|state change|Activation"`。
+3. 单独测某个外部网络（例如在 UW 测 `uw-mpsk`）：切换会断 SSH，用 `sudo systemd-run --unit=nettest <脚本>` 在装置上跑：先 `systemctl stop soundmat-net-fallback.timer`（否则一分钟内又被切回手机热点），`nmcli con up uw-mpsk`，30 秒后不通就 `nmcli con up phone-hotspot` 并恢复 timer。通了就在 Mac 上 `tailscale ping soundmat-pi`，测完 `systemctl start soundmat-net-fallback.timer`。
+4. 看日志：`journalctl -u soundmat-net-fallback -u NetworkManager --since -15min -o short-iso | grep -E "fallback\[|state change|Activation"`。
 
 iPhone 热点锁屏或闲置时会自己关，测试时让手机停在热点页面。
 
@@ -217,9 +216,9 @@ uv run python scripts/release.py --device soundmat-pi-old --no-sound   # Pi 3B�
 它会：检查没有未提交的改动 → 推送 → 编译音色（`instruments/` 没变就跳过）→ 构建控制台 → 打包（约 700 KB）→ 上传为 GitHub 预发布版本（保留最近 20 个）→ 用 rsync 把编排引用的素材同步到装置的 `/home/soundmat/sound/samples/`（只传有变化的；第一次约 326 MB）→ 通过 Tailscale 让装置更新 → 等装置报告新版本在运行。整个过程约 20–40 秒。`--no-sound` 跳过素材（Jam 不需要素材），`--no-update` 只发布到 GitHub。
 
 素材的注意事项：
-- Pi 3B 上不放素材（2026-10-18 删掉了，给录音腾空间）：它内存只有 905 MB，放不下《京都岚山》，只跑 Jam。往 Pi 3B 发布一律加 `--no-sound`，否则素材会被重新传过去（素材目录不在时同步那一步还会失败、中止更新）。
-- 装置上的素材目录 `/home/soundmat/sound/samples` 要先存在（rsync 不建上级目录），新装的装置第一次发布前先 `ssh soundmat@<主机> mkdir -p /home/soundmat/sound/samples`。
-- 大批同步（第一次约 326 MB，或新加了大素材）期间，往存储卡写入会让 Pi 3B 的音频卡顿几下（2026-10-18 实测：开始同步的 8 秒里 JACK 记了 14 次 xrun，之后为 0）。不要在演出或拍摄中做；看板的卡顿从主机程序和 JACK 里较晚的那次启动算起、最长一小时，所以这条提示一小时后、或在控制台重启声音或程序后消失。平时只传有变化的文件，一两秒，不受影响。
+- Pi 3B 不放素材（内存 905 MB，放不下《京都岚山》，只跑 Jam）：往 Pi 3B 发布一律加 `--no-sound`，否则素材会被传过去，素材目录不在时还会中止更新。
+- 新装的装置第一次发布前先 `ssh soundmat@<主机> mkdir -p /home/soundmat/sound/samples`（rsync 不建上级目录）。第一次同步约 326 MB，走手机热点很费流量，尽量在 UW 或家里的网络下做。
+- 大批同步时写存储卡会让 Pi 3B 的音频卡顿几下，不要在演出或拍摄中做。看板的卡顿提示一小时后、或在控制台重启声音后消失。平时只传有变化的文件，不受影响。
 
 装置那边：下载、核对 SHA-256、解压到 `releases/<短提交号>/`、`uv sync`，成功后才切换 `current`，然后程序退出、由 systemd 按新版本拉起。新版本运行满 60 秒自动确认；连续 3 次启动失败，启动前运行的 `soundmat-guard` 会切回上一版。手动回退：控制台「菜单 → 软件更新 → 回到上一版」（只对本机和 Tailscale 来的访问开放），或 `curl -X POST http://<主机>:8000/api/update/rollback`。
 
@@ -236,7 +235,7 @@ uv run python scripts/release.py --device soundmat-pi-old --no-sound   # Pi 3B�
 3. 看板一切正常：声音（USB 声卡、48 kHz、音色加载、无卡顿）、垫子（控制器已连接、传感帧率 25–30）、网络。
 4. 看板「声道测试」左右各自发声。
 5. 放石头：Jam 压住中间两环开始播放，外圈石头被扫描线扫到时发声，灯环上扫描线和石头位置对得上；京都岚山每环有对应的声音。核对内环方向和去抖时间（见 `TODO.md`）。
-6. 断电重启：一两分钟后自动进入默认编排，看板恢复正常（开机灯带全亮 5 秒是固件的行为）。
+6. 断电重启：约半分钟后出声、进入默认编排，控制器再晚约 10 秒连上，看板恢复正常（开机灯带全亮是固件的行为）。
 7. 网络：第 5 节的测试。
 8. 供电（Pi 5）：负载下 `vcgencmd pmic_read_adc EXT5V_V` 不低于 4.9 V，`vcgencmd get_throttled` 为 `0x0`，跑一两个小时后摸 USB 头不烫。
 9. 控制台「菜单 → 重启 → 重启声音」：约 5 秒后声音恢复，看板回到正常（同时验证了权限规则）。「重启程序」约 10–15 秒后控制台自己重连、控制器重新连上。
@@ -270,17 +269,18 @@ ssh soundmat@<主机> 'P=$(systemctl show -p MainPID --value soundmat); top -H -
 
 | 现象 | 原因与处理 |
 |---|---|
-| 看板「垫子：控制器断开，正在重连」反复出现 | 收不到 S 帧。先确认 ESP32 通电、USB 插好；程序打开串口后会等 15 秒首帧。打开串口**必定**让 ESP32 复位（DTR/RTS 置低挡不住），固件开机灯效约 5 秒不发数据，所以正常重连要 4–6 秒。断电重启后第一次打开串口，CP2102 常常设置没生效、收到的全是波特率不对的乱码，程序 2 秒后会认出来并重开（日志"串口收到的全是乱码…重新打开"），开机后控制器比出声晚约 10 秒连上属正常。超时时日志有"等控制器超时：…"，写明收到了什么。内核的 `cp210x … failed set request 0x12 status: -110` 每次关串口都有，无关。`journalctl -u soundmat --since -2min -o cat \| grep -E "控制器\|垫子"` |
+| 看板「垫子：控制器断开，正在重连」反复出现 | 先确认 ESP32 通电、USB 插好（`ls /dev/serial/by-id`）。正常情况：每次打开串口都会让 ESP32 复位，4–6 秒后连上；断电开机后第一次常是一阵乱码，程序认出后重开（日志"串口收到的全是乱码…重新打开"）。一直连不上时看日志"等控制器超时：…"，里面写着收到了什么：`journalctl -u soundmat --since -5min -o cat \| grep -E "控制器\|垫子\|乱码"`。内核的 `cp210x … failed set request 0x12 status: -110` 每次关串口都有，不是故障 |
+| scsynth 服务卡在 "JACK not ready"，`jack_lsp: command not found` | 漏装 `jack-example-tools`（新系统的 jackd2 不再带 `jack_lsp`）：装上后 `sudo systemctl restart soundmat-scsynth` |
 | JACK 日志 `semop (Invalid argument)`、`jack_lsp` 连不上，scsynth 服务卡在 "JACK not ready" | logind 在 soundmat 退出登录时清掉了 JACK 的信号量：装 `logind-soundmat.conf`（`RemoveIPC=no`），重启 systemd-logind，再依次重启 jackd、soundmat-scsynth |
 | JACK 日志 `Cannot use real-time scheduling` | 服务缺 `LimitRTPRIO=95`（第一版就缺）：用仓库里的 `jackd.service` |
-| 声音整体比另一台小很多，程序音量正常 | 声卡硬件音量没调：`amixer -c Audio sget PCM` 应为 148 [0.00dB]，按第 4 节调好并 `alsactl store` |
+| 声音整体比另一台小很多，程序音量正常 | 声卡硬件音量没调到 0 dB：按第 4 节调好并保存 |
 | 没声音，scsynth 在跑 | `jack_lsp -c` 看 SuperCollider 的输出有没有接到 `system:playback_*`；服务里要有 `SC_JACK_DEFAULT_OUTPUTS` |
 | 看板「采样率 44.1 kHz，期望 48 kHz」 | JACK 的 `-r`。Pi 3B 用 drop-in `/etc/systemd/system/jackd.service.d/rate.conf` 重设 `ExecStart` 为 `-r48000` |
 | 看板「缺少 N 个声音素材」 | 当前编排要素材（京都岚山），装置上没有：发布时不要加 `--no-sound`。Pi 3B 上是有意不放素材的（内存放不下京都岚山），不用管 |
 | 切到京都岚山后机器卡死、合成器服务被内核结束（`journalctl -k \| grep -i "out of memory"`） | 内存不够：京都岚山的素材解码后约 415 MB，Pi 3B 共 905 MB，其他部分已用约 330 MB。Pi 3B 只跑 Jam，Ambient 用 Pi 5 |
 | 节奏忽早忽晚，看板「节奏」里"合成器收到太晚"不为 0 | 定时声音的提前量 `sound.schedule_ahead` 小于 JACK 的音频缓冲（改过 JACK 的 `-p`/`-n` 却没改它）：按第 4 节的算法改配置、重新发布。直接看：`journalctl _COMM=scsynth --since -1min -o cat \| grep -c ^late` |
 | 开机后放 Jam 一两分钟节奏乱、看板「迟到」很多，之后自己恢复 | 声音启动之后系统才校时，时钟跳了，合成器要一分多钟才对齐。确认装了 `soundmat-clock`：`systemctl is-enabled soundmat-clock`、`cat /run/soundmat-clock`（要有内容）。`journalctl -b \| grep "Initial clock synchronization"` 的时刻若晚于 `Started jackd`，就是声音启动后才校时 |
-| 开机后要等半分钟到一分钟才出声 | `soundmat-clock` 在等系统时钟校准（有网时最多 45 秒，没网 20 秒）。有网还要等二三十秒，多半是没装 `timesyncd-soundmat.conf`：校时程序联网前失败一次后默认隔 30 秒才重试 |
+| 开机后要等半分钟以上才出声 | `soundmat-clock` 在等校时（有网最多 45 秒，没网 20 秒）。有网也要等很久时，确认装了 `timesyncd-soundmat.conf`（第 4 节）；`journalctl -b -o short-monotonic \| grep -E "network-online\|Initial clock"` 看联网和校准各在第几秒 |
 | 控制台重启时提示"systemd 拒绝了这次重启" | 没装或没装对权限规则：按第 4 节安装 `50-soundmat.rules`，用 `pkcheck` 验证 |
 | 控制台重启按钮是灰的，写着"不是由 systemd 运行的装置" | 主机程序不是作为 `soundmat.service` 运行的（例如开发机，或在终端里手动启动的）：`systemctl status soundmat` |
 | 看板「主机程序最近一小时内被自动重启过」 | 真的在反复崩溃时：`journalctl -u soundmat -b -o cat \| grep -B2 -A20 Traceback`。更新导致的重启不算（更新时写下 `plannedAt`），从控制台手动重启也不算（systemd 只统计自动重启） |
