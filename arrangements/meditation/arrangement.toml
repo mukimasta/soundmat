@@ -18,9 +18,9 @@ key_dwell = [300, 480]          # 每个调停留多久（秒），之后沿五�
 #   high_notes 高音符 weather 天气      bells 钟声        nature 自然（鸟鸣、水滴）
 rings = ["low_drone", "mid_drone", "pad", "mid_notes", "high_notes", "weather", "bells", "nature"]
 
-[breath]                        # 底音的涌起落下和灯光共用的呼吸
-period = 17.5                   # 一呼一吸多少秒（网页底音 C 调时拍频的周期）
-sound_depth_db = 30             # 底音最轻时比最响低多少 dB
+[breath]                        # 底音音量和灯光共用的呼吸
+period = 67                     # 一呼一吸多少秒（网页底音的音量起伏是 0.015 Hz，约 67 秒）
+sound_depth_db = 2              # 底音音量起伏 ±2 dB
 
 [light]                         # 都可以不写，用默认值；要在真垫子上透过毛毡调
 color = [255, 255, 255]         # 底色和石头标记的颜色；三个通道相等，低亮度时不偏色
