@@ -1,9 +1,10 @@
+import threading
 import time
 
 import numpy as np
 import pytest
 
-from soundmat.device import DeviceLink
+from soundmat.device import DeviceLink, _ReadArrived
 from soundmat.device.ports import filter_ports
 from soundmat.device.protocol import FrameError, checksum, encode_led_frame, encode_sensor_frame, parse_sensor_frame
 
@@ -69,6 +70,69 @@ def test_link_waits_for_boot_then_streams_and_sends_leds():
         assert st["connected"] and st["port"] == "/dev/fake" and st["fps"] > 0
     finally:
         link.stop()
+
+
+class PySerialPort:
+    """按 pyserial 的读法：``read(n)`` 要凑满 n 个字节，凑不满就等到超时；``in_waiting`` 是已经到了的字节数。
+    控制器的字节由测试用 ``send`` 放进来。"""
+    timeout = 0.1
+
+    def __init__(self):
+        self._cv = threading.Condition()
+        self._buf = bytearray()
+        self.closed = False
+
+    @property
+    def in_waiting(self) -> int:
+        with self._cv:
+            return len(self._buf)
+
+    def send(self, data: bytes) -> None:
+        with self._cv:
+            self._buf += data
+            self._cv.notify_all()
+
+    def read(self, size: int) -> bytes:
+        deadline = time.monotonic() + self.timeout
+        with self._cv:
+            while len(self._buf) < size and not self.closed:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    break
+                self._cv.wait(left)
+            out = bytes(self._buf[:size])
+            del self._buf[:size]
+            return out
+
+    def write(self, data: bytes) -> int:
+        return len(data)
+
+    def close(self) -> None:
+        with self._cv:
+            self.closed = True
+            self._cv.notify_all()
+
+
+def test_each_frame_is_handed_over_when_it_arrives():
+    """原来一次读 4096 字节、超时 0.1 秒：约 3 帧攒成一批，每 0.1 秒交出一次，同一批的帧带着同一个时刻
+    （Pi 5 上录制的压力因此只有约 10 帧/秒）。每一帧都要在到达时交出，带着自己的时刻。"""
+    port = PySerialPort()
+    frames = []
+    link = DeviceLink(frames.append, opener=lambda p: _ReadArrived(port), picker=lambda s: "/dev/fake")
+    line = encode_sensor_frame(np.full(256, 4095)).encode()     # 约 1.3 KB，和满压力时真的帧一样长
+    link.start()
+    try:
+        assert wait_for(lambda: link.connected)
+        sent = []
+        for _ in range(8):
+            sent.append(time.monotonic())
+            port.send(line)
+            time.sleep(0.04)
+        assert wait_for(lambda: len(frames) == 8)
+    finally:
+        link.stop()
+    assert max(f.t - s for f, s in zip(frames, sent)) < 0.03
+    assert len({f.t for f in frames}) == 8
 
 
 def test_link_reconnects_after_unplug():

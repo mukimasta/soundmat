@@ -5,7 +5,7 @@
 - ``master.wav``：总输出，声道数与音箱布局一致，24 位 WAV，由合成器服务在内部录下；
 - ``stems/<总线>.wav``：每条环总线和分组总线一轨，加上共用效果的返回 ``fx``（可在设置里关闭）；
   分轨在模式总处理之前，可能超过 0 dBFS，用 32 位浮点 WAV；
-- ``session.jsonl``：压力图、垫面事件、声音意图、灯光，每行一条，带系统时间；
+- ``session.jsonl``：压力图（感知处理的每一帧）、垫面事件、声音意图、灯光，每行一条，带系统时间；
 - ``info.json``：开始（即打板）的准确日期时间、编排与模式、开始时的设置、产出文件。
 
 按下录制后灯环和控制台进入 3、2、1 的倒计时，这时还不录；倒计时结束的瞬间灯环整圈闪亮、
@@ -155,15 +155,16 @@ class Recorder:
         self.perception = perception
         self.lights = lights
         self.event_queue = perception.events.subscribe()
+        # 逐帧取压力图。原来每拍读一次最新的快照、按节拍时刻限 30 次/秒：控制器约 28 帧/秒，两拍正好 1/30 秒，
+        # 节拍时刻有零点几毫秒的抖动就常常要多等一拍，等的时候下一帧已经到了，模拟只录下约 23 帧/秒
+        self.frame_queue = perception.frames.subscribe()
         self.led_count = config.light.led_count
         self.schedule_ahead = config.sound.schedule_ahead
         self.sample_rate = config.sound.expected_sample_rate
         self.session: Session | None = None
         self.writer: SessionWriter | None = None
         self._lock = threading.Lock()
-        self._last_snap_version = -1
         self._last_light_version = -1
-        self._next_pressure = 0.0
         self._next_light = 0.0
         self._next_status = 0.0
         self._last_sound: dict | None = None
@@ -264,7 +265,6 @@ class Recorder:
         self.backend.slate(start_t)        # 在 start_recording 之后：排在录音节点之后，不进录音
         self.writer = prep.writer
         self.writer.put({"t": _round(start_t), "type": "start", "arrangement": prep.arrangement})
-        self._last_snap_version = -1
         self._last_sound = None
         self._save_info(s)
         self.events.info(f"开始录制：{s.folder.name}" + ("" if started else "（没有合成器服务，只记录会话数据）"))
@@ -295,6 +295,7 @@ class Recorder:
         s = self.session
         if s is None:
             self.event_queue.drain()
+            self.frame_queue.drain()
             return
         el = now - s.countdown_t                 # 倒计时从按下开始，打板在 el = COUNTDOWN
         self._countdown_light(el)
@@ -351,10 +352,7 @@ class Recorder:
             if e.from_zone is not None:
                 rec["from"] = e.from_zone
             w.put(rec)
-        snap, ver = self.perception.snapshot.get_versioned()
-        if snap is not None and ver != self._last_snap_version and now >= self._next_pressure:
-            self._last_snap_version = ver
-            self._next_pressure = now + 1 / 30
+        for snap in self.frame_queue.drain():
             w.put({"t": _round(snap.t), "type": "pressure", "seq": snap.pressure.seq,
                    "values": [int(v * 1000 + 0.5) for v in snap.pressure.values.clip(0, 1)],
                    "occupied": sorted(snap.state.occupied),

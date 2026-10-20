@@ -1,5 +1,6 @@
 import io
 import json
+import random
 import zipfile
 
 import pytest
@@ -81,6 +82,31 @@ def test_full_recording_cycle(sup):
     assert types[0] == "start" and types[-1] == "stop"
     assert {"pressure", "sound", "slate", "event"} <= set(types)
     assert sup.backend.of_kind("start_recording")[0].args["files"]["master"].endswith("master.wav")
+
+
+def test_every_pressure_frame_is_recorded(sup):
+    """控制器约 28 帧/秒、节拍 60 拍/秒：每一帧都录下来，包括节拍晚到时落在同一拍里的两帧。原来每拍只读
+    最新的快照、再按节拍时刻限 30 次/秒：节拍时刻稍有抖动，每隔几帧就要多等一拍，等的时候下一帧已经到了。"""
+    rec = sup.recorder
+    rec.request_start()
+    rng = random.Random(1)
+    fed, frame_t, i, t = [], 1.0, 0, 1.0
+    while t < 5.0:
+        now = t + rng.uniform(0, 0.002) + (0.025 if i % 50 == 49 else 0.0)    # 偶尔晚到一大截
+        while frame_t <= now:
+            pressure = sup.virtual.frame(t=frame_t)
+            sup.perception.feed(pressure)
+            fed.append(pressure.seq)
+            frame_t += 1 / 28
+        sup.sonification.on_beat(Beat(i, now, 1 / 60))
+        i += 1
+        t = 1.0 + i / 60
+    rec.request_stop()
+    beats(sup, 5.1, 5.2)
+    settled(sup)
+    (item,) = sup.store.get("catalog.recordings")
+    lines = [json.loads(l) for l in (rec.folder_of(item["name"]) / "session.jsonl").read_text().splitlines()]
+    assert [r["seq"] for r in lines if r["type"] == "pressure"] == fed
 
 
 def test_refuses_when_disk_too_small_and_auto_stops(sup, monkeypatch):

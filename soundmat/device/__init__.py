@@ -40,9 +40,32 @@ class _Garbled(Exception):
 
 
 class SerialLike(Protocol):
+    """``read`` 立刻交出已经收到的字节（最多 ``size`` 个）；一个字节都还没有时才等，最多等到超时，返回空。"""
     def read(self, size: int) -> bytes: ...
     def write(self, data: bytes) -> int | None: ...
     def close(self) -> None: ...
+
+
+class _ReadArrived:
+    """让 pyserial 的串口按 ``SerialLike`` 的读法读：有多少读多少。
+
+    pyserial 的 ``read(n)`` 要凑满 n 个字节或等到超时才返回。原来一次读 4096 字节、超时 0.1 秒，一帧约
+    1 KB、控制器约 28 帧/秒，于是每次都等满 0.1 秒，约 3 帧攒成一批交出，同一批的帧带着同一个时刻：
+    感知每 0.1 秒才前进一步，放下石头平均晚约 50 毫秒才被看到，录制每 0.1 秒只录到一帧（2026-10-20 在 Pi 5
+    上查到，见 information/investigations/PRESSURE_FRAME_RATE_20261020.md）。
+    """
+
+    def __init__(self, ser):
+        self._ser = ser
+
+    def read(self, size: int) -> bytes:
+        return self._ser.read(min(size, max(1, self._ser.in_waiting)))
+
+    def write(self, data: bytes) -> int | None:
+        return self._ser.write(data)
+
+    def close(self) -> None:
+        self._ser.close()
 
 
 def open_serial(port: str) -> SerialLike:
@@ -59,7 +82,7 @@ def open_serial(port: str) -> SerialLike:
     time.sleep(0.15)
     ser.reset_input_buffer()
     ser.reset_output_buffer()
-    return ser
+    return _ReadArrived(ser)
 
 
 @dataclass(frozen=True)

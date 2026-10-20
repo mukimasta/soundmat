@@ -35,12 +35,16 @@ def tracker_params(cfg: MatConfig) -> TrackerParams:
 
 
 class Perception:
-    """接收压力图，更新垫面快照（最新值），把事件发给每个订阅者（事件队列）。"""
+    """接收压力图，更新垫面快照（最新值），把事件发给每个订阅者（事件队列）。
+
+    要逐帧记录的使用者（录制）订阅 ``frames``，取到每一帧的快照；只读最新值会漏掉两次读取之间的帧。
+    """
 
     def __init__(self, cfg: MatConfig, source: str = "controller"):
         self.source = source
         self.interpreter = Interpreter(tracker_params(cfg), settle=cfg.settle)
         self.snapshot: Latest[MatSnapshot] = Latest(empty_snapshot(source=source))
+        self.frames: EventHub[MatSnapshot] = EventHub()
         self.events: EventHub[MatEvent] = EventHub()
         self._lock = threading.Lock()
         self.rate = RateMeter()          # 实际完成垫面解读的帧率
@@ -58,5 +62,7 @@ class Perception:
         self.rate.tick()
         with self._lock:
             state, events, features = self.interpreter.update(pressure)
-        self.snapshot.set(MatSnapshot(pressure=pressure, state=state, features=features, source=self.source))
+        snap = MatSnapshot(pressure=pressure, state=state, features=features, source=self.source)
+        self.snapshot.set(snap)
+        self.frames.publish([snap])
         self.events.publish(events)
