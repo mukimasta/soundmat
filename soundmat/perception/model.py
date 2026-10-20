@@ -26,17 +26,21 @@ class PressureMap:
 
 @dataclass(frozen=True)
 class MatEvent:
-    kind: Literal["place", "lift"]
-    zone: int                     # 区域全局序号
+    """放下、拿起、挪动以一颗石头为单位；静下来是整张垫子一段时间没有这三种事件。"""
+    kind: Literal["place", "lift", "move", "settle"]
+    zone: int | None              # 石头的主区（挪动是挪到的区）；静下来没有区
     t: float
+    stone: int | None = None      # 石头标识，同一颗石头从放下到拿起不变
+    from_zone: int | None = None  # 挪动：从哪个区挪过来
 
 
 @dataclass(frozen=True)
 class MatState:
     t: float
-    occupied: frozenset[int]      # 被判断为有石头的区域
-    ring_counts: tuple[int, ...]  # 每环被占用的区域数
+    occupied: frozenset[int]      # 每颗石头的主区（一颗石头只算一个区，即使它压到了几个区）
+    ring_counts: tuple[int, ...]  # 每环的石头数（按主区）
     control_pressure: float | None  # 控制区压力总和；没有声明控制区时为 None
+    stones: tuple[Any, ...] = ()  # 垫面上的石头（``interpret.stones.Stone``）
 
 
 @dataclass(frozen=True)

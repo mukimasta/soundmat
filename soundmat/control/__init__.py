@@ -139,6 +139,9 @@ def mat_message(snap: MatSnapshot) -> dict:
         # 压力按千分之一取整，减小消息体积
         "pressure": [int(v * 1000 + 0.5) for v in vals.clip(0, 1)],
         "occupied": sorted(snap.state.occupied),
+        # 每颗石头：主区、按压力加权的位置（绘图单位的半径、角度）和总压力（放下阈值为单位）
+        "stones": [{"id": s.id, "zone": s.zone, "r": round(s.radius, 2), "a": round(s.angle, 1),
+                    "s": round(s.strength, 2)} for s in snap.state.stones],
         "ringCounts": list(snap.state.ring_counts),
         "control": snap.state.control_pressure,
     }

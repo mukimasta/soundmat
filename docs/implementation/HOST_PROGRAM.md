@@ -24,7 +24,7 @@ uv run python scripts/render.py meditation scripts/scenes/twenty_stones.json out
 | 设备连接 | `soundmat/device/` | 串口选择、S/L 帧、等待就绪、断线重连、实测帧率与校验错误 |
 | 感知 · 区域几何 | `soundmat/perception/zones.py` | 224 区的几何描述 |
 | 感知 · 垫面信号 | `soundmat/perception/signal/` | 校准与坐标对齐（第一版规则） |
-| 感知 · 垫面解读 | `soundmat/perception/interpret/` | 占用判定与去抖、每环数量、控制区压力、事件、可插拔特征 |
+| 感知 · 垫面解读 | `soundmat/perception/interpret/` | 石头检测与跟踪（`stones.py`）、垫面状态、静下来、控制区压力、可插拔特征 |
 | 感知 · 虚拟垫子 | `soundmat/perception/virtual/` | 点按放下 / 拿起，60 Hz 产生压力图 |
 | 感知 · 标准输出 | `soundmat/perception/model.py`、`perception/__init__.py` | 压力图、垫面状态、事件、快照；`Perception` 负责发布 |
 | 时间基准 | `soundmat/timebase.py` | 系统时间（单调时钟）；不依赖任何模块，谁都能导入 |
@@ -93,11 +93,29 @@ uv run python scripts/render.py meditation scripts/scenes/twenty_stones.json out
 
 半径取自控制台设计稿的绘图尺寸：环中心半径从 4.0 到 25.75，环宽 2.75，灯环半径 29.15。`Zone.radius` 是除以第 7 环外缘半径后的归一化半径，给空间化使用。
 
-## 去抖的实现
+## 石头跟踪的实现
 
-去抖按压力图到达的时刻计算：每个区记住"读数开始与当前状态不同"的时刻，持续达到 `occupy_hold`（放下）或 `release_hold`（拿起）才翻转状态并产生事件；空的区看是否高于放下阈值，有石头的区看是否低于拿起阈值（放下阈值 × `release_ratio`，0.67），读数在两者之间不改变状态。放下阈值外六环 245、内两环 185（ADC 原始读数），事件时刻是确认的那一帧的时刻。中途读数回到原状态，计时清零。没有新压力图时状态不变，所以控制器断线不会让石头"被拿起"。放下和拿起都是 80 ms。2026-10-20 按 Pi 5 真垫子的实测定下（见 `information/investigations/STONE_SENSING_20261020.md`）：真石头在外环读 290–940、内两环只有外环的一半左右，第一版的阈值 500 让很多石头不响；空区偶尔单帧跳到 160–290，放下 40 ms 只比控制器的一帧（约 34 ms）多一点，改为 80 ms。
+规则见 `system_design/DATA_MODEL.md`「垫面状态」，代码在 `perception/interpret/stones.py`，模块说明逐条写了每一帧做什么。所有时间按压力图到达的时刻计算，没有新压力图时状态不变，所以控制器断线不会让石头"被拿起"。读数换算成 u = 读数 / 这个区的放下阈值：
 
-虚拟垫子同样经过去抖。它像控制器一样持续产生压力图，所以点击之后约 80 ms 才出现"放下"，与真机一致。虚拟石头的压力固定为 0.5（约等于读数 2048）。
+| 参数 | 值 | 来源 |
+|---|---|---|
+| 放下阈值（一颗石头的总压力） | 外六环 245、内两环 185（ADC 原始读数） | `config/soundmat.toml` |
+| 压到的门槛 `floor_ratio` | u ≥ 0.4：这个区算被这颗石头压到；石头还在不在也看这条线 | 配置 |
+| 放下 `occupy_hold` | 总压力持续 80 ms | 配置 |
+| 拿起 `release_hold` / `release_hold_moving` | 静止的石头找不到压力 80 ms；刚动过或消失前在往下掉的 400 ms；最内环刚动过的 1 s（穿过中心） | 配置 / `center_hold` |
+| 串扰补偿 `crosstalk` | 已有石头的读数 × (1 + 7 × 同一根导电条上其余读数之和) | 配置 |
+| 分出新石头 | 新升起的区 u 之和 ≥ 1，原来的 ≥ 平时的 75%，总压力 ≥ 平时 + 1，持续 150 ms | `TrackerParams` |
+| 换主区 | 新区 ≥ 主区 × 1.15 并保持 150 ms；主区没有压力时立即换 | `TrackerParams` |
+| 找回暂时找不到的石头 | 隔一个区以内（最内环：整个最内环），它消失之后才出现、总压力 ≥ 平时的 10% 的一块 | `TrackerParams` |
+| 静下来 `settle` | 3 秒没有放下、拿起、挪动 | 配置 |
+
+"平时的总压力"是石头总压力的平滑值（时间常数 0.5 秒，跟着 Velostat 的蠕变慢慢变；压力在往下掉时不跟）。数值的依据是 2026-10-18 两段真实游玩（Pi 3B，共 17 分钟）和 2026-10-20 的砝码测试（Pi 5），见 `information/investigations/STONE_SENSING_20261020.md`；效果的评价见 `evaluation/system_design/stone_tracking/EVALUATION.md`。录音里的压力只有约 10 帧/秒，比实机粗，时间相关的参数还要在实机的完整帧率下复核。
+
+`scripts/replay_mat.py` 把录音里的压力图重新喂给当前的感知，统计放下、拿起、挪动、"闪"和"拿起又放下"，可以和按区判断的旧做法对比；调参数后用它回放已有的录音。
+
+在 Mac 上，回放 13 分钟的 Lo-Fi 游玩每帧约 0.2 ms（最多 0.5 ms）。
+
+虚拟垫子同样经过石头跟踪。它像控制器一样持续产生压力图，所以点击之后约 80 ms 才出现"放下"，与真机一致。虚拟石头的压力固定为 0.5（约等于读数 2048）；在相邻的两个区先后点（间隔超过约 0.4 秒；刚放下的石头 0.4 秒内不拆分，以免真石头落下时一边先着地、另一边后压实被拆成两颗），后点的那个约 150 ms 后分成另一颗。
 
 ## 声音引擎的实现
 
@@ -162,7 +180,7 @@ uv run python scripts/render.py meditation scripts/scenes/twenty_stones.json out
 |---|---|
 | `master.wav` | 总输出（硬件输出总线 0…N−1，经过系统音量和限幅），24 位整数 WAV |
 | `stems/<总线>.wav` | 各环总线、分组总线和效果返回 `fx`，在模式总处理之前、乘过编排电平；可能超过 0 dBFS，所以是 32 位浮点 WAV |
-| `session.jsonl` | 每行一条，带系统时间 `t`：`start`、`pressure`（最多 30 次/秒，压力 × 1000 和有石头的区域）、`event`（放下、拿起）、`sound`（持续声部与全局参数，变化时）、`events`（交出的定时事件）、`light`（灯环颜色，与控制台预览相同的十六进制字符串，每颗灯 6 个字符 rrggbb；最多 10 次/秒）、`slate`、`stop` |
+| `session.jsonl` | 每行一条，带系统时间 `t`：`start`、`pressure`（最多 30 次/秒，压力 × 1000、每颗石头的主区 `occupied` 和 `stones`：`[标识, 主区, 总压力]`；实测只有约 10 次/秒，见 `TODO.md`）、`event`（`kind` 为放下 place、拿起 lift、挪动 move、静下来 settle；带石头标识 `stone`，挪动另带原来的区 `from`）、`sound`（持续声部与全局参数，变化时）、`events`（交出的定时事件）、`light`（灯环颜色，与控制台预览相同的十六进制字符串，每颗灯 6 个字符 rrggbb；最多 10 次/秒）、`slate`、`stop` |
 | `info.json` | `startedAt`（带时区的开始时间）、`startSystemTime`、`slateOffsetSeconds`（打板在录音中的位置，固定为 0：文件从打板开始）、`slateSystemTime`、编排、声道数、采样率、格式、开始时的设置、文件清单、`duration`、`endedAt`、`stopReason` |
 
 没有连接合成器服务（`--no-synth`）时也能录制，只产生会话数据和录制信息，`audio` 为 false，不建 `stems/` 目录；文件清单只列实际开始录制的文件。下载接口把整个文件夹边打包边输出为不压缩的 zip，不需要临时文件。

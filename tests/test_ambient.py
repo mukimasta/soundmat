@@ -81,6 +81,20 @@ def test_triggers_pitch_and_position_follow_zone():
     assert hit2.id != hit.id
 
 
+def test_moving_a_stone_into_a_zone_triggers_like_placing_it():
+    """挪动一下必须有效果：挪到另一个区，那个区的触发型角色照样响。"""
+    m = kyoto()
+    a, b = zone(5, 2), zone(5, 3)
+    m.tick(Beat(0, 1.0, 1 / 60), snap(1.0, [a.index]), [place(1.0, a.index)])
+    move = MatEvent("move", b.index, 2.0, stone=1, from_zone=a.index)
+    out = m.tick(Beat(1, 2.0, 1 / 60), snap(2.0, [b.index]), [move])
+    (hit,) = [e for e in out.sound.events if ".hit#" in e.id]
+    assert hit.position.angle == pytest.approx(b.center_deg)
+    # 静下来和拿起不触发
+    out = m.tick(Beat(2, 5.0, 1 / 60), snap(5.0, [b.index]), [MatEvent("settle", None, 5.0)])
+    assert not [e for e in out.sound.events if ".hit#" in e.id]
+
+
 def test_intermittent_waits_random_interval_and_stops_when_empty():
     m = kyoto()
     z = zone(5, 0).index

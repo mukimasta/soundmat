@@ -18,9 +18,12 @@ class MatConfig:
     full_scale: int = 4095
     occupancy_threshold_raw: float = 245.0
     inner_occupancy_threshold_raw: float = 185.0
-    release_ratio: float = 0.67
+    floor_ratio: float = 0.4
     occupy_hold: float = 0.08
     release_hold: float = 0.08
+    release_hold_moving: float = 0.4
+    crosstalk: float = 7.0
+    settle: float = 3.0
     sector_mirror: bool = True
     sector_offset: int = 4
     invert: bool = False
@@ -112,9 +115,12 @@ class Config:
         return [
             {"label": "扇区镜像", "value": "开" if m.sector_mirror else "关"},
             {"label": "整体旋转偏移", "value": f"{m.sector_offset} 个扇区"},
-            {"label": "占用阈值", "value": f"外环 {m.occupancy_threshold_raw:g} · 内两环 {m.inner_occupancy_threshold_raw:g} / {m.full_scale}"
-                                           f"（拿起低于其 {m.release_ratio:g} 倍）"},
-            {"label": "去抖时间", "value": f"放下 {m.occupy_hold * 1000:g} ms · 拿起 {m.release_hold * 1000:g} ms"},
+            {"label": "放下阈值", "value": f"外环 {m.occupancy_threshold_raw:g} · 内两环 {m.inner_occupancy_threshold_raw:g} / {m.full_scale}"
+                                           f"（一颗石头的总压力；单区达到其 {m.floor_ratio:g} 倍算压到）"},
+            {"label": "去抖时间", "value": f"放下 {m.occupy_hold * 1000:g} ms · 拿起 {m.release_hold * 1000:g} ms"
+                                           f"（刚挪动过 {m.release_hold_moving * 1000:g} ms）"},
+            {"label": "串扰补偿", "value": f"k = {m.crosstalk:g}（只用于已有的石头）"},
+            {"label": "静下来", "value": f"{m.settle:g} 秒没有放下、拿起、挪动"},
             {"label": "灯珠数量", "value": str(l.led_count)},
             {"label": "灯带对齐偏移", "value": str(l.led_offset)},
             {"label": "灯光刷新", "value": f"{l.refresh_hz:g} 次/秒"},
@@ -146,9 +152,12 @@ def load_config(path: Path | str | None = None) -> Config:
         "full_scale": "full_scale",
         "occupancy_threshold": "occupancy_threshold_raw",
         "inner_occupancy_threshold": "inner_occupancy_threshold_raw",
-        "release_ratio": "release_ratio",
+        "floor_ratio": "floor_ratio",
         "occupy_hold": "occupy_hold",
         "release_hold": "release_hold",
+        "release_hold_moving": "release_hold_moving",
+        "crosstalk": "crosstalk",
+        "settle": "settle",
         "sector_mirror": "sector_mirror",
         "sector_offset": "sector_offset",
         "invert": "invert",

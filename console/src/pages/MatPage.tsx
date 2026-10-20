@@ -13,7 +13,7 @@ export function MatPage({ onOpenArrangements, overlay }: { onOpenArrangements: (
   const virtual = sel.isVirtual(s);
   const canTap = s.connected && virtual;
   const mat = s.connected ? s.mat : null;
-  const stones = mat?.occupied.length ?? 0;
+  const stones = mat?.stones?.length ?? mat?.occupied.length ?? 0;
   const hostLine = getPath<string>(s.state, 'status.network.line') ?? '';
   const cur = sel.current(s);
   const st = sel.modeStatus(s);
@@ -58,6 +58,7 @@ export function MatPage({ onOpenArrangements, overlay }: { onOpenArrangements: (
           geometry={s.geometry}
           pressure={mat?.pressure ?? null}
           occupied={mat?.occupied ?? []}
+          stones={mat?.stones}
           ledCount={s.ledCount}
           leds={s.connected ? ((s.streams.leds?.colors as string | undefined) ?? null) : null}
           onZone={canTap ? (z) => void client.toggleZone(z) : undefined}

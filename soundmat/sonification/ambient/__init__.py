@@ -24,7 +24,7 @@ from ...perception.model import MatEvent, MatSnapshot
 from ...perception.zones import RING_CENTERS, MAT_RADIUS, ZONES, zones_in_ring
 from ...intent import BeatOutput, Event, LightIntent, ModeStatus, Position, SoundIntent, Source, Voice
 from ..lights import breathing_marks
-from ..mode import LoadError, LoadPlan, Mode
+from ..mode import LoadError, LoadPlan, Mode, arrivals
 
 BEHAVIORS = ("sustained", "intermittent", "trigger")
 RESERVED = {"behavior", "instrument", "samples", "tiers", "interval", "position",
@@ -154,7 +154,7 @@ class AmbientMode(Mode):
 
         voices: list[Voice] = []
         out_events: list[Event] = []
-        placed = [e for e in events if e.kind == "place"]
+        placed = arrivals(events)
 
         for role in self.roles:
             active = self._active(role, counts)

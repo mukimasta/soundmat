@@ -1,9 +1,9 @@
 """垫面解读：在压力图之上判断哪里有石头、发生了什么（ARCHITECTURE「感知」）。
 
-占用判定带去抖和双阈值：一个区需要稳定高于放下阈值 ``occupy_hold`` 秒才算被占用，稳定低于
-较低的拿起阈值 ``release_hold`` 秒才算释放（DATA_MODEL「垫面状态」）；读数在两者之间时保持原状，
-不会在阈值附近来回跳。阈值可以逐区不同（内两环比外环低）。去抖按压力图到达的时刻计算；
-控制器断线、没有新压力图时，状态保持不变。
+石头由 ``stones`` 跟踪：直接从压力图找出石头、跨帧对上号，给出放下、拿起和挪动。这里在它之上
+给出垫面状态（每颗石头的主区作为被占用的区、每环石头数、控制区压力）、静下来事件和可插拔的特征
+（DATA_MODEL「垫面状态」「垫面事件」）。判断按压力图到达的时刻计算；控制器断线、没有新压力图时，
+状态保持不变。
 """
 from __future__ import annotations
 
@@ -13,6 +13,9 @@ import numpy as np
 
 from ..model import MatEvent, MatState, PressureMap
 from ..zones import NUM_RINGS, NUM_ZONES, ZONES
+from .stones import Stone, StoneTracker, TrackerParams
+
+__all__ = ["FeatureExtractor", "Interpreter", "Stone", "TrackerParams"]
 
 _RING_OF = np.array([z.ring for z in ZONES], dtype=np.int64)
 
@@ -25,15 +28,12 @@ class FeatureExtractor(Protocol):
 
 
 class Interpreter:
-    def __init__(self, threshold, occupy_hold: float, release_hold: float, release_threshold=None):
-        """``threshold``、``release_threshold``：单个数或每区一个（224 项）；拿起阈值默认等于放下阈值。"""
-        self.threshold = np.broadcast_to(np.asarray(threshold, dtype=np.float32), (NUM_ZONES,)).copy()
-        rel = self.threshold if release_threshold is None else release_threshold
-        self.release_threshold = np.broadcast_to(np.asarray(rel, dtype=np.float32), (NUM_ZONES,)).copy()
-        self.occupy_hold = float(occupy_hold)
-        self.release_hold = float(release_hold)
-        self._occupied = np.zeros(NUM_ZONES, dtype=bool)
-        self._pending_since = np.full(NUM_ZONES, np.nan)
+    def __init__(self, params: TrackerParams, settle: float = 3.0):
+        """``settle``：放下、拿起、挪动都停下这么多秒后，发出一次"静下来"。"""
+        self.tracker = StoneTracker(params)
+        self.settle = float(settle)
+        self._last_activity: float | None = None
+        self._settled = True              # 还没有任何动作时不发"静下来"
         self._control_mask: np.ndarray | None = None
         self.extractors: list[FeatureExtractor] = []
 
@@ -47,38 +47,32 @@ class Interpreter:
         self._control_mask = mask
 
     def reset(self) -> None:
-        self._occupied[:] = False
-        self._pending_since[:] = np.nan
+        self.tracker.reset()
+        self._last_activity = None
+        self._settled = True
 
     def update(self, pressure: PressureMap) -> tuple[MatState, list[MatEvent], dict[str, Any]]:
         t = pressure.t
-        # 空的区要高于放下阈值才算有石头，有石头的区要低于拿起阈值才算没有
-        raw = np.where(self._occupied, pressure.values >= self.release_threshold, pressure.values >= self.threshold)
-        differs = raw != self._occupied
+        events = self.tracker.update(t, pressure.values)
+        if events:
+            self._last_activity = t
+            self._settled = False
+        elif not self._settled and self._last_activity is not None and t - self._last_activity >= self.settle:
+            events.append(MatEvent(kind="settle", zone=None, t=t))
+            self._settled = True
 
-        start = differs & np.isnan(self._pending_since)
-        self._pending_since[start] = t
-        self._pending_since[~differs] = np.nan
-
-        hold = np.where(self._occupied, self.release_hold, self.occupy_hold)
-        commit = differs & (t - self._pending_since >= hold - 1e-9)
-
-        events: list[MatEvent] = []
-        for idx in np.flatnonzero(commit):
-            kind = "lift" if self._occupied[idx] else "place"
-            events.append(MatEvent(kind=kind, zone=int(idx), t=t))
-        self._occupied[commit] = ~self._occupied[commit]
-        self._pending_since[commit] = np.nan
-
-        counts = np.bincount(_RING_OF[self._occupied], minlength=NUM_RINGS)
+        stones = self.tracker.stones
+        occupied = frozenset(s.zone for s in stones)
+        counts = np.bincount(_RING_OF[list(occupied)], minlength=NUM_RINGS) if occupied else np.zeros(NUM_RINGS)
         control = None
         if self._control_mask is not None:
             control = float(pressure.values[self._control_mask].sum())
         state = MatState(
             t=t,
-            occupied=frozenset(int(i) for i in np.flatnonzero(self._occupied)),
+            occupied=occupied,
             ring_counts=tuple(int(c) for c in counts),
             control_pressure=control,
+            stones=stones,
         )
         features = {fx.name: fx.compute(pressure, state) for fx in self.extractors}
         return state, events, features

@@ -17,7 +17,7 @@ def test_hello_then_mat_and_patch(sup):
         assert hello["type"] == "hello"
         assert len(hello["geometry"]) == 224
         assert hello["state"]["status"]["current"]["virtual"] is True
-        assert any(r["label"] == "占用阈值" for r in hello["config"])
+        assert any(r["label"] == "放下阈值" for r in hello["config"])
 
         r = client.post("/api/virtual/toggle", json={"zone": 50})
         assert r.json() == {"zone": 50, "stone": True}

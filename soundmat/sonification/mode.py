@@ -15,6 +15,15 @@ from ..errors import UserError
 from ..intent import BeatOutput
 
 
+def arrivals(events: list[MatEvent]) -> list[MatEvent]:
+    """这一拍有石头到达的事件：放下，或者挪到了另一个区（事件的区是挪到的区）。
+
+    模式对"放下"的即时反应（触发型角色、立即响的音、预听）也给挪动：作品要求挪动一下必须有效果
+    （系列文档第 2 篇）。持续的声音按垫面状态里每颗石头的主区，挪动时自然跟着走。
+    """
+    return [e for e in events if e.kind in ("place", "move") and e.zone is not None]
+
+
 class LoadError(UserError):
     """编排不符合模式的要求，或引用无法满足。消息直接显示给人看。"""
 

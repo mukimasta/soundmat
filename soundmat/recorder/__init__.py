@@ -345,14 +345,21 @@ class Recorder:
         if w is None:
             return
         for e in self.event_queue.drain():
-            w.put({"t": _round(e.t), "type": "event", "kind": e.kind, "zone": e.zone})
+            rec = {"t": _round(e.t), "type": "event", "kind": e.kind, "zone": e.zone}
+            if e.stone is not None:
+                rec["stone"] = e.stone
+            if e.from_zone is not None:
+                rec["from"] = e.from_zone
+            w.put(rec)
         snap, ver = self.perception.snapshot.get_versioned()
         if snap is not None and ver != self._last_snap_version and now >= self._next_pressure:
             self._last_snap_version = ver
             self._next_pressure = now + 1 / 30
             w.put({"t": _round(snap.t), "type": "pressure", "seq": snap.pressure.seq,
                    "values": [int(v * 1000 + 0.5) for v in snap.pressure.values.clip(0, 1)],
-                   "occupied": sorted(snap.state.occupied)})
+                   "occupied": sorted(snap.state.occupied),
+                   # 每颗石头：[标识, 主区, 总压力（放下阈值为单位）]
+                   "stones": [[s.id, s.zone, round(s.strength, 2)] for s in snap.state.stones]})
         if out is not None:
             sound = _sound_json(out.sound)
             if sound != self._last_sound:

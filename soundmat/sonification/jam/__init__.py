@@ -25,7 +25,7 @@ from ...clock import Beat
 from ...perception.model import MatEvent, MatSnapshot
 from ...perception.zones import ZONES, ring_indices
 from ...intent import BeatOutput, Event, LightIntent, ModeStatus, Position, SoundIntent, Source, Voice
-from ..mode import LoadError, LoadPlan, Mode
+from ..mode import LoadError, LoadPlan, Mode, arrivals
 from .lights import JamLights
 from .theory import Tempo, Tonality, valid_token
 from .timing import Timing
@@ -217,7 +217,7 @@ class JamMode(Mode):
             if mt_now >= self.form_duration:
                 self.state = "ended"
 
-        placed = [e for e in events if e.kind == "place" and ZONES[e.zone].ring in self.rings]
+        placed = [e for e in arrivals(events) if ZONES[e.zone].ring in self.rings]
         vel = self.preview_idle if self.state == "idle" else self.preview_playing if self.state == "playing" else 0.0
         if vel > 0:
             for e in placed:

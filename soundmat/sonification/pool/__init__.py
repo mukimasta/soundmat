@@ -36,7 +36,7 @@ from ...intent import BeatOutput, Event, ModeStatus, Position, SoundIntent, Sour
 from ...perception.model import MatEvent, MatSnapshot
 from ...perception.zones import ZONES
 from ..lights import warm_breathing
-from ..mode import LoadError, LoadPlan, Mode
+from ..mode import LoadError, LoadPlan, Mode, arrivals
 
 # ── 音高（pentatonic.js）────────────────────────────────────────────────────
 
@@ -623,9 +623,8 @@ class PoolMode(Mode):
         for z in sorted(snapshot.state.occupied):
             by_ring[ZONES[z].ring].append(z)
         placed: dict[int, list[int]] = {r: [] for r in range(8)}
-        for e in events:
-            if e.kind == "place":
-                placed[ZONES[e.zone].ring].append(e.zone)
+        for e in arrivals(events):
+            placed[ZONES[e.zone].ring].append(e.zone)
 
         f = Frame(t, self.key, self.rng, self.prefix, self.counter, self.spread)
         self.bed.tick(f)

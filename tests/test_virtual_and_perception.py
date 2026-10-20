@@ -36,3 +36,22 @@ def test_virtual_thread_produces_frames(config):
     assert p.snapshot.get().state.occupied == {3}
     vm.clear()
     assert vm.stones == frozenset()
+
+
+def test_virtual_adjacent_clicks_become_two_stones(config):
+    """虚拟垫子上先后点相邻的两个区（间隔超过 0.4 秒）：两颗石头，各有自己的放下。"""
+    from soundmat.perception.zones import zone
+    p = Perception(config.mat, source="virtual")
+    events = p.events.subscribe()
+    vm = VirtualMat(p.feed)
+    a, b = zone(4, 6).index, zone(4, 7).index
+    vm.set(a, True)
+    t = 0.0
+    for _ in range(30):                     # 0.5 秒，60 帧/秒
+        p.feed(vm.frame(t=t)); t += 1 / 60
+    vm.set(b, True)
+    for _ in range(30):
+        p.feed(vm.frame(t=t)); t += 1 / 60
+    ev = events.drain()
+    assert [(e.kind, e.zone) for e in ev] == [("place", a), ("place", b)]
+    assert p.snapshot.get().state.occupied == {a, b}
