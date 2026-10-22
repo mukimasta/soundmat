@@ -233,6 +233,7 @@ class StoneTracker:
     def _update_track(self, tr: _Track, footprint: set[int], uc: np.ndarray, t: float) -> list[MatEvent]:
         p = self.p
         events: list[MatEvent] = []
+        before = tr.strength                       # 上一帧的总压力
         strength = float(sum(uc[z] for z in footprint))
         dt = 0.0 if tr.last_t is None else max(0.0, t - tr.last_t)
         tr.last_t = t
@@ -266,8 +267,9 @@ class StoneTracker:
         if not new:
             tr.split_ref = None
         elif tr.split_ref is None:
-            # 记下这颗石头平时的总压力（滑动开始时原来的区已经在往下掉，不能拿上一帧比）
-            tr.split_ref = tr.ref if tr.ref is not None else strength
+            # 和这颗石头平时的总压力比，也和上一帧比，取大的：滑动开始时原来的区已经在往下掉，只看上一帧会偏低；
+            # 刚放下（或刚分出来）的石头"平时"还没跟上，只看平时也会偏低，一滑就像多出了一颗
+            tr.split_ref = max(tr.ref if tr.ref is not None else 0.0, before)
 
         # 旁边又放了一颗：新升起来的区压力够一颗石头，原来的压力没有让出来，总压力多出了一颗石头
         split_pending = False

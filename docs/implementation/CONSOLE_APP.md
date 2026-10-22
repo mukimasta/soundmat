@@ -19,7 +19,7 @@ npm run build    # 类型检查并构建到 console/dist，由主机程序直接
 1. `src/api/client.ts`：`SoundMatClient` 维护唯一的 WebSocket 连接和界面状态（`ConsoleState`），断开时清掉所有实时数据并每秒重连；`reduce` 是纯函数，便于测试。命令通过 `post` 发出。
 2. `src/api/context.tsx`：用 `useSyncExternalStore` 把客户端状态接入 React（`useConsole`、`useClient`）。
 3. `src/api/patch.ts`：把点号路径的变化应用到状态树。
-4. `src/components/`：垫面绘图 `MatView`（SVG，坐标与主机程序的区域几何一致；灯环预览单独成组件，60 帧刷新时只重画灯珠）、电平条 `LayerMeters`（按编排声明的分组）、顶部横幅等。
+4. `src/components/`：垫面绘图 `MatView`（SVG，坐标与主机程序的区域几何一致；灯环预览单独成组件，60 帧刷新时只重画灯珠）、石头 `StoneLayer`（颜色按石头标识以黄金角取色相；轨迹只在离上一个点至少 1 个绘图单位、约 1 厘米时才记一点，静止石头位置的抖动在 0.2 以内、画不出轨迹；没有石头标识的旧消息按环色画在区中心）、电平条 `LayerMeters`（按编排声明的分组）、顶部横幅等。
 5. `src/pages/`：各页面和底部面板：垫面、看板、编排、菜单、已录制、设置、软件更新（`UpdateSheet`，更新按钮要点两次确认）。
 6. `src/theme.css`：设计稿的颜色与字体。
 

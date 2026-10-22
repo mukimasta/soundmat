@@ -275,3 +275,26 @@ def test_alternating_readings_do_not_report_moves():
     for _ in range(30):
         r.hold(1 / FPS, {A: 0.15, B: 0.05}).hold(1 / FPS, {A: 0.05, B: 0.15})
     assert r.kinds() == ["place"]
+
+
+def test_long_continuous_slide_stays_one_stone():
+    """沿一环连续滑过 30 多个区，途中经过另一颗静止石头所在的导电条：始终是同一颗（曾经滑几个区后不停分出新石头）。"""
+    ring = [zone(5, j).index for j in range(32)]
+    still = zone(2, 6).index                       # 和 5:6 在同一根导电条上
+    r = Run()
+    t0 = r.t
+    while r.t - t0 < 15.0:
+        pos = ((r.t - t0) / 0.45) % 32
+        j = int(pos)
+        f = pos - j
+        r.hold(1 / FPS, {ring[j]: 0.30 * (1 - f) + 0.05 * f, ring[(j + 1) % 32]: 0.30 * f + 0.05 * (1 - f), still: 0.25})
+    places = [e for e in r.events if e.kind == "place"]
+    assert len(places) == 2 and not [e for e in r.events if e.kind == "lift"]
+    slider = next(e.stone for e in places if e.zone != still)
+    assert len([e for e in r.events if e.kind == "move" and e.stone == slider]) >= 30
+
+
+def test_virtual_mat_has_no_crosstalk_compensation(config):
+    from soundmat.perception import Perception
+    assert Perception(config.mat, source="virtual").interpreter.tracker.p.crosstalk == 0.0
+    assert Perception(config.mat).interpreter.tracker.p.crosstalk == pytest.approx(7.0)

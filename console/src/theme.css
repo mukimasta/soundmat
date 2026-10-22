@@ -408,3 +408,11 @@ button { font: inherit; color: inherit; }
 .details .rate-row .num { font-size: 12.5px; }
 .details .small { padding: 2px 0 4px; line-height: 1.5; }
 
+/* 刚放下的石头泛起一圈涟漪（StoneLayer） */
+.stone-drop { transform-box: fill-box; transform-origin: center; animation: stone-drop 0.9s ease-out forwards; }
+@keyframes stone-drop {
+  from { transform: scale(0.7); opacity: 0.9; }
+  to { transform: scale(2.4); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .stone-drop { animation: none; opacity: 0; } }
+

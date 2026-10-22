@@ -1,6 +1,7 @@
 import { memo, useMemo } from 'react';
 import type { StoneMsg, Zone } from '../api/types';
-import { LED_RADIUS, RING_COLORS, polar, sectorPath, zoneFill } from './geometry';
+import { LED_RADIUS, polar, sectorPath, zoneFill } from './geometry';
+import { StoneLayer, locate } from './StoneLayer';
 
 /** 压力达到满量程的一半时显示为最深的颜色（石头的读数通常远低于满量程） */
 const DISPLAY_FULL = 0.5;
@@ -24,13 +25,7 @@ function MatViewImpl({ geometry, pressure, occupied, stones: located, ledCount, 
     [geometry],
   );
   const tappable = !!onZone;
-  const stones = (located ?? occupied.map((zone, i) => ({ id: -1 - i, zone, r: 0, a: 0, s: 0 })))
-    .filter((s) => geometry[s.zone])
-    .map((s) => {
-      const z = geometry[s.zone];
-      const at = located ? polar(s.r, s.a) : polar((z.rInner + z.rOuter) / 2, z.center);
-      return { key: s.id, zone: z, x: at[0], y: at[1] };
-    });
+  const stones = locate(geometry, located, occupied);
   const label = pressure
     ? `垫面实时图：${stones.length} 颗石头，外圈是灯环预览`
     : '垫面：没有数据';
@@ -53,17 +48,7 @@ function MatViewImpl({ geometry, pressure, occupied, stones: located, ledCount, 
         <circle cx="0" cy="0" r="27.95" fill="none" stroke="#E9A23B" strokeOpacity="0.75"
           strokeWidth="0.12" strokeDasharray="0.55 0.45" pointerEvents="none" />
       )}
-      {pressure && stones.map(({ key, zone: z, x, y }) => {
-        const c = RING_COLORS[z.ring];
-        const rot = Math.round((z.center * 1.7 + z.ring * 23) % 180);
-        return (
-          <g key={key} data-stone={z.index} transform={`translate(${x} ${y}) rotate(${rot})`} pointerEvents="none">
-            <ellipse rx="2.0" ry="1.7" fill={`rgba(${c[0]},${c[1]},${c[2]},0.38)`} />
-            <ellipse rx="1.22" ry="0.94" fill="#ECE6DB" />
-            <ellipse cx="-0.32" cy="-0.28" rx="0.5" ry="0.26" fill="#FFFFFF" opacity="0.85" />
-          </g>
-        );
-      })}
+      {pressure && <StoneLayer stones={stones} />}
       <LedRing ledCount={ledCount} leds={leds ?? null} />
     </svg>
   );

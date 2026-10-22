@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import threading
+from dataclasses import replace
 
 import numpy as np
 
@@ -42,7 +43,11 @@ class Perception:
 
     def __init__(self, cfg: MatConfig, source: str = "controller"):
         self.source = source
-        self.interpreter = Interpreter(tracker_params(cfg), settle=cfg.settle)
+        params = tracker_params(cfg)
+        if source == "virtual":
+            # 虚拟垫子的压力图没有串扰，补偿只会把同一根导电条上的几颗虚拟石头互相放大
+            params = replace(params, crosstalk=0.0)
+        self.interpreter = Interpreter(params, settle=cfg.settle)
         self.snapshot: Latest[MatSnapshot] = Latest(empty_snapshot(source=source))
         self.frames: EventHub[MatSnapshot] = EventHub()
         self.events: EventHub[MatEvent] = EventHub()
