@@ -8,6 +8,5 @@
 - [ ] 确定 SoundMat 系列文档正本的存放位置，更新 `design/SOUNDMAT_SERIES.md`
 - [ ] Pi 3B 上新版稳定后，删除保留的第一版（`~/soundmat` 和 `soundmat-v1.service`）
 - [ ] 在真垫子上、透过毛毡、在暗室里调《冥想》的灯光（编排的 `[light]`、`[breath]`，默认值只是起点）：看灯和底音的涌起落下是否对得上、接近全暗时会不会一级一级跳；明显时考虑 gamma 校正
-- [ ] 在 Pi 3B 上试听《冥想》：对照网页原型听音色；放满石头看看板上的合成器负载（离线折算约 35%，见 `implementation/SYNTH.md`「离线渲染」）、迟到和卡顿
 - [ ] 在 Pi 5 上用真垫子试听《京都岚山》（Pi 3B 内存放不下它的素材），放满石头看输出电平：密集处峰值应在 −3 dBFS 左右，长时间贴着 −1 dB 就在编排里设 `level`（`implementation/ARRANGEMENTS.md`「共同头部」）
 - [ ] 执行多石头性能评估 `evaluation/implementation/multi_stone_performance/`（Pi 3B 上的初步结果已记录）
