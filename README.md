@@ -11,7 +11,7 @@ SoundMat 是一件公共艺术装置：在圆形压力垫上放下石头，装�
 ```bash
 uv sync
 (cd console && npm ci && npm run build)
-uv run python scripts/compile_instruments.py   # 编译音色，应显示"共 66 个 SynthDef 文件"
+uv run python scripts/compile_instruments.py   # 编译音色，应显示"共 105 个 SynthDef 文件"
 ```
 
 然后启动主机程序。本机没有在运行的合成器服务时，它会自己启动 scsynth（立体声，CoreAudio 的默认输出设备，48 kHz），退出时一起关掉；已经有一个在运行（例如用 `scripts/scsynth-dev.sh` 手动启动的）就直接连它：

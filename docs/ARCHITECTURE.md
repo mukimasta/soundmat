@@ -311,7 +311,7 @@ system/pi/soundmat/
 │   ├── device/              设备连接
 │   ├── perception/          感知
 │   │   ├── signal/          垫面信号
-│   │   ├── interpret/       垫面解读与特征
+│   │   ├── interpret/       垫面解读：石头跟踪（stones.py）、垫面状态、事件与特征
 │   │   └── virtual/         虚拟垫子
 │   ├── timebase.py          系统时间
 │   ├── clock/               时钟
@@ -335,7 +335,7 @@ system/pi/soundmat/
 ├── config/                  配置：校准、对齐、声部预算等部署参数
 ├── arrangements/            编排（数据）：kyoto/、meditation/、lofi_1/
 ├── instruments/             合成器服务的音色定义（编译产物在 compiled/，不进仓库）
-├── scripts/                 开发用脚本：编译音色、启动开发用的合成器服务、发布（release.py）、离线渲染（render.py，参考时间表在 scenes/）
+├── scripts/                 开发用脚本：编译音色、启动开发用的合成器服务、发布（release.py）、离线渲染（render.py，参考时间表在 scenes/）、回放录音里的压力图检查感知（replay_mat.py）
 ├── console/                 网页控制台（独立前端工程）
 ├── system/                  装进树莓派系统的配置
 │   ├── systemd/             JACK、scsynth、主机程序三个服务，logind 设置
